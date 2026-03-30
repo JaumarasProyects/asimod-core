@@ -79,12 +79,35 @@ Returns current configuration, active providers, and audio save paths.
 
 ---
 
-## 🎮 Connecting Unity / Unreal / APK
+---
 
-To connect your project:
-1. **Run the Core:** Launch `run_headless.bat` (API only) or `run_chat.bat` (GUI + API).
-2. **HTTP Client:** Use `UnityWebRequest` (C#) or `HTTP Request` (Blueprints/C++) to point to `http://YOUR_PC_IP:8000/v1/chat`.
-3. **Handle Response:** Parse the JSON to get the text response and the list of emojis for your character's facial expressions.
+## 🔌 Official Adapters
+
+We provide ready-to-use integration scripts for the most popular engines and languages.
+
+### 🎮 Unity Engine (C#)
+- **Folder:** `UnityIntegration/`
+- **File:** `AsimodClient.cs`
+- **Usage:** Attach the `AsimodClient` MonoBehaviour to any GameObject. 
+- **Features:** Asynchronous `UnityWebRequest` with callbacks for `clean_text` and `emojis`.
+
+### 🎮 Unreal Engine (C++)
+- **Folder:** `UnrealIntegration/`
+- **Files:** `AsimodClient.cpp/h`
+- **Usage:** Add the `UAsimodClient` Actor Component to your character or controller.
+- **Features:** Fully exposed to **Blueprints** via Delegates (`OnChatReceived`).
+
+### 🐍 Python Client
+- **Folder:** `PythonIntegration/`
+- **File:** `asimod_client.py`
+- **Usage:** `from asimod_client import AsimodClient`.
+- **Features:** Simple synchronous wrapper using the `requests` library.
+
+### 🎮 Godot Engine (GDScript)
+- **Folder:** `GodotIntegration/`
+- **File:** `AsimodClient.gd`
+- **Usage:** Add to your **Autoloads (Singleton)** or attach to a Node.
+- **Features:** Uses `HTTPRequest` and signals (`chat_received`) for non-blocking logic.
 
 ---
 
