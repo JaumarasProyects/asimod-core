@@ -147,6 +147,20 @@ class APIServer:
             """Lista todos los proveedores de LLM disponibles."""
             return {"providers": self.chat_service.get_providers_list()}
 
+        @self.app.get("/v1/languages")
+        def list_languages():
+            """Lista todos los idiomas disponibles."""
+            return {"languages": self.chat_service.locale_service.list_available_languages()}
+
+        @self.app.post("/v1/language")
+        def set_language(data: dict):
+            """Cambia el idioma de la aplicación."""
+            lang = data.get("language")
+            if lang:
+                self.chat_service.locale_service.set_language(lang)
+                return {"status": "success", "language": lang}
+            return {"status": "error", "message": "Language not specified"}
+
         @self.app.get("/v1/voice_providers")
         def list_voice_providers():
             """Lista todos los proveedores de Voz disponibles."""

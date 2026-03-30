@@ -8,8 +8,9 @@ class VoiceService:
     """
     Orquestador de voz que gestiona la generación y reproducción de audio.
     """
-    def __init__(self, config_service):
+    def __init__(self, config_service, locale_service=None):
         self.config = config_service
+        self.locale_service = locale_service
         self.current_adapter = None
         self.stt_service = None # Referencia opcional para sincronización
         self._set_adapter()
@@ -68,6 +69,11 @@ class VoiceService:
             final_voice_id = v_id_clean
         else:
             final_voice_id = self.config.get("voice_id")
+            if not final_voice_id and self.locale_service:
+                default_voice = self.locale_service.get_default_voice()
+                final_voice_id = default_voice.get("voice_id")
+                if target_provider == global_prov:
+                    self.config.set("voice_id", final_voice_id)
         
         success = adapter.generate(text, output_path, voice_id=final_voice_id)
         

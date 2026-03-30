@@ -1,0 +1,74 @@
+{
+  "app": {
+    "title": "ASIMOD Core",
+    "subtitle": "Orquestador de IA Multimodal"
+  },
+  "settings": {
+    "title": "Configuración",
+    "language": "Idioma",
+    "provider": "Proveedor LLM",
+    "model": "Modelo",
+    "voice": "Voz",
+    "voice_provider": "Proveedor de Voz",
+    "voice_mode": "Modo de Voz",
+    "stt_provider": "Proveedor de STT",
+    "stt_mode": "Modo de STT",
+    "save": "Guardar",
+    "test": "Probar",
+    "autoplay": "Auto-reproducir",
+    "manual": "Manual"
+  },
+  "chat": {
+    "placeholder": "Escribe tu mensaje...",
+    "send": "Enviar",
+    "listening": "Escuchando...",
+    "processing": "Procesando...",
+    "new_chat": "Nuevo Chat",
+    "select_thread": "Seleccionar hilo"
+  },
+  "providers": {
+    "OpenAI": "OpenAI",
+    "Ollama": "Ollama (Local)",
+    "Gemini": "Google Gemini",
+    "Groq": "Groq",
+    "DeepSeek": "DeepSeek",
+    "Anthropic": "Anthropic",
+    "Perplexity": "Perplexity"
+  },
+  "voice_providers": {
+    "Edge TTS": "Edge TTS (Microsoft)",
+    "Local TTS": "TTS Local"
+  },
+  "stt_providers": {
+    "Whisper": "Whisper (OpenAI)",
+    "Standard": "STT Estándar"
+  },
+  "memory": {
+    "title": "Memoria",
+    "name": "Nombre del personaje",
+    "personality": "Personalidad",
+    "history": "Historia/Contexto",
+    "new_thread": "Crear nuevo hilo",
+    "load_thread": "Cargar hilo",
+    "delete_thread": "Eliminar hilo"
+  },
+  "vision": {
+    "title": "Visión",
+    "webcam": "Webcam",
+    "screenshot": "Captura de pantalla",
+    "file": "Archivo local"
+  },
+  "errors": {
+    "connection_failed": "Error de conexión",
+    "invalid_key": "Clave API inválida",
+    "model_not_found": "Modelo no encontrado",
+    "audio_error": "Error de audio",
+    "unknown": "Error desconocido"
+  },
+  "status": {
+    "online": "En línea",
+    "offline": "Desconectado",
+    "processing": "Procesando",
+    "ready": "Listo"
+  }
+}

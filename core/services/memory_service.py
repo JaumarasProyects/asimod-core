@@ -98,14 +98,24 @@ class MemoryService:
         """Retorna el historial para pasar al LLM."""
         return self.data.get("history", [])
 
-    def get_system_prompt(self) -> str:
+    def get_system_prompt(self, locale_service=None) -> str:
         """Construye el system prompt basado en el perfil actual."""
         name = self.data.get("name", "Gravity")
         pers = self.data.get("personality", "")
         hist = self.data.get("character_history", "")
         
+        lang_instruction = ""
+        if locale_service:
+            lang = locale_service.get_current_language()
+            if lang == "es":
+                lang_instruction = "Responde siempre en español."
+            elif lang == "en":
+                lang_instruction = "Always respond in English."
+        
         prompt = f"Tu nombre es {name}. \n"
         if pers: prompt += f"Tu personalidad: {pers} \n"
         if hist: prompt += f"Tu historia/contexto: {hist} \n"
+        if lang_instruction:
+            prompt += f"\n{lang_instruction}"
         prompt += "\nResponde siempre manteniendo este personaje."
         return prompt

@@ -6,6 +6,7 @@ from core.services.voice_service import VoiceService
 from core.services.stt_service import STTService
 from core.services.text_processor import TextProcessor
 from core.services.memory_service import MemoryService
+from core.services.locale_service import LocaleService
 
 class ChatService(ChatPort):
     """
@@ -15,6 +16,7 @@ class ChatService(ChatPort):
     def __init__(self, config_service):
         self.config = config_service
         self.memory = MemoryService()
+        self.locale_service = LocaleService(config_service)
         self.current_adapter = None
         
         # Estado actual de emociones para la API externa
@@ -24,7 +26,7 @@ class ChatService(ChatPort):
         self.on_stt_finished_cb: Optional[Callable[[str], None]] = None
         
         # Inyectar servicios de Voz (Salida) y STT (Entrada)
-        self.voice_service = VoiceService(config_service)
+        self.voice_service = VoiceService(config_service, self.locale_service)
         self.stt_service = STTService(config_service, on_transcription_complete=self._on_stt_complete)
         
         # Inicializar con el adaptador guardado usando la Factoría
@@ -65,7 +67,7 @@ class ChatService(ChatPort):
         
         # 2. Obtener contexto completo y prompt de sistema
         history = self.memory.get_context()
-        system_prompt = self.memory.get_system_prompt()
+        system_prompt = self.memory.get_system_prompt(self.locale_service)
         
         # 3. Generar respuesta usando el adaptador activo
         if self.current_adapter:

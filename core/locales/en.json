@@ -1,0 +1,74 @@
+{
+  "app": {
+    "title": "ASIMOD Core",
+    "subtitle": "Multimodal AI Orchestrator"
+  },
+  "settings": {
+    "title": "Settings",
+    "language": "Language",
+    "provider": "LLM Provider",
+    "model": "Model",
+    "voice": "Voice",
+    "voice_provider": "Voice Provider",
+    "voice_mode": "Voice Mode",
+    "stt_provider": "STT Provider",
+    "stt_mode": "STT Mode",
+    "save": "Save",
+    "test": "Test",
+    "autoplay": "Auto-play",
+    "manual": "Manual"
+  },
+  "chat": {
+    "placeholder": "Type your message...",
+    "send": "Send",
+    "listening": "Listening...",
+    "processing": "Processing...",
+    "new_chat": "New Chat",
+    "select_thread": "Select thread"
+  },
+  "providers": {
+    "OpenAI": "OpenAI",
+    "Ollama": "Ollama (Local)",
+    "Gemini": "Google Gemini",
+    "Groq": "Groq",
+    "DeepSeek": "DeepSeek",
+    "Anthropic": "Anthropic",
+    "Perplexity": "Perplexity"
+  },
+  "voice_providers": {
+    "Edge TTS": "Edge TTS (Microsoft)",
+    "Local TTS": "Local TTS"
+  },
+  "stt_providers": {
+    "Whisper": "Whisper (OpenAI)",
+    "Standard": "Standard STT"
+  },
+  "memory": {
+    "title": "Memory",
+    "name": "Character Name",
+    "personality": "Personality",
+    "history": "History/Context",
+    "new_thread": "Create new thread",
+    "load_thread": "Load thread",
+    "delete_thread": "Delete thread"
+  },
+  "vision": {
+    "title": "Vision",
+    "webcam": "Webcam",
+    "screenshot": "Screenshot",
+    "file": "Local file"
+  },
+  "errors": {
+    "connection_failed": "Connection error",
+    "invalid_key": "Invalid API key",
+    "model_not_found": "Model not found",
+    "audio_error": "Audio error",
+    "unknown": "Unknown error"
+  },
+  "status": {
+    "online": "Online",
+    "offline": "Offline",
+    "processing": "Processing",
+    "ready": "Ready"
+  }
+}
