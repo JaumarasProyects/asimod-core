@@ -7,8 +7,8 @@ class LLMPort(ABC):
     Esto permite que la UI no sepa con qué API está hablando.
     """
     @abstractmethod
-    def generate_response(self, prompt: str, model: str) -> str:
-        """Envía un prompt y retorna la respuesta del modelo."""
+    def generate_response(self, prompt: str, model: str, images: list = None) -> str:
+        """Envía un prompt con contexto visual opcional y retorna la respuesta."""
         pass
 
     @abstractmethod

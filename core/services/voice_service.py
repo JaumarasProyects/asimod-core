@@ -53,6 +53,18 @@ class VoiceService:
             else:
                 print(f"Audio guardado en: {output_path}")
 
+    def stop_audio(self):
+        """Detiene la reproducción de audio actual y reanuda el micro."""
+        try:
+            import pygame
+            if pygame.mixer.get_init():
+                pygame.mixer.music.stop()
+            
+            if self.stt_service:
+                self.stt_service.resume_capture(delay=0.1) # Reanudación rápida tras stop manual
+        except Exception as e:
+            print(f"Error deteniendo audio: {e}")
+
     def _play_audio_threaded(self, file_path):
         thread = threading.Thread(target=self._play_audio, args=(file_path,), daemon=True)
         thread.start()

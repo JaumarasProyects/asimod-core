@@ -7,7 +7,14 @@ class OllamaAdapter(LLMPort):
     Adaptador para Ollama que utiliza la API HTTP local.
     """
     def __init__(self, base_url="http://localhost:11434"):
-        self.base_url = base_url
+        # Normalizar: Si el usuario puso /api al final, lo quitamos ya que 
+        # los métodos lo añaden automáticamente (evitar /api/api/tags)
+        if base_url.endswith("/api"):
+            self.base_url = base_url[:-4]
+        elif base_url.endswith("/api/"):
+            self.base_url = base_url[:-5]
+        else:
+            self.base_url = base_url
 
     @property
     def name(self) -> str:
@@ -24,7 +31,7 @@ class OllamaAdapter(LLMPort):
         # Fallback si no hay conexión
         return ["llama3", "phi3", "mistral"]
 
-    def generate_response(self, prompt: str, model: str) -> str:
+    def generate_response(self, prompt: str, model: str, images: list = None) -> str:
         try:
             payload = {
                 "model": model,

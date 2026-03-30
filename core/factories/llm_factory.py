@@ -42,7 +42,7 @@ class LLMFactory:
             return GenericOpenAIAdapter(
                 name="Groq", api_key=key,
                 base_url="https://api.groq.com/openai/v1",
-                models=["llama3-70b-8192", "mixtral-8x7b-32768", "gemma-7b-it"]
+                models=["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "gemma2-9b-it"]
             )
 
         elif provider_name == "Perplexity":
@@ -50,7 +50,7 @@ class LLMFactory:
             return GenericOpenAIAdapter(
                 name="Perplexity", api_key=key,
                 base_url="https://api.perplexity.ai",
-                models=["llama-3-sonar-large-32k-online", "llama-3-sonar-small-32k-chat"]
+                models=["sonar-reasoning-pro", "sonar-reasoning", "sonar"]
             )
         
         return None

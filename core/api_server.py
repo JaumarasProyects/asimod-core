@@ -66,13 +66,21 @@ class APIServer:
                 return {"status": "success", "message": "Microphone resuming with safety delay"}
             return {"status": "error", "message": "STT Service not available"}
 
+        @self.app.post("/v1/audio/stop")
+        async def audio_stop():
+            """Detiene el audio actual y reanuda el micro (llamado desde Unity/Unreal)."""
+            self.chat_service.voice_service.stop_audio()
+            return {"status": "success", "message": "Audio stopped remotely"}
+
         @self.app.post("/v1/chat")
         async def chat(request: ChatRequest):
             try:
-                # El servicio de chat ya maneja historial, LLM y audio
-                response = self.chat_service.send_message(request.text, model=request.model)
+                # El servicio de chat ahora devuelve un dict con {response, clean_text, emojis}
+                result = self.chat_service.send_message(request.text, model=request.model)
                 return {
-                    "response": response,
+                    "response": result["response"],
+                    "clean_text": result["clean_text"],
+                    "emojis": result["emojis"],
                     "status": "success"
                 }
             except Exception as e:

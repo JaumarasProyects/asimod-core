@@ -1,8 +1,10 @@
 import tkinter as tk
+import os
 from tkinter import ttk, scrolledtext, filedialog
 from core.ports.chat_port import ChatPort
 from ui.settings_view import SettingsView
 from core.services.stt_service import STTService
+from core.services.vision_service import VisionService
 
 class ChatWidget(tk.Frame):
     """
@@ -12,6 +14,8 @@ class ChatWidget(tk.Frame):
         super().__init__(parent, bg="#2b2b2b")
         self.chat_engine = chat_engine
         self.config = config_service
+        self.vision_service = VisionService()
+        self.current_images = []
         
         # Vincular STT Service del engine con la UI
         self.stt_service = self.chat_engine.stt_service
@@ -105,23 +109,45 @@ class ChatWidget(tk.Frame):
                                                       font=("Consolas", 10), wrap=tk.WORD)
         self.chat_display.pack(padx=10, pady=5, fill=tk.BOTH, expand=True)
 
-        # --- BARRA DE ENTRADA ---
-        input_frame = tk.Frame(self.chat_frame, bg="#2b2b2b")
-        input_frame.pack(padx=10, pady=10, fill=tk.X)
+        # --- ÁREA DE ENTRADA (Dos Filas) ---
+        input_area = tk.Frame(self.chat_frame, bg="#2b2b2b")
+        input_area.pack(padx=10, pady=5, fill=tk.X)
 
-        # Botón Add Audio
-        self.btn_add_audio = tk.Button(input_frame, text="➕ Audio", bg="#444", fg="white",
-                                      relief="flat", command=self.handle_add_audio, cursor="hand2")
-        self.btn_add_audio.pack(side=tk.LEFT, padx=(0, 5))
-
-        self.input_field = tk.Entry(input_frame, bg="#3c3c3c", fg="white", 
-                                    insertbackground="white", relief="flat")
-        self.input_field.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5), ipady=3)
+        # FILA 1: Campo de texto (Ocupa todo el ancho)
+        self.input_field = tk.Entry(input_area, bg="#3c3c3c", fg="white", 
+                                    insertbackground="white", relief="flat", font=("Arial", 10))
+        self.input_field.pack(fill=tk.X, ipady=5, pady=(0, 5))
         self.input_field.bind("<Return>", lambda e: self.handle_send())
 
-        self.send_btn = tk.Button(input_frame, text="Enviar", bg="#0078d4", fg="white",
-                                  relief="flat", command=self.handle_send, cursor="hand2")
-        self.send_btn.pack(side=tk.RIGHT)
+        # FILA 2: Botones y Controles
+        btns_frame = tk.Frame(input_area, bg="#2b2b2b")
+        btns_frame.pack(fill=tk.X)
+
+        # Vision
+        tk.Label(btns_frame, text="👁️ Vision:", bg="#2b2b2b", fg="#888", font=("Arial", 8)).pack(side=tk.LEFT)
+        self.combo_vision = ttk.Combobox(btns_frame, values=["None", "Cam", "Screen", "Imagen"], state="readonly", width=8)
+        self.combo_vision.set("None")
+        self.combo_vision.pack(side=tk.LEFT, padx=5)
+        self.combo_vision.bind("<<ComboboxSelected>>", self._on_vision_change)
+
+        # Audio
+        self.btn_add_audio = tk.Button(btns_frame, text="➕ Audio", bg="#444", fg="white",
+                                      relief="flat", command=self.handle_add_audio, cursor="hand2")
+        self.btn_add_audio.pack(side=tk.LEFT, padx=5)
+
+        # Enviar (Derecha)
+        self.send_btn = tk.Button(btns_frame, text="Enviar respuesta", bg="#0078d4", fg="white",
+                                  relief="flat", command=self.handle_send, cursor="hand2", width=15)
+        self.send_btn.pack(side=tk.RIGHT, padx=2)
+
+        # Stop (Derecha)
+        self.stop_btn = tk.Button(btns_frame, text="⏹ Stop", bg="#d43f3a", fg="white",
+                                  relief="flat", command=self._stop_audio, cursor="hand2")
+        self.stop_btn.pack(side=tk.RIGHT, padx=2)
+
+        # Línea de archivos seleccionados
+        self.lbl_files = tk.Label(self.chat_frame, text="", bg="#2b2b2b", fg="#4EC9B0", font=("Arial", 8, "italic"))
+        self.lbl_files.pack(fill=tk.X, padx=10)
 
         # 2. VISTA DE CONFIGURACIÓN
         self.settings_frame = SettingsView(self.container, self.config, self.show_chat)
@@ -216,15 +242,50 @@ class ChatWidget(tk.Frame):
         self._on_provider_change(None)
         self._on_voice_change(None)
 
+    def _on_vision_change(self, event):
+        mode = self.combo_vision.get()
+        if mode == "None": return
+        
+        path = None
+        if mode == "Cam":
+            path = self.vision_service.capture_cam()
+        elif mode == "Screen":
+            path = self.vision_service.capture_screen()
+        elif mode == "Imagen":
+            path = self.vision_service.pick_image()
+            
+        if path:
+            self.current_images.append(path)
+            # Actualizar label con nombres de archivos
+            names = [os.path.basename(p) for p in self.current_images]
+            self.lbl_files.config(text=f"📷 Archivos listos: {', '.join(names)}")
+        
+        # Resetear combo a None para permitir re-selección
+        self.combo_vision.set("None")
+
     def handle_send(self):
         text = self.input_field.get()
-        if not text: return
-        self._append_message("Tú", text, "#569cd6")
+        if not text and not self.current_images: return
+        
+        display_text = text if text else "(Imagen enviada)"
+        self._append_message("Tú", display_text, "#569cd6")
         self.input_field.delete(0, tk.END)
         self.update()
+        
         model = self.combo_model.get()
-        response = self.chat_engine.send_message(text, model=model)
-        self._append_message("AI", response, "#ce9178")
+        # Pasamos el texto y la lista de imágenes capturadas
+        result = self.chat_engine.send_message(text, model=model, images=self.current_images)
+        
+        # Limpiar imágenes tras el envío
+        self.current_images = []
+        self.lbl_files.config(text="")
+        
+        # Mostramos la respuesta original (con emojis/asteriscos) en la UI
+        self._append_message("AI", result["response"], "#ce9178")
+
+    def _stop_audio(self):
+        """Detiene la reproducción de audio actual."""
+        self.chat_engine.voice_service.stop_audio()
 
     def _append_message(self, sender, text, color):
         self.chat_display.config(state='normal')
