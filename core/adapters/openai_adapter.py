@@ -20,38 +20,42 @@ class OpenAIAdapter(LLMPort):
         with open(image_path, "rb") as image_file:
             return base64.b64encode(image_file.read()).decode('utf-8')
 
-    def generate_response(self, prompt: str, model: str, images: list = None) -> str:
+    def generate_chat(self, history: list, system_prompt: str, model: str, images: list = None) -> str:
         if not self.api_key:
-            return "Error: No se ha configurado la OpenAI API Key."
-
+            return "Error: No se ha configurado la API Key de OpenAI."
+        
         try:
+            url = "https://api.openai.com/v1/chat/completions"
             headers = {
                 "Authorization": f"Bearer {self.api_key}",
                 "Content-Type": "application/json"
             }
             
-            # Construir contenido del mensaje (texto + imágenes opcionales)
-            content = [{"type": "text", "text": prompt}]
+            # Construir la lista de mensajes (System + History)
+            messages = [{"role": "system", "content": system_prompt}] + history
             
+            # Si hay imágenes, las inyectamos en el último mensaje del usuario
             if images:
-                for img_path in images:
-                    base64_image = self._encode_image(img_path)
-                    content.append({
-                        "type": "image_url",
-                        "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}
-                    })
+                # Buscar el último mensaje con rol 'user'
+                for msg in reversed(messages):
+                    if msg["role"] == "user":
+                        orig_content = msg["content"]
+                        new_content = [{"type": "text", "text": orig_content}]
+                        for img_path in images:
+                            b64 = self._encode_image(img_path)
+                            new_content.append({
+                                "type": "image_url",
+                                "image_url": {"url": f"data:image/jpeg;base64,{b64}"}
+                            })
+                        msg["content"] = new_content
+                        break
 
             payload = {
-                "model": model,
-                "messages": [{"role": "user", "content": content}]
+                "model": model if model else "gpt-4o-mini",
+                "messages": messages
             }
-            
-            response = requests.post(
-                "https://api.openai.com/v1/chat/completions",
-                headers=headers, 
-                json=payload,
-                timeout=45
-            )
+
+            response = requests.post(url, headers=headers, json=payload, timeout=45)
             if response.status_code == 200:
                 return response.json()["choices"][0]["message"]["content"]
             else:

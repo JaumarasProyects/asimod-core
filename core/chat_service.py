@@ -5,14 +5,16 @@ from core.factories.llm_factory import LLMFactory
 from core.services.voice_service import VoiceService
 from core.services.stt_service import STTService
 from core.services.text_processor import TextProcessor
+from core.services.memory_service import MemoryService
 
 class ChatService(ChatPort):
     """
-    Orquestador de chat que maneja múltiples proveedores de LLM e integración de Voz/STT.
+    Orquestador de chat que maneja múltiples proveedores de LLM, 
+    persistencia de memoria e integración de Voz/STT.
     """
     def __init__(self, config_service):
         self.config = config_service
-        self.history: List[ChatMessage] = []
+        self.memory = MemoryService()
         self.current_adapter = None
         
         # Estado actual de emociones para la API externa
@@ -27,6 +29,10 @@ class ChatService(ChatPort):
         
         # Inicializar con el adaptador guardado usando la Factoría
         self.switch_provider(self.config.get("last_provider", "Ollama"))
+        
+        # Cargar memoria inicial si existe en config
+        last_thread = self.config.get("active_thread", "None")
+        self.memory.load_thread(last_thread)
 
     def _on_stt_complete(self, text: str):
         """Puente entre el servicio de STT y la interfaz de usuario."""
@@ -50,31 +56,34 @@ class ChatService(ChatPort):
 
     def send_message(self, text: str, model: str = None, images: list = None) -> Dict:
         """
-        Envía un mensaje con contexto visual, procesa emociones y retorna un dict enriquecido.
+        Envía un mensaje usando el contexto de memoria activo y procesa la respuesta.
         """
         if images is None: images = []
         
-        # 1. Guardar mensaje del usuario
-        user_msg = ChatMessage(sender="User", content=text)
-        self.history.append(user_msg)
+        # 1. Guardar mensaje del usuario en la memoria persistente
+        self.memory.add_message("user", text)
         
-        # 2. Generar respuesta usando el adaptador activo (pasando también imágenes)
+        # 2. Obtener contexto completo y prompt de sistema
+        history = self.memory.get_context()
+        system_prompt = self.memory.get_system_prompt()
+        
+        # 3. Generar respuesta usando el adaptador activo
         if self.current_adapter:
-            # Los adaptadores ahora deben aceptar images
-            raw_response = self.current_adapter.generate_response(text, model, images)
+            raw_response = self.current_adapter.generate_chat(history, system_prompt, model, images)
         else:
             raw_response = "Error: No hay un motor de LLM configurado."
 
-        # 3. Procesamiento de Texto (Emojis y Limpieza TTS)
+        # 4. Procesamiento de Texto (Emojis y Limpieza TTS)
         self.last_emojis = TextProcessor.extract_emojis(raw_response)
         clean_response = TextProcessor.clean_text_for_tts(raw_response)
 
-        # 4. Guardar respuesta de la IA (Original para historial)
-        ai_msg = ChatMessage(sender="AI", content=raw_response)
-        self.history.append(ai_msg)
+        # 5. Guardar respuesta de la IA en la memoria persistente
+        self.memory.add_message("assistant", raw_response)
         
-        # 5. DISPARAR AUDIO SI ESTÁ ACTIVO (Usando el texto limpio)
-        self.voice_service.process_text(clean_response)
+        # 6. Disparar audio si está activo (usando la voz/motor del personaje si existe)
+        char_voice = self.memory.data.get("voice_id")
+        char_provider = self.memory.data.get("voice_provider")
+        self.voice_service.process_text(clean_response, voice_id=char_voice, voice_provider=char_provider)
         
         return {
             "response": raw_response,
@@ -83,4 +92,6 @@ class ChatService(ChatPort):
         }
 
     def get_history(self) -> List[ChatMessage]:
-        return self.history
+        # Adaptar formato de MemoryService al modelo ChatMessage usado en la UI
+        raw_history = self.memory.get_context()
+        return [ChatMessage(sender="Tú" if m["role"] == "user" else "AI", content=m["content"]) for m in raw_history]

@@ -28,19 +28,38 @@ class OllamaAdapter(LLMPort):
                 return [m["name"] for m in models]
         except:
             pass
-        # Fallback si no hay conexión
-        return ["llama3", "phi3", "mistral"]
+        # Si no hay conexión o falla la respuesta, devolvemos lista vacía para no engañar al usuario
+        return []
 
-    def generate_response(self, prompt: str, model: str, images: list = None) -> str:
+    def generate_chat(self, history: list, system_prompt: str, model: str, images: list = None) -> str:
+        """
+        Envía un historial completo a Ollama usando el endpoint /api/chat.
+        """
         try:
+            # Construir la lista de mensajes completa
+            messages = [{"role": "system", "content": system_prompt}] + history
+            
+            # Formatear adecuadamente para Ollama /api/chat
             payload = {
                 "model": model,
-                "prompt": prompt,
+                "messages": messages,
                 "stream": False
             }
-            response = requests.post(f"{self.base_url}/api/generate", json=payload, timeout=30)
+            
+            # Nota: Ollama /api/chat soporta imágenes dentro del objeto del mensaje actual
+            # Pero para simplicidad en este adaptador genérico, las incluimos en el último mensaje
+            if images and len(messages) > 0:
+                messages[-1]["images"] = images
+
+            response = requests.post(f"{self.base_url}/api/chat", json=payload, timeout=300)
+            
             if response.status_code == 200:
-                return response.json().get("response", "Error: No hay respuesta.")
-            return f"Error en Ollama: {response.status_code}"
+                return response.json().get("message", {}).get("content", "Error: No hay contenido.")
+            
+            if response.status_code == 404:
+                return f"Error 404 en Ollama: El modelo '{model}' no está instalado."
+            
+            return f"Error en Ollama: {response.status_code} - {response.text}"
+            
         except Exception as e:
             return f"Error de conexión con Ollama: {str(e)}"

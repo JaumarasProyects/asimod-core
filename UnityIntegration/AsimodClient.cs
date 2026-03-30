@@ -36,8 +36,10 @@ public class AsimodClient : MonoBehaviour
     {
         public string provider;
         public string model;
+        public string active_thread;
         public string voice_provider;
         public string voice_mode;
+        public string voice_id;
         public string stt_mode;
     }
 
@@ -62,9 +64,119 @@ public class AsimodClient : MonoBehaviour
         public VoiceEntry[] voices;
     }
 
+    [Serializable]
+    public class ProvidersResponse
+    {
+        public string[] providers;
+    }
+
+    [Serializable]
+    public class ModelsResponse
+    {
+        public string[] models;
+    }
+
+    [Serializable]
+    public class MemoriesResponse
+    {
+        public string[] memories;
+    }
+
+    [Serializable]
+    public class MemoryProfileRequest
+    {
+        public string name;
+        public string personality;
+        public string character_history;
+        public string voice_id;
+        public string voice_provider;
+    }
+
+    [Serializable]
+    public class SetMemoryRequest
+    {
+        public string thread_id;
+        public string name;
+        public string personality;
+        public string history;
+        public string voice_id;
+        public string voice_provider;
+    }
+
     #endregion
 
     #region Public API Methods
+
+    /// <summary>
+    /// Lists all available conversation threads/memories.
+    /// </summary>
+    public void GetMemories(Action<string[]> onSuccess, Action<string> onError)
+    {
+        StartCoroutine(GetRequest("/memories", (res) => {
+            MemoriesResponse mRes = JsonUtility.FromJson<MemoriesResponse>(res);
+            onSuccess?.Invoke(mRes.memories);
+        }, onError));
+    }
+
+    /// <summary>
+    /// Switches to a specific memory or creates a 'New' one with optional profile data.
+    /// </summary>
+    public void SetMemory(string threadId, string name = null, string personality = null, string history = null, string voiceId = null, string voiceProvider = null, Action<string> onSuccess = null, Action<string> onError = null)
+    {
+        SetMemoryRequest req = new SetMemoryRequest { 
+            thread_id = threadId,
+            name = name,
+            personality = personality,
+            history = history,
+            voice_id = voiceId,
+            voice_provider = voiceProvider
+        };
+        string json = JsonUtility.ToJson(req);
+        StartCoroutine(PostRequest("/memories", json, (res) => {
+            onSuccess?.Invoke(threadId);
+        }, onError));
+    }
+
+    /// <summary>
+    /// Updates the character profile of the active memory.
+    /// </summary>
+    public void UpdateProfile(string name, string personality, string history, string voiceId, string voiceProvider, Action onSuccess, Action<string> onError)
+    {
+        MemoryProfileRequest req = new MemoryProfileRequest { 
+            name = name, 
+            personality = personality, 
+            character_history = history,
+            voice_id = voiceId,
+            voice_provider = voiceProvider
+        };
+        string json = JsonUtility.ToJson(req);
+        StartCoroutine(PatchRequest("/memories/profile", json, (res) => onSuccess?.Invoke(), onError));
+    }
+
+    /// <summary>
+    /// Lists all available AI Providers.
+    /// </summary>
+    public void GetProviders(Action<string[]> onSuccess, Action<string> onError)
+    {
+        StartCoroutine(GetRequest("/providers", (res) => {
+            ProvidersResponse pRes = JsonUtility.FromJson<ProvidersResponse>(res);
+            onSuccess?.Invoke(pRes.providers);
+        }, onError));
+    }
+
+    /// <summary>
+    /// Lists all available models for a specific provider.
+    /// </summary>
+    public void GetModels(string provider, Action<string[]> onSuccess, Action<string> onError)
+    {
+        string endpoint = "/models";
+        if (!string.IsNullOrEmpty(provider)) endpoint += "?provider=" + UnityWebRequest.EscapeURL(provider);
+        
+        StartCoroutine(GetRequest(endpoint, (res) => {
+            ModelsResponse mRes = JsonUtility.FromJson<ModelsResponse>(res);
+            onSuccess?.Invoke(mRes.models);
+        }, onError));
+    }
 
     /// <summary>
     /// Sends a message to the AI and returns the response via callback.
@@ -164,6 +276,22 @@ public class AsimodClient : MonoBehaviour
     private IEnumerator PostRequest(string endpoint, string json, Action<string> onSuccess, Action<string> onError)
     {
         var webRequest = new UnityWebRequest(apiBaseUrl + endpoint, "POST");
+        byte[] bodyRaw = System.Text.Encoding.UTF8.GetBytes(json);
+        webRequest.uploadHandler = new UploadHandlerRaw(bodyRaw);
+        webRequest.downloadHandler = new DownloadHandlerBuffer();
+        webRequest.SetRequestHeader("Content-Type", "application/json");
+
+        yield return webRequest.SendWebRequest();
+
+        if (webRequest.result == UnityWebRequest.Result.Success)
+            onSuccess?.Invoke(webRequest.downloadHandler.text);
+        else
+            onError?.Invoke(webRequest.error);
+    }
+
+    private IEnumerator PatchRequest(string endpoint, string json, Action<string> onSuccess, Action<string> onError)
+    {
+        var webRequest = new UnityWebRequest(apiBaseUrl + endpoint, "PATCH");
         byte[] bodyRaw = System.Text.Encoding.UTF8.GetBytes(json);
         webRequest.uploadHandler = new UploadHandlerRaw(bodyRaw);
         webRequest.downloadHandler = new DownloadHandlerBuffer();

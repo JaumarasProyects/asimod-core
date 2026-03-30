@@ -27,10 +27,10 @@ class ConfigService:
             "deepseek_key": "",
             "groq_key": "",
             "perplexity_key": "",
-            "voice_provider": "None",
+            "voice_provider": "Edge TTS",
             "voice_mode": "autoplay",
             "voice_save_path": "audio",
-            "voice_id": "",
+            "voice_id": "es-ES-AlvaroNeural",
             "stt_provider": "None",
             "stt_mode": "none",
             "api_port": 8000

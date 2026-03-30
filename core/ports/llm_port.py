@@ -7,8 +7,11 @@ class LLMPort(ABC):
     Esto permite que la UI no sepa con qué API está hablando.
     """
     @abstractmethod
-    def generate_response(self, prompt: str, model: str, images: list = None) -> str:
-        """Envía un prompt con contexto visual opcional y retorna la respuesta."""
+    def generate_chat(self, history: List[dict], system_prompt: str, model: str, images: list = None) -> str:
+        """
+        Envía un historial de conversación y un prompt de sistema, 
+        retornando la respuesta del asistente.
+        """
         pass
 
     @abstractmethod

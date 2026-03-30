@@ -51,6 +51,43 @@ class ChatWidget(tk.Frame):
                                       relief="flat", cursor="hand2", command=self.show_settings)
         self.btn_settings.pack(side=tk.RIGHT)
 
+        # LÍNEA 0: Gestión de Memoria e Hilos (NUEVA)
+        self.memory_bar = tk.Frame(self.toolbar, bg="#2b2b2b", pady=2)
+        self.memory_bar.pack(fill=tk.X)
+
+        tk.Label(self.memory_bar, text="Memoria:", bg="#2b2b2b", fg="#0078d4", font=("Arial", 8, "bold")).pack(side=tk.LEFT)
+        self.combo_memory = ttk.Combobox(self.memory_bar, state="readonly", width=25)
+        self.combo_memory.pack(side=tk.LEFT, padx=5)
+        self.combo_memory.bind("<<ComboboxSelected>>", self._on_memory_change)
+        
+        self.btn_refresh_mem = tk.Button(self.memory_bar, text="🔄", bg="#333", fg="white", 
+                                         relief="flat", font=("Arial", 7), command=self._refresh_memories)
+        self.btn_refresh_mem.pack(side=tk.LEFT, padx=2)
+
+        # LÍNEA DE PERFIL (Nombre y Personalidad rápida)
+        self.profile_bar = tk.Frame(self.toolbar, bg="#2b2b2b", pady=2)
+        self.profile_bar.pack(fill=tk.X)
+        
+        tk.Label(self.profile_bar, text="Nombre:", bg="#2b2b2b", fg="#888", font=("Arial", 8)).pack(side=tk.LEFT)
+        self.ent_char_name = tk.Entry(self.profile_bar, bg="#333", fg="white", font=("Arial", 8), width=10, relief="flat")
+        self.ent_char_name.pack(side=tk.LEFT, padx=5)
+        
+        tk.Label(self.profile_bar, text="Personalidad:", bg="#2b2b2b", fg="#888", font=("Arial", 8)).pack(side=tk.LEFT, padx=(5,0))
+        self.ent_char_pers = tk.Entry(self.profile_bar, bg="#333", fg="white", font=("Arial", 8), width=20, relief="flat")
+        self.ent_char_pers.pack(side=tk.LEFT, padx=5)
+
+        tk.Label(self.profile_bar, text="Voz:", bg="#2b2b2b", fg="#888", font=("Arial", 8)).pack(side=tk.LEFT, padx=(5,0))
+        self.combo_char_motor = ttk.Combobox(self.profile_bar, state="readonly", font=("Arial", 8), width=10)
+        self.combo_char_motor.pack(side=tk.LEFT, padx=2)
+        self.combo_char_motor.bind("<<ComboboxSelected>>", self._on_sidebar_motor_change)
+
+        self.combo_char_voice = ttk.Combobox(self.profile_bar, state="readonly", font=("Arial", 8), width=15)
+        self.combo_char_voice.pack(side=tk.LEFT, padx=2)
+
+        self.btn_save_profile = tk.Button(self.profile_bar, text="💾", bg="#0078d4", fg="white", 
+                                           relief="flat", font=("Arial", 7), command=self._save_profile)
+        self.btn_save_profile.pack(side=tk.LEFT, padx=2)
+
         # LÍNEA 2: Controles de IA (Motor y Modelo)
         self.llm_bar = tk.Frame(self.toolbar, bg="#2b2b2b", pady=2)
         self.llm_bar.pack(fill=tk.X)
@@ -104,24 +141,75 @@ class ChatWidget(tk.Frame):
 
         ttk.Separator(self.chat_frame, orient="horizontal").pack(fill=tk.X, padx=10, pady=5)
 
-        # --- ÁREA DE TEXTO ---
-        self.chat_display = scrolledtext.ScrolledText(self.chat_frame, state='disabled', 
+        # --- CONTENEDOR CENTRAL (Para Chat o Wizard) ---
+        self.middle_container = tk.Frame(self.chat_frame, bg="#2b2b2b")
+        self.middle_container.pack(fill=tk.BOTH, expand=True)
+
+        # --- WIZAD DE NUEVO HILO (Hijo de middle_container) ---
+        self.new_thread_frame = tk.Frame(self.middle_container, bg="#333", padx=20, pady=10)
+        
+        tk.Label(self.new_thread_frame, text="✨ NUEVO MODELO DE PERSONAJE", bg="#333", fg="#0078d4", font=("Arial", 10, "bold")).pack(pady=(0, 10))
+        
+        # Campo Nombre
+        tk.Label(self.new_thread_frame, text="Nombre del Personaje:", bg="#333", fg="#ccc", font=("Arial", 8)).pack(anchor="w")
+        self.ent_new_name = tk.Entry(self.new_thread_frame, bg="#1e1e1e", fg="white", relief="flat", font=("Arial", 10))
+        self.ent_new_name.pack(fill=tk.X, pady=(2, 10))
+
+        # Campo Actitud/Personalidad
+        tk.Label(self.new_thread_frame, text="Actitud / Personalidad:", bg="#333", fg="#ccc", font=("Arial", 8)).pack(anchor="w")
+        self.ent_new_pers = tk.Entry(self.new_thread_frame, bg="#1e1e1e", fg="white", relief="flat", font=("Arial", 10))
+        self.ent_new_pers.pack(fill=tk.X, pady=(2, 10))
+
+        # Campo Historia (Multi-línea)
+        tk.Label(self.new_thread_frame, text="Historia / Trasfondo:", bg="#333", fg="#ccc", font=("Arial", 8)).pack(anchor="w")
+        self.txt_new_hist = scrolledtext.ScrolledText(self.new_thread_frame, bg="#1e1e1e", fg="white", 
+                                                      relief="flat", font=("Arial", 10), height=5)
+        self.txt_new_hist.pack(fill=tk.X, pady=(2, 10))
+
+        # Línea de Motor y Voz (NUEVO)
+        motor_voice_frame = tk.Frame(self.new_thread_frame, bg="#333")
+        motor_voice_frame.pack(fill=tk.X, pady=(2, 10))
+
+        mv_left = tk.Frame(motor_voice_frame, bg="#333")
+        mv_left.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        tk.Label(mv_left, text="Motor de Voz:", bg="#333", fg="#ccc", font=("Arial", 8)).pack(anchor="w")
+        self.combo_new_motor = ttk.Combobox(mv_left, state="readonly", font=("Arial", 10))
+        self.combo_new_motor.pack(fill=tk.X, padx=(0, 5))
+        self.combo_new_motor.bind("<<ComboboxSelected>>", self._on_wizard_motor_change)
+
+        mv_right = tk.Frame(motor_voice_frame, bg="#333")
+        mv_right.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        tk.Label(mv_right, text="Voz:", bg="#333", fg="#ccc", font=("Arial", 8)).pack(anchor="w")
+        self.combo_new_voice = ttk.Combobox(mv_right, state="readonly", font=("Arial", 10))
+        self.combo_new_voice.pack(fill=tk.X)
+
+        # Botones de Acción
+        btn_box = tk.Frame(self.new_thread_frame, bg="#333")
+        btn_box.pack(fill=tk.X)
+        
+        tk.Button(btn_box, text="Crear e Iniciar Hilo", bg="#0078d4", fg="white", relief="flat", 
+                  command=self._confirm_new_thread, padx=10).pack(side=tk.LEFT)
+        tk.Button(btn_box, text="Cancelar", bg="#555", fg="white", relief="flat", 
+                  command=self._cancel_new_thread, padx=10).pack(side=tk.LEFT, padx=10)
+
+        # --- ÁREA DE TEXTO (Hijo de middle_container) ---
+        self.chat_display = scrolledtext.ScrolledText(self.middle_container, state='disabled', 
                                                       bg="#1e1e1e", fg="white", 
                                                       font=("Consolas", 10), wrap=tk.WORD)
-        self.chat_display.pack(padx=10, pady=5, fill=tk.BOTH, expand=True)
+        self.chat_display.pack(padx=10, fill=tk.BOTH, expand=True)
 
-        # --- ÁREA DE ENTRADA (Dos Filas) ---
-        input_area = tk.Frame(self.chat_frame, bg="#2b2b2b")
-        input_area.pack(padx=10, pady=5, fill=tk.X)
+        # --- ÁREA DE ENTRADA (Hijo de chat_frame - SIEMPRE ABAJO) ---
+        self.input_area = tk.Frame(self.chat_frame, bg="#2b2b2b")
+        self.input_area.pack(padx=10, pady=5, fill=tk.X)
 
         # FILA 1: Campo de texto (Ocupa todo el ancho)
-        self.input_field = tk.Entry(input_area, bg="#3c3c3c", fg="white", 
+        self.input_field = tk.Entry(self.input_area, bg="#3c3c3c", fg="white", 
                                     insertbackground="white", relief="flat", font=("Arial", 10))
         self.input_field.pack(fill=tk.X, ipady=5, pady=(0, 5))
         self.input_field.bind("<Return>", lambda e: self.handle_send())
 
         # FILA 2: Botones y Controles
-        btns_frame = tk.Frame(input_area, bg="#2b2b2b")
+        btns_frame = tk.Frame(self.input_area, bg="#2b2b2b")
         btns_frame.pack(fill=tk.X)
 
         # Vision
@@ -154,6 +242,13 @@ class ChatWidget(tk.Frame):
         self.settings_frame = SettingsView(self.container, self.config, self.show_chat)
 
     def _load_initial_state(self):
+        # Memoria (NUEVA)
+        self._refresh_memories()
+        active_thread = self.chat_engine.memory.active_thread
+        self.last_valid_thread = active_thread # Guardar para cancelar
+        self.combo_memory.set(active_thread)
+        self._update_profile_ui()
+
         # AI
         last_provider = self.config.get("last_provider", "Ollama")
         self.combo_provider.set(last_provider)
@@ -166,8 +261,156 @@ class ChatWidget(tk.Frame):
 
         # STT
         self.combo_stt_provider.set(self.config.get("stt_provider", "None"))
-        self.combo_stt_mode.set(self.config.get("stt_mode", "none"))
+        self.combo_stt_mode.set(self.config.get("stt_mode", "OFF"))
         self.stt_service.update_adapter()
+
+    def _refresh_memories(self):
+        threads = ["None", "New"] + self.chat_engine.memory.list_threads()
+        self.combo_memory['values'] = threads
+
+    def _on_memory_change(self, event):
+        selection = self.combo_memory.get()
+        if selection == "New":
+            # Mostrar Wizard en lugar de crear directamente
+            self._set_wizard_visibility(True)
+            return
+            
+        self.last_valid_thread = selection
+        self.chat_engine.memory.load_thread(selection)
+        self.config.set("active_thread", selection)
+        self._update_profile_ui()
+        
+        # Limpiar chat y cargar historial
+        self.chat_display.config(state='normal')
+        self.chat_display.delete('1.0', tk.END)
+        self.chat_display.config(state='disabled')
+        for msg in self.chat_engine.get_history():
+            color = "#569cd6" if msg.sender == "Tú" else "#ce9178"
+            self._append_message(msg.sender, msg.content, color)
+
+    def _set_wizard_visibility(self, visible: bool):
+        if visible:
+            # Limpiar campos para nuevo hilo
+            self.ent_new_name.delete(0, tk.END)
+            self.ent_new_pers.delete(0, tk.END)
+            self.txt_new_hist.delete("1.0", tk.END)
+            
+            # Motores
+            motors = self.chat_engine.get_voice_providers_list()
+            self.combo_new_motor['values'] = motors
+            self.combo_new_motor.set(self.combo_voice.get()) # Por defecto el actual global
+            self._on_wizard_motor_change(None) # Cargar voces para ese motor
+            
+            self.chat_display.pack_forget()
+            self.new_thread_frame.pack(fill=tk.BOTH, expand=True)
+            self.input_field.config(state="disabled")
+        else:
+            self.new_thread_frame.pack_forget()
+            self.chat_display.pack(padx=10, fill=tk.BOTH, expand=True)
+            self.input_field.config(state="normal")
+
+    def _on_wizard_motor_change(self, event):
+        motor = self.combo_new_motor.get()
+        # En el wizard usamos un motor temporal para listar voces
+        from core.factories.voice_factory import VoiceFactory
+        adapter = VoiceFactory.get_adapter(motor)
+        if adapter:
+            voices = adapter.list_voices()
+            self.combo_new_voice['values'] = ["None"] + [f"{v['id']} - {v['name']}" for v in voices]
+            self.combo_new_voice.set("None")
+
+    def _confirm_new_thread(self):
+        name = self.ent_new_name.get()
+        pers = self.ent_new_pers.get()
+        hist = self.txt_new_hist.get("1.0", tk.END).strip()
+        
+        motor = self.combo_new_motor.get()
+        voice_selection = self.combo_new_voice.get()
+        voice_id = ""
+        if voice_selection != "None":
+            voice_id = voice_selection.split(" - ")[0]
+        
+        # 1. Crear el hilo físicamente
+        new_id = self.chat_engine.memory.create_new_thread()
+        
+        # 2. Aplicar perfil (incluyendo motor y voz)
+        self.chat_engine.memory.update_profile(
+            name=name if name else None,
+            personality=pers if pers else None,
+            history=hist if hist else None,
+            voice_id=voice_id if voice_id else None,
+            voice_provider=motor if motor != "None" else None
+        )
+        
+        # 3. Finalizar selección
+        self.last_valid_thread = new_id
+        self._refresh_memories()
+        self.combo_memory.set(new_id)
+        self.config.set("active_thread", new_id)
+        self._set_wizard_visibility(False)
+        self._on_memory_change(None) # Recargar UI (historial vacío)
+
+    def _cancel_new_thread(self):
+        self._set_wizard_visibility(False)
+        self.combo_memory.set(self.last_valid_thread)
+
+    def _on_sidebar_motor_change(self, event):
+        motor = self.combo_char_motor.get()
+        from core.factories.voice_factory import VoiceFactory
+        adapter = VoiceFactory.get_adapter(motor)
+        if adapter:
+            voices = adapter.list_voices()
+            self.combo_char_voice['values'] = ["None"] + [f"{v['id']} - {v['name']}" for v in voices]
+            self.combo_char_voice.set("None")
+
+    def _update_profile_ui(self):
+        data = self.chat_engine.memory.data
+        self.ent_char_name.delete(0, tk.END)
+        self.ent_char_name.insert(0, data.get("name", ""))
+        self.ent_char_pers.delete(0, tk.END)
+        self.ent_char_pers.insert(0, data.get("personality", ""))
+        
+        # Motores
+        motors = self.chat_engine.get_voice_providers_list()
+        self.combo_char_motor['values'] = motors
+        char_motor = data.get("voice_provider", "")
+        if char_motor and char_motor in motors:
+            self.combo_char_motor.set(char_motor)
+        else:
+            self.combo_char_motor.set("None")
+            
+        self._on_sidebar_motor_change(None) # Poblar voces para ese motor
+        
+        # Seleccionar voz
+        v_list = self.combo_char_voice['values']
+        char_voice = data.get("voice_id", "")
+        found = False
+        if char_voice:
+            for v_str in v_list:
+                if v_str.startswith(f"{char_voice} -"):
+                    self.combo_char_voice.set(v_str)
+                    found = True
+                    break
+        if not found:
+            self.combo_char_voice.set("None")
+
+    def _save_profile(self):
+        name = self.ent_char_name.get()
+        pers = self.ent_char_pers.get()
+        motor = self.combo_char_motor.get()
+        voice_selection = self.combo_char_voice.get()
+        
+        voice_id = ""
+        if voice_selection != "None":
+            voice_id = voice_selection.split(" - ")[0]
+            
+        self.chat_engine.memory.update_profile(
+            name=name, 
+            personality=pers, 
+            voice_id=voice_id,
+            voice_provider=motor if motor != "None" else None
+        )
+        self.status_label_simulated = "Perfil guardado"
 
     def _on_provider_change(self, event):
         provider = self.combo_provider.get()

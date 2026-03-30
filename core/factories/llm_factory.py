@@ -1,3 +1,4 @@
+from core.adapters.anthropic_adapter import AnthropicAdapter
 from core.adapters.ollama_adapter import OllamaAdapter
 from core.adapters.openai_adapter import OpenAIAdapter
 from core.adapters.gemini_adapter import GeminiAdapter
@@ -6,11 +7,10 @@ from core.adapters.generic_openai_adapter import GenericOpenAIAdapter
 class LLMFactory:
     """
     Factoría única encargada de instanciar los diversos adaptadores de LLM.
-    Concentra todo el conocimiento sobre 'cómo' se crea cada proveedor.
     """
     @staticmethod
     def list_providers() -> list:
-        return ["Ollama", "OpenAI", "Gemini", "DeepSeek", "Groq", "Perplexity"]
+        return ["Ollama", "OpenAI", "Anthropic", "Gemini", "DeepSeek", "Groq", "Perplexity"]
 
     @staticmethod
     def get_adapter(provider_name, config):
@@ -24,6 +24,10 @@ class LLMFactory:
         elif provider_name == "OpenAI":
             key = config.get("openai_key", "")
             return OpenAIAdapter(api_key=key)
+
+        elif provider_name == "Anthropic":
+            key = config.get("anthropic_key", "")
+            return AnthropicAdapter(api_key=key)
 
         elif provider_name == "Gemini":
             key = config.get("gemini_key", "")

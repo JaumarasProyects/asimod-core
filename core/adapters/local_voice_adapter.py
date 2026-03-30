@@ -28,8 +28,14 @@ class LocalVoiceAdapter(VoicePort):
             import pyttsx3
             engine = pyttsx3.init()
             
-            if voice_id:
+            # Validar si el ID de voz existe en el sistema local
+            voices = engine.getProperty('voices')
+            supported_ids = [v.id for v in voices]
+            
+            if voice_id and voice_id in supported_ids:
                 engine.setProperty('voice', voice_id)
+            else:
+                if voice_id: print(f"[LocalVoice] Voice ID '{voice_id}' not found. Using system default.")
             
             engine.save_to_file(text, output_path)
             engine.runAndWait()

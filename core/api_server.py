@@ -38,15 +38,80 @@ class APIServer:
 
         @self.app.get("/v1/status")
         def get_status():
+            # Determinar qué voz y motor se usaría realmente (Personaje > Global)
+            char_voice = self.chat_service.memory.data.get("voice_id")
+            char_provider = self.chat_service.memory.data.get("voice_provider")
+            
+            global_provider = self.chat_service.config.get("voice_provider", "Edge TTS")
+            global_voice = self.chat_service.config.get("voice_id", "es-ES-AlvaroNeural")
+
+            actual_voice = char_voice if (char_voice and char_voice != "None" and char_voice.strip() != "") else global_voice
+            actual_provider = char_provider if (char_provider and char_provider != "None" and char_provider != "") else global_provider
+            
             return {
-                "provider": self.chat_service.config.get("last_provider"),
-                "model": self.chat_service.config.get("last_model"),
-                "voice_provider": self.chat_service.config.get("voice_provider"),
-                "voice_mode": self.chat_service.config.get("voice_mode"),
-                "voice_save_path": self.chat_service.config.get("voice_save_path", "audio"),
-                "stt_provider": self.chat_service.config.get("stt_provider"),
-                "stt_mode": self.chat_service.config.get("stt_mode")
+                "provider": self.chat_service.config.get("last_provider", "Ollama"),
+                "model": self.chat_service.config.get("last_model", ""),
+                "active_thread": self.chat_service.memory.active_thread,
+                "voice_provider": actual_provider if actual_provider and actual_provider != "None" else "None",
+                "voice_mode": self.chat_service.config.get("voice_mode", "autoplay"),
+                "voice_id": actual_voice if actual_voice else "es-ES-AlvaroNeural",
+                "stt_provider": self.chat_service.config.get("stt_provider", "None"),
+                "stt_mode": self.chat_service.config.get("stt_mode", "OFF")
             }
+
+        # --- MEMORY MANAGEMENT ---
+
+        @self.app.get("/v1/memories")
+        def list_memories():
+            """Lista todos los hilos de conversación guardados."""
+            return {"memories": self.chat_service.memory.list_threads()}
+
+        @self.app.get("/v1/memories/current")
+        def get_current_memory():
+            """Retorna la configuración y el historial de la memoria activa."""
+            return {
+                "thread_id": self.chat_service.memory.active_thread,
+                "data": self.chat_service.memory.data
+            }
+
+        @self.app.post("/v1/memories")
+        def switch_or_create_memory(data: dict):
+            """
+            Cambia a una memoria o crea una nueva.
+            Payload: {"thread_id": "New", "name": "...", "personality": "...", "history": "...", "voice_id": "..."}
+            """
+            target = data.get("thread_id", "None")
+            name = data.get("name")
+            pers = data.get("personality")
+            hist = data.get("history")
+            voice = data.get("voice_id")
+            v_prov = data.get("voice_provider")
+
+            if target == "New":
+                new_id = self.chat_service.memory.create_new_thread()
+                if name or pers or hist or voice or v_prov:
+                    self.chat_service.memory.update_profile(name=name, personality=pers, history=hist, voice_id=voice, voice_provider=v_prov)
+                self.chat_service.config.set("active_thread", new_id)
+                return {"status": "success", "thread_id": new_id}
+            else:
+                self.chat_service.memory.load_thread(target)
+                self.chat_service.config.set("active_thread", target)
+                return {"status": "success", "thread_id": target}
+
+        @self.app.patch("/v1/memories/profile")
+        def update_memory_profile(data: dict):
+            """
+            Actualiza el perfil (nombre, personalidad, historia, voz, motor) de la memoria activa.
+            Payload: {"name": "...", "personality": "...", "character_history": "...", "voice_id": "...", "voice_provider": "..."}
+            """
+            self.chat_service.memory.update_profile(
+                name=data.get("name"),
+                personality=data.get("personality"),
+                history=data.get("character_history"),
+                voice_id=data.get("voice_id"),
+                voice_provider=data.get("voice_provider")
+            )
+            return {"status": "success", "message": "Memory profile updated"}
 
         @self.app.get("/v1/history")
         async def get_history():

@@ -30,21 +30,46 @@ class VoiceService:
             return self.current_adapter.list_voices()
         return []
 
-    def process_text(self, text: str):
-        if not self.current_adapter:
-            return
+    def process_text(self, text: str, voice_id: str = None, voice_provider: str = None):
+        # 1. Asegurar sincronización con la configuración global
+        global_prov = self.config.get("voice_provider", "None")
+        if not self.current_adapter or self.current_adapter.name != global_prov:
+            self._set_adapter()
+
+        # 2. Determinar qué motor usar (Personaje > Global)
+        target_provider = voice_provider if (voice_provider and voice_provider != "" and voice_provider != "None") else global_prov
+        
+        # 3. Obtener adaptador para el motor objetivo
+        if target_provider == global_prov:
+            adapter = self.current_adapter
+        else:
+            adapter = VoiceFactory.get_adapter(target_provider)
+        
+        if not adapter:
+            # Si el motor deseado no existe, intentar usar el global como último recurso
+            adapter = self.current_adapter
+            if not adapter: return
 
         save_dir = self.config.get("voice_save_path", "audio")
         if not os.path.exists(save_dir):
             os.makedirs(save_dir)
 
-        ext = ".wav" if "Local" in self.current_adapter.name else ".mp3"
+        # Usar extensión correcta según adaptador
+        ext = ".wav" if "Local" in adapter.name else ".mp3"
         ts = time.strftime("%Y%m%d_%H%M%S")
         filename = f"voice_{ts}{ext}"
         output_path = os.path.join(save_dir, filename)
 
-        voice_id = self.config.get("voice_id")
-        success = self.current_adapter.generate(text, output_path, voice_id=voice_id)
+        # Priorizar voz del personaje si existe y no es "None"/vacío
+        # Limpiar espacios en blanco para evitar falsos positivos
+        v_id_clean = voice_id.strip() if voice_id else ""
+        
+        if v_id_clean and v_id_clean != "None" and v_id_clean != "":
+            final_voice_id = v_id_clean
+        else:
+            final_voice_id = self.config.get("voice_id")
+        
+        success = adapter.generate(text, output_path, voice_id=final_voice_id)
         
         if success:
             mode = self.config.get("voice_mode", "autoplay")

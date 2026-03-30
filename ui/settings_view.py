@@ -34,6 +34,7 @@ class SettingsView(tk.Frame):
         fields = [
             ("Ollama URL", "ollama_url", False),
             ("OpenAI Key", "openai_key", True),
+            ("Anthropic Key", "anthropic_key", True),
             ("Gemini Key", "gemini_key", True),
             ("DeepSeek Key", "deepseek_key", True),
             ("Groq Key", "groq_key", True),

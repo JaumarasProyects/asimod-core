@@ -28,18 +28,29 @@ class EdgeVoiceAdapter(VoicePort):
         return self._VOICES
 
     def generate(self, text: str, output_path: str, voice_id: str = None) -> bool:
-        # Usar voz por defecto si no se pasa ID
-        voice = voice_id if voice_id else self._VOICES[3]["id"] # Álvaro por defecto
+        # 1. Validar ID de voz
+        default_voice = self._VOICES[3]["id"] # Álvaro por defecto
+        
+        # Si no viene voice_id, o es vacío, o no está en nuestra lista de soportados... usar default
+        voice_to_use = voice_id
+        if not voice_to_use or voice_to_use == "None":
+            voice_to_use = default_voice
+        else:
+            # Verificar si el ID existe en nuestra lista curada
+            supported_ids = [v["id"] for v in self._VOICES]
+            if voice_to_use not in supported_ids:
+                print(f"[EdgeVoice] Voice ID '{voice_to_use}' not supported. Falling back to {default_voice}.")
+                voice_to_use = default_voice
         
         try:
             import edge_tts
             
             async def _save():
-                communicate = edge_tts.Communicate(text, voice)
+                communicate = edge_tts.Communicate(text, voice_to_use)
                 await communicate.save(output_path)
             
             asyncio.run(_save())
             return os.path.exists(output_path)
         except Exception as e:
-            print(f"Error en EdgeTTS: {e}")
+            print(f"Error en EdgeTTS con voz {voice_to_use}: {e}")
             return False
