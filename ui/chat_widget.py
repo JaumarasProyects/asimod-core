@@ -92,16 +92,7 @@ class ChatWidget(tk.Frame):
         self.llm_bar = tk.Frame(self.toolbar, bg="#2b2b2b", pady=2)
         self.llm_bar.pack(fill=tk.X)
 
-        tk.Label(self.llm_bar, text="Idioma:", bg="#2b2b2b", fg="#888", font=("Arial", 8)).pack(side=tk.LEFT)
-        languages = self.chat_engine.locale_service.list_available_languages()
-        self.combo_language = ttk.Combobox(self.llm_bar, values=list(languages.values()), state="readonly", width=10)
-        self.combo_language.pack(side=tk.LEFT, padx=5)
-        self.combo_language.bind("<<ComboboxSelected>>", self._on_language_change)
-        
-        current_lang_code = self.chat_engine.locale_service.get_current_language()
-        self.combo_language.set(languages.get(current_lang_code, "Español"))
-
-        tk.Label(self.llm_bar, text="Motor AI:", bg="#2b2b2b", fg="#888", font=("Arial", 8)).pack(side=tk.LEFT, padx=(15, 0))
+        tk.Label(self.llm_bar, text="Motor AI:", bg="#2b2b2b", fg="#888", font=("Arial", 8)).pack(side=tk.LEFT)
         allowed_backends = self.chat_engine.get_providers_list()
         self.combo_provider = ttk.Combobox(self.llm_bar, values=allowed_backends, state="readonly", width=12)
         self.combo_provider.pack(side=tk.LEFT, padx=5)
@@ -248,7 +239,7 @@ class ChatWidget(tk.Frame):
         self.lbl_files.pack(fill=tk.X, padx=10)
 
         # 2. VISTA DE CONFIGURACIÓN
-        self.settings_frame = SettingsView(self.container, self.config, self.show_chat)
+        self.settings_frame = SettingsView(self.container, self.config, self.chat_engine.locale_service, self.show_chat)
 
     def _load_initial_state(self):
         # Memoria (NUEVA)
@@ -420,16 +411,6 @@ class ChatWidget(tk.Frame):
             voice_provider=motor if motor != "None" else None
         )
         self.status_label_simulated = "Perfil guardado"
-
-    def _on_language_change(self, event):
-        selected_name = self.combo_language.get()
-        languages = self.chat_engine.locale_service.list_available_languages()
-        lang_code = next((code for code, name in languages.items() if name == selected_name), "es")
-        self.chat_engine.locale_service.set_language(lang_code)
-        
-        default_voice = self.chat_engine.locale_service.get_default_voice()
-        self.config.set("voice_id", default_voice["voice_id"])
-        self._on_voice_change(None)
 
     def _on_provider_change(self, event):
         provider = self.combo_provider.get()

@@ -42,6 +42,15 @@
         {
             "role": "assistant",
             "content": "Creo que he cometido un error anteriormente. Como Gravity, soy una inteligencia artificial diseñada para proporcionar asistencia y responder preguntas en una variedad de temas. No tengo una conexión directa con Unity o cualquier otro software específico.\n\nMi capacidad para interactuar con ti es a través del lenguaje natural, lo que significa que puedo entender y responder a tus preguntas y comentarios en un lenguaje claro y conciso. Si necesitas ayuda con algo relacionado con Unity, puedo tratar de proporcionarte información general o sugerencias, pero no tengo acceso a recursos o funcionalidades específicas del software.\n\n¿En qué puedo ayudarte hoy, Jaime?"
+        },
+        {
+            "role": "user",
+            "content": "hello"
+        },
+        {
+            "role": "assistant",
+            "content": "Hola Jaime! ¿Cómo estás? ¿Necesitas algo en particular o solo quieres charlar un rato? Estoy aquí para escucharte y ayudarte en lo que pueda."
         }
-    ]
+    ],
+    "voice_id": ""
 }

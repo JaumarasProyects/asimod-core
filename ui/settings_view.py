@@ -5,9 +5,10 @@ class SettingsView(tk.Frame):
     """
     Panel de configuración embebido dentro del ChatWidget.
     """
-    def __init__(self, parent, config_service, back_callback):
+    def __init__(self, parent, config_service, locale_service, back_callback):
         super().__init__(parent, bg="#2b2b2b")
         self.config = config_service
+        self.locale_service = locale_service
         self.back_callback = back_callback
         self.init_ui()
 
@@ -23,6 +24,20 @@ class SettingsView(tk.Frame):
         title = tk.Label(self, text="⚙️ Configuración Global", 
                          bg="#2b2b2b", fg="white", font=("Arial", 12, "bold"))
         title.pack(pady=10)
+
+        # Selector de idioma
+        lang_frame = tk.Frame(self, bg="#2b2b2b")
+        lang_frame.pack(fill=tk.X, padx=20, pady=(0, 10))
+        
+        tk.Label(lang_frame, text="Idioma:", bg="#2b2b2b", fg="#888", font=("Arial", 10)).pack(side=tk.LEFT)
+        
+        languages = self.locale_service.list_available_languages()
+        self.lang_combo = ttk.Combobox(lang_frame, values=list(languages.values()), state="readonly", width=15)
+        self.lang_combo.pack(side=tk.LEFT, padx=10)
+        
+        current_lang_code = self.locale_service.get_current_language()
+        self.lang_combo.set(languages.get(current_lang_code, "Español"))
+        self.lang_combo.bind("<<ComboboxSelected>>", self._on_language_change)
 
         # Contenedor con scroll si fuera necesario (aunque 6 campos caben bien)
         container = tk.Frame(self, bg="#2b2b2b")
@@ -59,6 +74,17 @@ class SettingsView(tk.Frame):
         save_btn = tk.Button(self, text="Guardar Cambios", bg="#0078d4", fg="white", 
                              font=("Arial", 10, "bold"), relief="flat", width=20, command=self.save)
         save_btn.pack(pady=20, ipady=5)
+
+    def _on_language_change(self, event):
+        selected_name = self.lang_combo.get()
+        languages = self.locale_service.list_available_languages()
+        lang_code = next((code for code, name in languages.items() if name == selected_name), "es")
+        self.locale_service.set_language(lang_code)
+        
+        default_voice = self.locale_service.get_default_voice()
+        self.config.set("voice_id", default_voice["voice_id"])
+        
+        messagebox.showinfo("Idioma cambiado", f"Idioma cambiado a: {selected_name}\nLos cambios se aplicarán al recargar.")
 
     def save(self):
         for key, entry in self._entries.items():
