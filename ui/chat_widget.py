@@ -1,5 +1,6 @@
 import tkinter as tk
 import os
+import threading
 from tkinter import ttk, scrolledtext, filedialog
 from core.ports.chat_port import ChatPort
 from ui.settings_view import SettingsView
@@ -264,24 +265,53 @@ class ChatWidget(tk.Frame):
         self.combo_vision.set("None")
 
     def handle_send(self):
+        """Dispara el proceso de envío de forma asíncrona para no bloquear la UI."""
         text = self.input_field.get()
         if not text and not self.current_images: return
         
         display_text = text if text else "(Imagen enviada)"
         self._append_message("Tú", display_text, "#569cd6")
         self.input_field.delete(0, tk.END)
-        self.update()
+        
+        # Feedback visual y bloqueo preventivo
+        self.send_btn.config(state=tk.DISABLED, text="Pensando...")
+        self.update() 
         
         model = self.combo_model.get()
-        # Pasamos el texto y la lista de imágenes capturadas
-        result = self.chat_engine.send_message(text, model=model, images=self.current_images)
+        images = list(self.current_images) # Copia de la lista actual
         
-        # Limpiar imágenes tras el envío
+        # Limpiar lista de imágenes de la UI
         self.current_images = []
         self.lbl_files.config(text="")
         
+        # Ejecutar en hilo secundario
+        thread = threading.Thread(
+            target=self._async_send_task, 
+            args=(text, model, images),
+            daemon=True
+        )
+        thread.start()
+
+    def _async_send_task(self, text, model, images):
+        """Tarea ejecutada en hilo de fondo."""
+        try:
+            # Esta llamada es bloqueante pero el hilo principal sigue libre
+            result = self.chat_engine.send_message(text, model=model, images=images)
+            # Notificar al hilo principal para actualizar UI
+            self.after(0, self._handle_response, result)
+        except Exception as e:
+            error_msg = {"response": f"Error crítico: {str(e)}", "status": "error"}
+            self.after(0, self._handle_response, error_msg)
+
+    def _handle_response(self, result):
+        """Actualiza la interfaz con la respuesta (Corre en el hilo principal)."""
+        self.send_btn.config(state=tk.NORMAL, text="Enviar respuesta")
+        
         # Mostramos la respuesta original (con emojis/asteriscos) en la UI
-        self._append_message("AI", result["response"], "#ce9178")
+        if isinstance(result, dict) and "response" in result:
+            self._append_message("AI", result["response"], "#ce9178")
+        else:
+            self._append_message("Sistema", str(result), "red")
 
     def _stop_audio(self):
         """Detiene la reproducción de audio actual."""

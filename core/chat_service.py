@@ -39,6 +39,10 @@ class ChatService(ChatPort):
     def get_providers_list(self) -> List[str]:
         return LLMFactory.list_providers()
 
+    def get_voice_providers_list(self) -> List[str]:
+        from core.factories.voice_factory import VoiceFactory
+        return VoiceFactory.list_providers()
+
     def get_available_models(self) -> List[str]:
         if self.current_adapter:
             return self.current_adapter.list_models()

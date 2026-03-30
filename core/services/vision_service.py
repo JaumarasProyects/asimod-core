@@ -1,5 +1,6 @@
 import os
 import time
+import atexit
 from pathlib import Path
 from tkinter import filedialog
 
@@ -21,6 +22,8 @@ class VisionService:
     def __init__(self, output_dir="output/vision"):
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
+        # Limpieza automática al salir del programa
+        atexit.register(self.clear_all_captures)
 
     def _gen_path(self, prefix: str) -> str:
         """Genera una ruta de archivo única."""
@@ -75,3 +78,13 @@ class VisionService:
             filetypes=[("Imágenes", "*.jpg *.png *.jpeg *.webp")]
         )
         return os.path.abspath(path) if path else None
+
+    def clear_all_captures(self):
+        """Elimina todos los archivos en la carpeta de capturas temporales."""
+        try:
+            for file in self.output_dir.glob("*"):
+                if file.is_file():
+                    file.unlink()
+            print(f"[Vision] Limpieza de temporales completada en {self.output_dir}")
+        except Exception as e:
+            print(f"[Vision] Error en limpieza: {e}")

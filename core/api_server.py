@@ -37,12 +37,15 @@ class APIServer:
             return {"status": "online", "message": "ASIMOD Core API is active"}
 
         @self.app.get("/v1/status")
-        async def get_status():
+        def get_status():
             return {
                 "provider": self.chat_service.config.get("last_provider"),
                 "model": self.chat_service.config.get("last_model"),
                 "voice_provider": self.chat_service.config.get("voice_provider"),
-                "stt_provider": self.chat_service.config.get("stt_provider")
+                "voice_mode": self.chat_service.config.get("voice_mode"),
+                "voice_save_path": self.chat_service.config.get("voice_save_path", "audio"),
+                "stt_provider": self.chat_service.config.get("stt_provider"),
+                "stt_mode": self.chat_service.config.get("stt_mode")
             }
 
         @self.app.get("/v1/history")
@@ -51,7 +54,7 @@ class APIServer:
             return [{"sender": msg.sender, "content": msg.content} for msg in history]
 
         @self.app.post("/v1/audio/pause")
-        async def audio_pause():
+        def audio_pause():
             """Silencia el micrófono (llamado desde Unity/Unreal)."""
             if self.chat_service.stt_service:
                 self.chat_service.stt_service.pause_capture()
@@ -59,7 +62,7 @@ class APIServer:
             return {"status": "error", "message": "STT Service not available"}
 
         @self.app.post("/v1/audio/resume")
-        async def audio_resume():
+        def audio_resume():
             """Reactiva el micrófono con delay de seguridad (llamado desde Unity/Unreal)."""
             if self.chat_service.stt_service:
                 self.chat_service.stt_service.resume_capture()
@@ -67,13 +70,58 @@ class APIServer:
             return {"status": "error", "message": "STT Service not available"}
 
         @self.app.post("/v1/audio/stop")
-        async def audio_stop():
+        def audio_stop():
             """Detiene el audio actual y reanuda el micro (llamado desde Unity/Unreal)."""
             self.chat_service.voice_service.stop_audio()
             return {"status": "success", "message": "Audio stopped remotely"}
 
+        # --- NUEVOS ENDPOINTS DE CONFIGURACIÓN ---
+
+        @self.app.get("/v1/providers")
+        def list_providers():
+            """Lista todos los proveedores de LLM disponibles."""
+            return {"providers": self.chat_service.get_providers_list()}
+
+        @self.app.get("/v1/voice_providers")
+        def list_voice_providers():
+            """Lista todos los proveedores de Voz disponibles."""
+            return {"voice_providers": self.chat_service.get_voice_providers_list()}
+
+        @self.app.get("/v1/models")
+        def list_models(provider: Optional[str] = None):
+            """Lista los modelos del proveedor actual o de uno específico."""
+            if provider:
+                # Cambiar temporalmente de adaptador para listar si es necesario
+                self.chat_service.switch_provider(provider)
+            return {"models": self.chat_service.get_available_models()}
+
+        @self.app.get("/v1/voices")
+        def list_voices():
+            """Lista todas las voces disponibles para el motor de TTS activo."""
+            return {"voices": self.chat_service.voice_service.get_available_voices()}
+
+        @self.app.post("/v1/config")
+        def update_config(config_data: dict):
+            """
+            Actualiza la configuración (provider, model, voice_id, etc) vía API.
+            Formato: {"last_provider": "Ollama", "voice_id": "8", ...}
+            """
+            for key, value in config_data.items():
+                self.chat_service.config.set(key, value)
+            
+            # Notificar cambios a los servicios
+            if "last_provider" in config_data:
+                self.chat_service.switch_provider(config_data["last_provider"])
+            if "voice_provider" in config_data:
+                self.chat_service.voice_service.update_provider()
+            if "stt_provider" in config_data or "stt_mode" in config_data:
+                if self.chat_service.stt_service:
+                    self.chat_service.stt_service.update_adapter()
+                
+            return {"status": "success", "message": "Configuration updated"}
+
         @self.app.post("/v1/chat")
-        async def chat(request: ChatRequest):
+        def chat(request: ChatRequest):
             try:
                 # El servicio de chat ahora devuelve un dict con {response, clean_text, emojis}
                 result = self.chat_service.send_message(request.text, model=request.model)

@@ -41,6 +41,27 @@ public class AsimodClient : MonoBehaviour
         public string stt_mode;
     }
 
+    [Serializable]
+    public class VoiceProvidersResponse
+    {
+        public string[] voice_providers;
+    }
+
+    [Serializable]
+    public class VoiceEntry
+    {
+        public string id;
+        public string name;
+        public string language;
+        public string detail;
+    }
+
+    [Serializable]
+    public class VoicesResponse
+    {
+        public VoiceEntry[] voices;
+    }
+
     #endregion
 
     #region Public API Methods
@@ -66,6 +87,28 @@ public class AsimodClient : MonoBehaviour
         StartCoroutine(GetRequest("/status", (res) => {
             StatusResponse status = JsonUtility.FromJson<StatusResponse>(res);
             onSuccess?.Invoke(status);
+        }, onError));
+    }
+
+    /// <summary>
+    /// Lists all available Voice Providers (TTS Engines).
+    /// </summary>
+    public void GetVoiceProviders(Action<string[]> onSuccess, Action<string> onError)
+    {
+        StartCoroutine(GetRequest("/voice_providers", (res) => {
+            VoiceProvidersResponse vRes = JsonUtility.FromJson<VoiceProvidersResponse>(res);
+            onSuccess?.Invoke(vRes.voice_providers);
+        }, onError));
+    }
+
+    /// <summary>
+    /// Lists all available voices for the current voice provider.
+    /// </summary>
+    public void GetVoices(Action<VoiceEntry[]> onSuccess, Action<string> onError)
+    {
+        StartCoroutine(GetRequest("/voices", (res) => {
+            VoicesResponse vRes = JsonUtility.FromJson<VoicesResponse>(res);
+            onSuccess?.Invoke(vRes.voices);
         }, onError));
     }
 
