@@ -30,8 +30,12 @@ public class AsimodTestTool : MonoBehaviour
     [HideInInspector] public string[] availableModels = new string[0];
     [HideInInspector] public string[] availableMemories = new string[0];
     [HideInInspector] public AsimodClient.VoiceEntry[] availableVoices = new AsimodClient.VoiceEntry[0];
+    [HideInInspector] public AsimodClient.LanguageEntry[] availableLanguages = new AsimodClient.LanguageEntry[0];
 
     public string testMemory = "None";
+    public string testLanguage = "es";
+    public string testVoiceMode = "autoplay";
+    public string testVoicePath = "audio";
     
     // Configuración para Nuevo Hilo
     public string testNewName = "";
@@ -106,6 +110,20 @@ public class AsimodTestTool : MonoBehaviour
         );
     }
 
+    public void RefreshLanguages()
+    {
+        status = "Fetching languages...";
+        Client.GetLanguages(
+            (res) => {
+                availableLanguages = res;
+                status = "Languages refreshed!";
+            },
+            (err) => {
+                status = "Error fetching languages: " + err;
+            }
+        );
+    }
+
     public void TestConnection()
     {
         status = "Testing connection...";
@@ -115,12 +133,28 @@ public class AsimodTestTool : MonoBehaviour
                 testProvider = res.provider;
                 testModel = res.model;
                 testMemory = res.active_thread;
+                testLanguage = res.language;
+                testVoiceMode = res.voice_mode;
+                testVoicePath = res.voice_path;
                 testVoiceId = res.voice_id;
                 testVoiceProvider = res.voice_provider;
-                Debug.Log($"[AsimodTest] Connected to {res.active_thread} thread.");
+                Debug.Log($"[AsimodTest] Connected to {res.active_thread} thread. Language: {res.language}, VoiceMode: {res.voice_mode}, VoicePath: {res.voice_path}");
             },
             (err) => {
                 status = "Error: " + err;
+            }
+        );
+    }
+
+    public void TestSetLanguage()
+    {
+        status = "Setting language...";
+        Client.SetLanguage(testLanguage,
+            () => {
+                status = "Language set to: " + testLanguage;
+            },
+            (err) => {
+                status = "Error setting language: " + err;
             }
         );
     }
@@ -142,8 +176,7 @@ public class AsimodTestTool : MonoBehaviour
 
     public void TestUpdateConfig()
     {
-        // Enviar configuración global (LLM y TTS por separado)
-        string json = $"{{\"last_provider\": \"{testProvider}\", \"last_model\": \"{testModel}\", \"voice_id\": \"{testVoiceId}\", \"voice_provider\": \"{testVoiceProvider}\"}}";
+        string json = $"{{\"last_provider\": \"{testProvider}\", \"last_model\": \"{testModel}\", \"voice_id\": \"{testVoiceId}\", \"voice_provider\": \"{testVoiceProvider}\", \"voice_mode\": \"{testVoiceMode}\", \"voice_save_path\": \"{testVoicePath}\"}}";
         status = "Updating Config...";
         Client.UpdateConfig(json,
             () => {
@@ -249,6 +282,33 @@ public class AsimodTestToolEditor : Editor
         EditorGUILayout.EndHorizontal();
 
         EditorGUILayout.Space();
+        EditorGUILayout.LabelField("Language & Settings", EditorStyles.boldLabel);
+        
+        // Language Selector
+        if (tool.availableLanguages == null || tool.availableLanguages.Length == 0)
+        {
+            EditorGUILayout.LabelField("Language", "No languages loaded (click 🔄)");
+            tool.testLanguage = EditorGUILayout.TextField("Language", tool.testLanguage);
+        }
+        else
+        {
+            string[] languageNames = new string[tool.availableLanguages.Length];
+            for(int i=0; i<languageNames.Length; i++) languageNames[i] = tool.availableLanguages[i].name;
+            
+            EditorGUILayout.BeginHorizontal();
+            int langIdx = -1;
+            for(int i=0; i<tool.availableLanguages.Length; i++) if(tool.availableLanguages[i].code == tool.testLanguage) langIdx = i;
+            
+            int newLangIdx = EditorGUILayout.Popup("Language", Mathf.Max(0, langIdx), languageNames);
+            tool.testLanguage = tool.availableLanguages[newLangIdx].code;
+            EditorGUILayout.EndHorizontal();
+        }
+        
+        if (GUILayout.Button("🔄 Refresh Languages", GUILayout.Width(150))) tool.RefreshLanguages();
+        
+        if (GUILayout.Button("Set Language")) tool.TestSetLanguage();
+
+        EditorGUILayout.Space();
         EditorGUILayout.LabelField("AI Motor (Global Context)", EditorStyles.boldLabel);
         
         // Provider
@@ -271,6 +331,15 @@ public class AsimodTestToolEditor : Editor
 
         EditorGUILayout.Space();
         EditorGUILayout.LabelField("Voice Output (Global/Temporary)", EditorStyles.boldLabel);
+        
+        // Voice Mode (autoplay/path)
+        string[] voiceModes = new string[] { "autoplay", "path" };
+        int vmIdx = System.Array.IndexOf(voiceModes, tool.testVoiceMode);
+        if (vmIdx < 0) vmIdx = 0;
+        tool.testVoiceMode = voiceModes[EditorGUILayout.Popup("Voice Mode", vmIdx, voiceModes)];
+        
+        // Voice Path
+        tool.testVoicePath = EditorGUILayout.TextField("Voice Path", tool.testVoicePath);
         
         // Motor de Voz Global
         EditorGUILayout.BeginHorizontal();

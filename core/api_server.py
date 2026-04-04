@@ -1,23 +1,39 @@
 import threading
 import uvicorn
+import queue
+import time
+
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import Optional
 from fastapi.middleware.cors import CORSMiddleware
+
 
 class ChatRequest(BaseModel):
     text: str
     model: Optional[str] = None
+    silent: Optional[bool] = False
 
+class SpeakRequest(BaseModel):
+            text: str
+            voice_id: Optional[str] = None
+            voice_provider: Optional[str] = None
 class APIServer:
     """
     Servidor API para exponer las funcionalidades de ASIMOD Core.
     """
+
     def __init__(self, chat_service, port=8000, host="0.0.0.0"):
         self.chat_service = chat_service
         self.port = port
         self.host = host
         self.app = FastAPI(title="ASIMOD Core API")
+
+        # Cola y estado STT para Unity / integraciones externas
+        self.stt_results = queue.Queue()
+        self.last_stt_text = ""
+        self.last_stt_timestamp = 0.0
+
         self._setup_routes()
         self._setup_cors()
         self._thread = None
@@ -31,6 +47,31 @@ class APIServer:
             allow_headers=["*"],
         )
 
+    # =========================================================
+    # STT QUEUE / BUFFER
+    # =========================================================
+    def push_stt_result(self, text: str):
+        if not text:
+            return
+
+        text = text.strip()
+        if not text:
+            return
+
+        ts = time.time()
+        self.last_stt_text = text
+        self.last_stt_timestamp = ts
+
+        self.stt_results.put({
+            "text": text,
+            "timestamp": ts
+        })
+
+        print(f"[API][STT] Queued transcription: {text}")
+
+    # =========================================================
+    # ROUTES
+    # =========================================================
     def _setup_routes(self):
         @self.app.get("/")
         async def root():
@@ -38,37 +79,53 @@ class APIServer:
 
         @self.app.get("/v1/status")
         def get_status():
-            # Determinar qué voz y motor se usaría realmente (Personaje > Global)
+            # Determinar qué voz real se usaría (Personaje > Global)
             char_voice = self.chat_service.memory.data.get("voice_id")
             char_provider = self.chat_service.memory.data.get("voice_provider")
-            
+
             global_provider = self.chat_service.config.get("voice_provider", "Edge TTS")
             global_voice = self.chat_service.config.get("voice_id", "es-ES-AlvaroNeural")
 
-            actual_voice = char_voice if (char_voice and char_voice != "None" and char_voice.strip() != "") else global_voice
-            actual_provider = char_provider if (char_provider and char_provider != "None" and char_provider != "") else global_provider
-            
+            actual_voice = (
+                char_voice
+                if (char_voice and char_voice != "None" and str(char_voice).strip() != "")
+                else global_voice
+            )
+
+            actual_provider = (
+                char_provider
+                if (char_provider and char_provider != "None" and str(char_provider).strip() != "")
+                else global_provider
+            )
+
             return {
                 "provider": self.chat_service.config.get("last_provider", "Ollama"),
                 "model": self.chat_service.config.get("last_model", ""),
                 "active_thread": self.chat_service.memory.active_thread,
-                "voice_provider": actual_provider if actual_provider and actual_provider != "None" else "None",
+                "language": self.chat_service.locale_service.get_current_language(),
+                "voice_provider": actual_provider if actual_provider else "None",
                 "voice_mode": self.chat_service.config.get("voice_mode", "autoplay"),
+                "voice_path": self.chat_service.config.get("voice_save_path", "audio"),
                 "voice_id": actual_voice if actual_voice else "es-ES-AlvaroNeural",
                 "stt_provider": self.chat_service.config.get("stt_provider", "None"),
                 "stt_mode": self.chat_service.config.get("stt_mode", "OFF")
             }
 
-        # --- MEMORY MANAGEMENT ---
-
+        # =====================================================
+        # MEMORY MANAGEMENT
+        # =====================================================
         @self.app.get("/v1/memories")
         def list_memories():
-            """Lista todos los hilos de conversación guardados."""
             return {"memories": self.chat_service.memory.list_threads()}
+
+        @self.app.get("/v1/memories/exists/{thread_id}")
+        def check_thread_exists(thread_id: str):
+            all_threads = self.chat_service.memory.list_threads()
+            exists = thread_id in all_threads
+            return {"thread_id": thread_id, "exists": exists}
 
         @self.app.get("/v1/memories/current")
         def get_current_memory():
-            """Retorna la configuración y el historial de la memoria activa."""
             return {
                 "thread_id": self.chat_service.memory.active_thread,
                 "data": self.chat_service.memory.data
@@ -76,10 +133,6 @@ class APIServer:
 
         @self.app.post("/v1/memories")
         def switch_or_create_memory(data: dict):
-            """
-            Cambia a una memoria o crea una nueva.
-            Payload: {"thread_id": "New", "name": "...", "personality": "...", "history": "...", "voice_id": "..."}
-            """
             target = data.get("thread_id", "None")
             name = data.get("name")
             pers = data.get("personality")
@@ -89,20 +142,51 @@ class APIServer:
 
             if target == "New":
                 new_id = self.chat_service.memory.create_new_thread()
+                self.chat_service.memory.load_thread(new_id)
+
                 if name or pers or hist or voice or v_prov:
-                    self.chat_service.memory.update_profile(name=name, personality=pers, history=hist, voice_id=voice, voice_provider=v_prov)
+                    self.chat_service.memory.update_profile(
+                        name=name,
+                        personality=pers,
+                        history=hist,
+                        voice_id=voice,
+                        voice_provider=v_prov
+                    )
+
                 self.chat_service.config.set("active_thread", new_id)
                 return {"status": "success", "thread_id": new_id}
-            else:
-                self.chat_service.memory.load_thread(target)
-                self.chat_service.config.set("active_thread", target)
-                return {"status": "success", "thread_id": target}
+
+            all_threads = self.chat_service.memory.list_threads()
+
+            if target not in all_threads:
+                self.chat_service.memory.create_named_thread(target)
+
+            self.chat_service.memory.load_thread(target)
+
+            if name or pers or hist or voice or v_prov:
+                self.chat_service.memory.update_profile(
+                    name=name,
+                    personality=pers,
+                    history=hist,
+                    voice_id=voice,
+                    voice_provider=v_prov
+                )
+
+            self.chat_service.config.set("active_thread", target)
+            return {"status": "success", "thread_id": target}
 
         @self.app.patch("/v1/memories/profile")
         def update_memory_profile(data: dict):
             """
-            Actualiza el perfil (nombre, personalidad, historia, voz, motor) de la memoria activa.
-            Payload: {"name": "...", "personality": "...", "character_history": "...", "voice_id": "...", "voice_provider": "..."}
+            Actualiza el perfil de la memoria activa.
+            Payload:
+            {
+                "name": "...",
+                "personality": "...",
+                "character_history": "...",
+                "voice_id": "...",
+                "voice_provider": "..."
+            }
             """
             self.chat_service.memory.update_profile(
                 name=data.get("name"),
@@ -118,9 +202,11 @@ class APIServer:
             history = self.chat_service.get_history()
             return [{"sender": msg.sender, "content": msg.content} for msg in history]
 
+        # =====================================================
+        # AUDIO
+        # =====================================================
         @self.app.post("/v1/audio/pause")
         def audio_pause():
-            """Silencia el micrófono (llamado desde Unity/Unreal)."""
             if self.chat_service.stt_service:
                 self.chat_service.stt_service.pause_capture()
                 return {"status": "success", "message": "Microphone paused"}
@@ -128,7 +214,6 @@ class APIServer:
 
         @self.app.post("/v1/audio/resume")
         def audio_resume():
-            """Reactiva el micrófono con delay de seguridad (llamado desde Unity/Unreal)."""
             if self.chat_service.stt_service:
                 self.chat_service.stt_service.resume_capture()
                 return {"status": "success", "message": "Microphone resuming with safety delay"}
@@ -136,25 +221,113 @@ class APIServer:
 
         @self.app.post("/v1/audio/stop")
         def audio_stop():
-            """Detiene el audio actual y reanuda el micro (llamado desde Unity/Unreal)."""
             self.chat_service.voice_service.stop_audio()
             return {"status": "success", "message": "Audio stopped remotely"}
+        
+        @self.app.post("/v1/audio/speak")
+        def audio_speak(request: SpeakRequest):
+            try:
+                text = (request.text or "").strip()
+                if not text:
+                    return {"status": "error", "message": "Text is empty"}
 
-        # --- NUEVOS ENDPOINTS DE CONFIGURACIÓN ---
+                if not hasattr(self.chat_service, "voice_service") or not self.chat_service.voice_service:
+                    return {"status": "error", "message": "Voice service not available"}
 
+                self.chat_service.voice_service.speak_text(
+                    text=text,
+                    voice_id=request.voice_id,
+                    voice_provider=request.voice_provider
+                )
+
+                return {"status": "success", "message": "Speech launched"}
+
+            except Exception as e:
+                print(f"[API] Speak error: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.get("/v1/audio/status")
+        def audio_status():
+            is_playing = False
+
+            if hasattr(self.chat_service, "voice_service") and self.chat_service.voice_service:
+                is_playing = bool(getattr(self.chat_service.voice_service, "is_playing", False))
+
+            return {
+                "status": "success",
+                "is_playing": is_playing
+            }
+
+        # =====================================================
+        # STT
+        # =====================================================
+        @self.app.get("/v1/stt/latest")
+        def get_latest_stt():
+            return {
+                "status": "success",
+                "text": self.last_stt_text,
+                "timestamp": self.last_stt_timestamp
+            }
+
+        @self.app.get("/v1/stt/next")
+        def get_next_stt():
+            try:
+                item = self.stt_results.get_nowait()
+                return {
+                    "status": "success",
+                    "has_result": True,
+                    "text": item["text"],
+                    "timestamp": item["timestamp"]
+                }
+            except queue.Empty:
+                return {
+                    "status": "success",
+                    "has_result": False,
+                    "text": "",
+                    "timestamp": 0.0
+                }
+
+        @self.app.post("/v1/stt/clear")
+        def clear_stt_queue():
+            while not self.stt_results.empty():
+                try:
+                    self.stt_results.get_nowait()
+                except Exception:
+                    break
+
+            self.last_stt_text = ""
+            self.last_stt_timestamp = 0.0
+
+            return {"status": "success", "message": "STT queue cleared"}
+
+        @self.app.post("/v1/stt/mode")
+        def set_stt_mode(data: dict):
+            """
+            Cambia el modo STT:
+            OFF / CHAT / COMMAND / QUESTION
+            """
+            mode = str(data.get("mode", "OFF")).upper()
+
+            self.chat_service.config.set("stt_mode", mode)
+
+            if self.chat_service.stt_service:
+                self.chat_service.stt_service.manage_microphone_thread()
+
+            return {"status": "success", "mode": mode}
+
+        # =====================================================
+        # CONFIG / CATALOGS
+        # =====================================================
         @self.app.get("/v1/providers")
         def list_providers():
-            """Lista todos los proveedores de LLM disponibles."""
             return {"providers": self.chat_service.get_providers_list()}
 
         @self.app.get("/v1/languages")
         def list_languages():
-            """Lista todos los idiomas disponibles."""
             return {"languages": self.chat_service.locale_service.list_available_languages()}
 
         @self.app.post("/v1/language")
         def set_language(data: dict):
-            """Cambia el idioma de la aplicación."""
             lang = data.get("language")
             if lang:
                 self.chat_service.locale_service.set_language(lang)
@@ -163,58 +336,75 @@ class APIServer:
 
         @self.app.get("/v1/voice_providers")
         def list_voice_providers():
-            """Lista todos los proveedores de Voz disponibles."""
             return {"voice_providers": self.chat_service.get_voice_providers_list()}
 
         @self.app.get("/v1/models")
         def list_models(provider: Optional[str] = None):
-            """Lista los modelos del proveedor actual o de uno específico."""
             if provider:
-                # Cambiar temporalmente de adaptador para listar si es necesario
                 self.chat_service.switch_provider(provider)
             return {"models": self.chat_service.get_available_models()}
 
         @self.app.get("/v1/voices")
         def list_voices():
-            """Lista todas las voces disponibles para el motor de TTS activo."""
             return {"voices": self.chat_service.voice_service.get_available_voices()}
 
         @self.app.post("/v1/config")
         def update_config(config_data: dict):
             """
-            Actualiza la configuración (provider, model, voice_id, etc) vía API.
-            Formato: {"last_provider": "Ollama", "voice_id": "8", ...}
+            Actualiza configuración global.
             """
             for key, value in config_data.items():
                 self.chat_service.config.set(key, value)
-            
-            # Notificar cambios a los servicios
+
             if "last_provider" in config_data:
                 self.chat_service.switch_provider(config_data["last_provider"])
+
             if "voice_provider" in config_data:
                 self.chat_service.voice_service.update_provider()
+
             if "stt_provider" in config_data or "stt_mode" in config_data:
                 if self.chat_service.stt_service:
                     self.chat_service.stt_service.update_adapter()
-                
+
             return {"status": "success", "message": "Configuration updated"}
+
+        # =====================================================
+        # CHAT
+        # =====================================================
+        
 
         @self.app.post("/v1/chat")
         def chat(request: ChatRequest):
             try:
-                # El servicio de chat ahora devuelve un dict con {response, clean_text, emojis}
-                result = self.chat_service.send_message(request.text, model=request.model)
+                model = request.model
+                if not model or model.strip() == "":
+                    model = self.chat_service.config.get("last_model")
+
+                silent = bool(request.silent)
+
+                print(f"[API] Chat request - text: {request.text[:50]}..., model: {model}, silent: {silent}")
+
+                result = self.chat_service.send_message(
+                    request.text,
+                    model=model,
+                    silent=silent
+                )
+
                 return {
                     "response": result["response"],
                     "clean_text": result["clean_text"],
                     "emojis": result["emojis"],
                     "status": "success"
                 }
+
             except Exception as e:
+                print(f"[API] Chat error: {e}")
                 raise HTTPException(status_code=500, detail=str(e))
 
+    # =========================================================
+    # RUN
+    # =========================================================
     def run(self, blocking=False):
-        """Inicia el servidor. Si blocking=True, lo hace en el hilo principal."""
         def start_uvicorn():
             uvicorn.run(self.app, host=self.host, port=self.port, log_level="info")
 

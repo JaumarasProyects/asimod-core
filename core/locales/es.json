@@ -16,15 +16,34 @@
     "save": "Guardar",
     "test": "Probar",
     "autoplay": "Auto-reproducir",
-    "manual": "Manual"
+    "manual": "Manual",
+    "back": "Volver al Chat",
+    "new_character": "NUEVO MODELO DE PERSONAJE",
+    "character_name": "Nombre del Personaje",
+    "attitude": "Actitud / Personalidad",
+    "background": "Historia / Trasfondo",
+    "create_thread": "Crear e Iniciar Hilo",
+    "cancel": "Cancelar",
+    "tts_output": "TTS (Salida):",
+    "stt_input": "STT (Entrada):",
+    "mode": "Modo:"
   },
   "chat": {
     "placeholder": "Escribe tu mensaje...",
-    "send": "Enviar",
+    "send": "Enviar respuesta",
+    "send_btn": "Enviar respuesta",
     "listening": "Escuchando...",
     "processing": "Procesando...",
     "new_chat": "Nuevo Chat",
-    "select_thread": "Seleccionar hilo"
+    "select_thread": "Seleccionar hilo",
+    "stop": "Stop",
+    "vision": "Vision:",
+    "audio": "Audio",
+    "thinking": "Pensando...",
+    "you": "Tú",
+    "ai": "AI",
+    "system": "Sistema",
+    "sending": "Pensando..."
   },
   "providers": {
     "OpenAI": "OpenAI",
@@ -45,12 +64,14 @@
   },
   "memory": {
     "title": "Memoria",
-    "name": "Nombre del personaje",
-    "personality": "Personalidad",
+    "name": "Nombre:",
+    "personality": "Personalidad:",
     "history": "Historia/Contexto",
     "new_thread": "Crear nuevo hilo",
     "load_thread": "Cargar hilo",
-    "delete_thread": "Eliminar hilo"
+    "delete_thread": "Eliminar hilo",
+    "voice": "Voz:",
+    "motor": "Motor AI:"
   },
   "vision": {
     "title": "Visión",
@@ -70,5 +91,9 @@
     "offline": "Desconectado",
     "processing": "Procesando",
     "ready": "Listo"
+  },
+  "common": {
+    "save_profile": "Perfil guardado",
+    "files_ready": "Archivos listos:"
   }
 }

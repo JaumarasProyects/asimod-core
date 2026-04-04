@@ -16,15 +16,34 @@
     "save": "Save",
     "test": "Test",
     "autoplay": "Auto-play",
-    "manual": "Manual"
+    "manual": "Manual",
+    "back": "Back to Chat",
+    "new_character": "NEW CHARACTER MODEL",
+    "character_name": "Character Name",
+    "attitude": "Attitude / Personality",
+    "background": "History / Background",
+    "create_thread": "Create & Start Thread",
+    "cancel": "Cancel",
+    "tts_output": "TTS (Output):",
+    "stt_input": "STT (Input):",
+    "mode": "Mode:"
   },
   "chat": {
     "placeholder": "Type your message...",
-    "send": "Send",
+    "send": "Send response",
+    "send_btn": "Send response",
     "listening": "Listening...",
     "processing": "Processing...",
     "new_chat": "New Chat",
-    "select_thread": "Select thread"
+    "select_thread": "Select thread",
+    "stop": "Stop",
+    "vision": "Vision:",
+    "audio": "Audio",
+    "thinking": "Thinking...",
+    "you": "You",
+    "ai": "AI",
+    "system": "System",
+    "sending": "Thinking..."
   },
   "providers": {
     "OpenAI": "OpenAI",
@@ -45,12 +64,14 @@
   },
   "memory": {
     "title": "Memory",
-    "name": "Character Name",
-    "personality": "Personality",
+    "name": "Name:",
+    "personality": "Personality:",
     "history": "History/Context",
     "new_thread": "Create new thread",
     "load_thread": "Load thread",
-    "delete_thread": "Delete thread"
+    "delete_thread": "Delete thread",
+    "voice": "Voice:",
+    "motor": "AI Engine:"
   },
   "vision": {
     "title": "Vision",
@@ -70,5 +91,9 @@
     "offline": "Offline",
     "processing": "Processing",
     "ready": "Ready"
+  },
+  "common": {
+    "save_profile": "Profile saved",
+    "files_ready": "Files ready:"
   }
 }

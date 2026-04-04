@@ -37,10 +37,31 @@ public class AsimodClient : MonoBehaviour
         public string provider;
         public string model;
         public string active_thread;
+        public string language;
         public string voice_provider;
         public string voice_mode;
+        public string voice_path;
         public string voice_id;
         public string stt_mode;
+    }
+
+    [Serializable]
+    public class LanguageEntry
+    {
+        public string code;
+        public string name;
+    }
+
+    [Serializable]
+    public class LanguagesResponse
+    {
+        public LanguageEntry[] languages;
+    }
+
+    [Serializable]
+    public class SetLanguageRequest
+    {
+        public string language;
     }
 
     [Serializable]
@@ -83,6 +104,13 @@ public class AsimodClient : MonoBehaviour
     }
 
     [Serializable]
+    public class ThreadExistsResponse
+    {
+        public string thread_id;
+        public bool exists;
+    }
+
+    [Serializable]
     public class MemoryProfileRequest
     {
         public string name;
@@ -119,6 +147,17 @@ public class AsimodClient : MonoBehaviour
     }
 
     /// <summary>
+    /// Checks if a specific thread exists.
+    /// </summary>
+    public void CheckThreadExists(string threadId, Action<bool> onSuccess, Action<string> onError)
+    {
+        StartCoroutine(GetRequest("/memories/exists/" + UnityWebRequest.EscapeURL(threadId), (res) => {
+            ThreadExistsResponse tRes = JsonUtility.FromJson<ThreadExistsResponse>(res);
+            onSuccess?.Invoke(tRes.exists);
+        }, onError));
+    }
+
+    /// <summary>
     /// Switches to a specific memory or creates a 'New' one with optional profile data.
     /// </summary>
     public void SetMemory(string threadId, string name = null, string personality = null, string history = null, string voiceId = null, string voiceProvider = null, Action<string> onSuccess = null, Action<string> onError = null)
@@ -151,6 +190,27 @@ public class AsimodClient : MonoBehaviour
         };
         string json = JsonUtility.ToJson(req);
         StartCoroutine(PatchRequest("/memories/profile", json, (res) => onSuccess?.Invoke(), onError));
+    }
+
+    /// <summary>
+    /// Lists all available languages.
+    /// </summary>
+    public void GetLanguages(Action<LanguageEntry[]> onSuccess, Action<string> onError)
+    {
+        StartCoroutine(GetRequest("/languages", (res) => {
+            LanguagesResponse lRes = JsonUtility.FromJson<LanguagesResponse>(res);
+            onSuccess?.Invoke(lRes.languages);
+        }, onError));
+    }
+
+    /// <summary>
+    /// Sets the application language.
+    /// </summary>
+    public void SetLanguage(string languageCode, Action onSuccess, Action<string> onError)
+    {
+        SetLanguageRequest req = new SetLanguageRequest { language = languageCode };
+        string json = JsonUtility.ToJson(req);
+        StartCoroutine(PostRequest("/language", json, (res) => onSuccess?.Invoke(), onError));
     }
 
     /// <summary>

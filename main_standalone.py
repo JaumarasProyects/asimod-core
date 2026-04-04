@@ -2,7 +2,6 @@ import sys
 import os
 import tkinter as tk
 
-# Ajuste de path para que el ejemplo sea ejecutable desde aquí
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from core.services.config_service import ConfigService
@@ -16,7 +15,6 @@ def main():
     root.geometry("450x650")
     root.configure(bg="#2b2b2b")
 
-    # Intentar cargar el icono de la aplicación
     try:
         current_dir = os.path.dirname(os.path.abspath(__file__))
         icon_path = os.path.join(current_dir, "Resources", "logo.ico")
@@ -25,22 +23,20 @@ def main():
     except Exception as e:
         print(f"Error cargando icono: {e}")
 
-    # 1. Inicializamos el Servicio de Configuración (Persistencia)
     config_service = ConfigService(filename="settings.json")
-
-    # 2. Inicializamos el CORE (Orquestador de LLMs)
-    # Le pasamos la config para que sepa qué adaptador usar al inicio.
     chat_engine = ChatService(config_service=config_service)
 
-    # VINCULACIÓN: Silenciar micro mientras suena audio
+    # sincronización TTS <-> STT
     chat_engine.voice_service.set_stt_service(chat_engine.stt_service)
 
-    # 3. Inicializamos el Servidor de API (Puerto dinámico)
     api_port = config_service.get("api_port", 8000)
     api_server = APIServer(chat_service=chat_engine, port=int(api_port))
+
+    # conectar resultados STT de juego a la cola expuesta por API
+    chat_engine.on_stt_result_cb = api_server.push_stt_result
+
     api_server.run()
 
-    # 4. Inicializamos la UI inyectando el CORE y la CONFIG
     chat_ui = ChatWidget(root, chat_engine=chat_engine, config_service=config_service)
     chat_ui.pack(fill=tk.BOTH, expand=True)
 

@@ -105,6 +105,7 @@ class MemoryService:
         hist = self.data.get("character_history", "")
         
         lang_instruction = ""
+        lang = "es"
         if locale_service:
             lang = locale_service.get_current_language()
             if lang == "es":
@@ -117,5 +118,23 @@ class MemoryService:
         if hist: prompt += f"Tu historia/contexto: {hist} \n"
         if lang_instruction:
             prompt += f"\n{lang_instruction}"
-        prompt += "\nResponde siempre manteniendo este personaje."
+        
+        if lang == "es":
+            prompt += "\nResponde siempre manteniendo este personaje."
+        elif lang == "en":
+            prompt += "\nAlways respond maintaining this character."
+        
         return prompt
+    def create_named_thread(self, thread_id: str):
+        """
+        Crea un hilo nuevo con un ID explícito si no existe.
+        """
+        all_threads = self.list_threads()
+
+        if thread_id in all_threads:
+            return thread_id
+
+        self.active_thread = thread_id
+        self.data = self._get_empty_thread()
+        self.save_current()
+        return thread_id

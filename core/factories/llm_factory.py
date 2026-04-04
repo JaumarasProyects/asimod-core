@@ -3,6 +3,7 @@ from core.adapters.ollama_adapter import OllamaAdapter
 from core.adapters.openai_adapter import OpenAIAdapter
 from core.adapters.gemini_adapter import GeminiAdapter
 from core.adapters.generic_openai_adapter import GenericOpenAIAdapter
+from core.adapters.gguf_adapter import GGUFAdapter
 
 class LLMFactory:
     """
@@ -10,7 +11,7 @@ class LLMFactory:
     """
     @staticmethod
     def list_providers() -> list:
-        return ["Ollama", "OpenAI", "Anthropic", "Gemini", "DeepSeek", "Groq", "Perplexity"]
+        return ["Ollama", "GGUF (Local)", "OpenAI", "Anthropic", "Gemini", "DeepSeek", "Groq", "Perplexity"]
 
     @staticmethod
     def get_adapter(provider_name, config):
@@ -20,6 +21,13 @@ class LLMFactory:
         if provider_name == "Ollama":
             url = config.get("ollama_url", "http://localhost:11434")
             return OllamaAdapter(base_url=url)
+        
+        elif provider_name == "GGUF (Local)":
+            models_dir = config.get("gguf_models_dir")
+            n_threads = config.get("gguf_n_threads", 8)
+            n_ctx = config.get("gguf_n_ctx", 4096)
+            n_gpu_layers = config.get("gguf_n_gpu_layers", 99)
+            return GGUFAdapter(models_dir=models_dir, n_threads=n_threads, n_ctx=n_ctx, n_gpu_layers=n_gpu_layers)
             
         elif provider_name == "OpenAI":
             key = config.get("openai_key", "")
