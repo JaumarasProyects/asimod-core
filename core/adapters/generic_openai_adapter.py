@@ -24,7 +24,7 @@ class GenericOpenAIAdapter(LLMPort):
         with open(image_path, "rb") as image_file:
             return base64.b64encode(image_file.read()).decode('utf-8')
 
-    def generate_chat(self, history: list, system_prompt: str, model: str, images: list = None) -> str:
+    def generate_chat(self, history: list, system_prompt: str, model: str, images: list = None, max_tokens: int = None, temperature: float = None) -> str:
         if not self.api_key:
             return f"Error: No se ha configurado la API Key para {self._name}."
         
@@ -35,16 +35,19 @@ class GenericOpenAIAdapter(LLMPort):
                 "Content-Type": "application/json"
             }
             
-            # Construir la lista de mensajes
             messages = [{"role": "system", "content": system_prompt}] + history
 
-            # Seleccionar el modelo
             target_model = model if model else (self._models[0] if self._models else "default")
 
             payload = {
                 "model": target_model,
                 "messages": messages
             }
+            
+            if max_tokens is not None:
+                payload["max_tokens"] = max_tokens
+            if temperature is not None:
+                payload["temperature"] = temperature
 
             response = requests.post(url, headers=headers, json=payload, timeout=30)
             if response.status_code == 200:

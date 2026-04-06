@@ -12,7 +12,7 @@ from ui.chat_widget import ChatWidget
 def main():
     root = tk.Tk()
     root.title("ASIMOD Core")
-    root.geometry("450x650")
+    root.geometry("450x750")
     root.configure(bg="#2b2b2b")
 
     try:

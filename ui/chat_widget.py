@@ -6,6 +6,7 @@ from core.ports.chat_port import ChatPort
 from ui.settings_view import SettingsView
 from core.services.stt_service import STTService
 from core.services.vision_service import VisionService
+from core.adapters.waveform_visualizer import WaveformVisualizer
 
 class ChatWidget(tk.Frame):
     """
@@ -18,6 +19,8 @@ class ChatWidget(tk.Frame):
         self.vision_service = VisionService()
         self.current_images = []
         self._ui_labels = {}
+        self.visualizer = None
+        self.toolbar_visible = True
         
         # Vincular STT Service del engine con la UI
         self.stt_service = self.chat_engine.stt_service
@@ -27,9 +30,18 @@ class ChatWidget(tk.Frame):
         self.container = tk.Frame(self, bg="#2b2b2b")
         self.container.pack(fill=tk.BOTH, expand=True)
 
+        self._setup_visualizer()
         self.init_ui()
         self._load_initial_state()
         self._update_ui_texts()
+        
+    def _setup_visualizer(self):
+        """Configura el visualizador si está habilitado"""
+        if self.config.get("visualizer_enabled", False):
+            self.visualizer = WaveformVisualizer(self, width=600, height=60)
+            if self.chat_engine.voice_service:
+                self.chat_engine.voice_service.on_audio_start = self.visualizer.on_audio_start
+                self.chat_engine.voice_service.on_audio_end = self.visualizer.on_audio_end
 
     def t(self, key: str) -> str:
         return self.chat_engine.locale_service.t(key)
@@ -92,21 +104,29 @@ class ChatWidget(tk.Frame):
         self.chat_frame.pack(fill=tk.BOTH, expand=True)
         
         # --- BARRA DE HERRAMIENTAS (Cuádruple Línea) ---
+        # Header superior (no se oculta)
+        self.top_bar = tk.Frame(self.chat_frame, bg="#2b2b2b", pady=5)
+        self.top_bar.pack(fill=tk.X, padx=10)
+
+        # Toolbar colapsable (debajo de top_bar)
         self.toolbar = tk.Frame(self.chat_frame, bg="#2b2b2b", pady=5)
         self.toolbar.pack(fill=tk.X, padx=10)
-
-        # LÍNEA 1: Cabecera (Título + API + Configuración)
-        self.header_bar = tk.Frame(self.toolbar, bg="#2b2b2b")
-        self.header_bar.pack(fill=tk.X, pady=(0, 5))
-
-        tk.Label(self.header_bar, text="ASIMOD Core", bg="#2b2b2b", fg="#0078d4", font=("Arial", 10, "bold")).pack(side=tk.LEFT)
-        # Indicador de API
-        api_port = self.config.get("api_port", 8000)
-        tk.Label(self.header_bar, text=f"🌐 API: ON ({api_port})", bg="#2b2b2b", fg="#4EC9B0", font=("Arial", 8, "italic")).pack(side=tk.LEFT, padx=10)
+        self.btn_toggle_toolbar = tk.Button(self.top_bar, text="▼", bg="#2b2b2b", fg="#888",
+                                            relief="flat", cursor="hand2", command=self._toggle_toolbar,
+                                            font=("Arial", 10))
+        self.btn_toggle_toolbar.pack(side=tk.LEFT, padx=(0, 5))
         
-        self.btn_settings = tk.Button(self.header_bar, text="⚙️", bg="#2b2b2b", fg="#0078d4",
+        tk.Label(self.top_bar, text="ASIMOD Core", bg="#2b2b2b", fg="#0078d4", font=("Arial", 10, "bold")).pack(side=tk.LEFT)
+        api_port = self.config.get("api_port", 8000)
+        tk.Label(self.top_bar, text=f"API: ON ({api_port})", bg="#2b2b2b", fg="#4EC9B0", font=("Arial", 8, "italic")).pack(side=tk.LEFT, padx=10)
+        
+        self.btn_settings = tk.Button(self.top_bar, text="⚙️", bg="#2b2b2b", fg="#0078d4",
                                       relief="flat", cursor="hand2", command=self.show_settings)
         self.btn_settings.pack(side=tk.RIGHT)
+
+        # Visualizer (si está habilitado)
+        if self.visualizer:
+            self.visualizer.create(self.chat_frame)
 
         # LÍNEA 0: Gestión de Memoria e Hilos (NUEVA)
         self.memory_bar = tk.Frame(self.toolbar, bg="#2b2b2b", pady=2)
@@ -166,6 +186,24 @@ class ChatWidget(tk.Frame):
         self.combo_model.pack(side=tk.LEFT, padx=5)
         self.combo_model.bind("<<ComboboxSelected>>", self._on_model_change)
 
+        # LÍNEA 2.5: Controles de Inferencia (Max Tokens + Temperature)
+        self.inference_bar = tk.Frame(self.toolbar, bg="#2b2b2b", pady=2)
+        self.inference_bar.pack(fill=tk.X)
+
+        tk.Label(self.inference_bar, text="Max Tokens:", bg="#2b2b2b", fg="#888", font=("Arial", 8)).pack(side=tk.LEFT)
+        self.spin_max_tokens = tk.Spinbox(self.inference_bar, from_=64, to=4096, width=6, bg="#333", fg="white")
+        self.spin_max_tokens.pack(side=tk.LEFT, padx=5)
+        self.spin_max_tokens.delete(0, tk.END)
+        self.spin_max_tokens.insert(0, self.config.get("max_tokens", 1024))
+        self.spin_max_tokens.bind("<<Spinbox>>", self._on_inference_change)
+
+        tk.Label(self.inference_bar, text="Temp:", bg="#2b2b2b", fg="#888", font=("Arial", 8)).pack(side=tk.LEFT, padx=(10, 0))
+        self.slider_temp = tk.Scale(self.inference_bar, from_=0.1, to=2.0, resolution=0.1, orient=tk.HORIZONTAL, 
+                                    bg="#2b2b2b", fg="white", length=100, showvalue=1)
+        self.slider_temp.pack(side=tk.LEFT, padx=5)
+        self.slider_temp.set(self.config.get("temperature", 0.7))
+        self.slider_temp.bind("<ButtonRelease-1>", self._on_inference_change)
+
         # LÍNEA 3: Controles de Salida de Voz (TTS)
         self.voice_bar = tk.Frame(self.toolbar, bg="#2b2b2b", pady=2)
         self.voice_bar.pack(fill=tk.X)
@@ -209,8 +247,14 @@ class ChatWidget(tk.Frame):
         ttk.Separator(self.chat_frame, orient="horizontal").pack(fill=tk.X, padx=10, pady=5)
 
         # --- CONTENEDOR CENTRAL (Para Chat o Wizard) ---
+        # Se empaqueta primero para que pueda encogerse
         self.middle_container = tk.Frame(self.chat_frame, bg="#2b2b2b")
         self.middle_container.pack(fill=tk.BOTH, expand=True)
+
+        # --- ÁREA DE ENTRADA (FOOTER - SIEMPRE ABAJO) ---
+        # Se empaqueta al final con side=BOTTOM para anclarse abajo
+        self.input_area = tk.Frame(self.chat_frame, bg="#2b2b2b")
+        self.input_area.pack(side=tk.BOTTOM, padx=10, pady=5, fill=tk.X)
 
         # --- WIZAD DE NUEVO HILO (Hijo de middle_container) ---
         self.new_thread_frame = tk.Frame(self.middle_container, bg="#333", padx=20, pady=10)
@@ -273,9 +317,7 @@ class ChatWidget(tk.Frame):
                                                       font=("Consolas", 10), wrap=tk.WORD)
         self.chat_display.pack(padx=10, fill=tk.BOTH, expand=True)
 
-        # --- ÁREA DE ENTRADA (Hijo de chat_frame - SIEMPRE ABAJO) ---
-        self.input_area = tk.Frame(self.chat_frame, bg="#2b2b2b")
-        self.input_area.pack(padx=10, pady=5, fill=tk.X)
+        # --- ÁREA DE ENTRADA (ya creada arriba en footer) ---
 
         # FILA 1: Campo de texto (Ocupa todo el ancho)
         self.input_field = tk.Entry(self.input_area, bg="#3c3c3c", fg="white", 
@@ -504,6 +546,12 @@ class ChatWidget(tk.Frame):
     def _on_model_change(self, event):
         self.config.set("last_model", self.combo_model.get())
 
+    def _on_inference_change(self, event):
+        max_tokens = int(self.spin_max_tokens.get())
+        temperature = float(self.slider_temp.get())
+        self.config.set("max_tokens", max_tokens)
+        self.config.set("temperature", temperature)
+
     def _on_voice_change(self, event):
         provider = self.combo_voice.get()
         self.config.set("voice_provider", provider)
@@ -559,6 +607,34 @@ class ChatWidget(tk.Frame):
     def show_chat(self):
         self.settings_frame.pack_forget()
         self.chat_frame.pack(fill=tk.BOTH, expand=True)
+        self._on_provider_change(None)
+        self._on_voice_change(None)
+
+    def _toggle_toolbar(self):
+        """Colapsa o expande el toolbar"""
+        if self.toolbar_visible:
+            self.toolbar.pack_forget()
+            self.btn_toggle_toolbar.config(text="▶")
+        else:
+            if self.visualizer and self.visualizer._frame:
+                self.toolbar.pack(fill=tk.X, padx=10, before=self.visualizer._frame)
+            elif hasattr(self, 'middle_container'):
+                self.toolbar.pack(fill=tk.X, padx=10, before=self.middle_container)
+            else:
+                self.toolbar.pack(fill=tk.X, padx=10)
+            self.btn_toggle_toolbar.config(text="▼")
+        self.toolbar_visible = not self.toolbar_visible
+
+    def show_chat(self):
+        self.settings_frame.pack_forget()
+        self.chat_frame.pack(fill=tk.BOTH, expand=True)
+        if self.toolbar_visible:
+            if self.visualizer and self.visualizer._frame:
+                self.toolbar.pack(fill=tk.X, padx=10, before=self.visualizer._frame)
+            elif hasattr(self, 'middle_container'):
+                self.toolbar.pack(fill=tk.X, padx=10, before=self.middle_container)
+            else:
+                self.toolbar.pack(fill=tk.X, padx=10)
         self._on_provider_change(None)
         self._on_voice_change(None)
 

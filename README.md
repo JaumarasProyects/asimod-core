@@ -16,6 +16,27 @@ Built with a **Ports & Adapters Architecture**, it allows seamless integration w
 
 ---
 
+## 🎤 Voice Playback Modes
+
+ASIMOD Core supports two voice playback modes:
+- **Interrupt Mode:** Immediately stops any playing audio and starts new playback.
+- **Wait Mode:** Queues new audio requests and plays them sequentially.
+
+Configure via `settings.json` or use the desktop UI:
+```json
+{
+  "voice_playback_mode": "interrupt"
+}
+```
+
+### Visualizer System
+A modular waveform visualizer can display audio playback:
+- **Port/Adapter Architecture:** `core/ports/visualizer_port.py` defines the interface
+- **Adapters:** `core/adapters/waveform_visualizer.py` provides waveform display
+- Enable via `settings.json`: `"visualizer_enabled": true`
+
+---
+
 ## 🛠️ Configuration
 
 The system uses a `settings.json` file for persistence. 
@@ -76,6 +97,9 @@ Returns current configuration, active providers, and audio save paths.
 - **`GET /v1/voices`**: List available TTS voices.
 - **`POST /v1/audio/stop`**: Stop current PC audio playback.
 - **`POST /v1/audio/pause/resume`**: Control local microphone capture.
+- **`GET /v1/audio/status`**: Get current playback status.
+- **`GET /v1/audio/playback_mode`**: Get current playback mode (interrupt/wait).
+- **`POST /v1/audio/playback_mode`**: Set playback mode.
 
 ---
 

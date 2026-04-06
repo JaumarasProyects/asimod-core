@@ -2,17 +2,23 @@ import threading
 import uvicorn
 import queue
 import time
+import os
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel
 from typing import Optional
 from fastapi.middleware.cors import CORSMiddleware
+
+from core.factories.messaging_factory import MessagingFactory
 
 
 class ChatRequest(BaseModel):
     text: str
     model: Optional[str] = None
     silent: Optional[bool] = False
+    max_tokens: Optional[int] = None
+    temperature: Optional[float] = None
 
 class SpeakRequest(BaseModel):
             text: str
@@ -249,14 +255,30 @@ class APIServer:
         @self.app.get("/v1/audio/status")
         def audio_status():
             is_playing = False
+            audio_start_time = None
+            audio_duration = None
 
             if hasattr(self.chat_service, "voice_service") and self.chat_service.voice_service:
-                is_playing = bool(getattr(self.chat_service.voice_service, "is_playing", False))
+                vs = self.chat_service.voice_service
+                is_playing = bool(getattr(vs, "is_playing", False))
+                audio_start_time = getattr(vs, "audio_start_time", None)
+                audio_duration = getattr(vs, "audio_duration", None)
 
             return {
                 "status": "success",
-                "is_playing": is_playing
+                "is_playing": is_playing,
+                "audio_start_time": audio_start_time,
+                "audio_duration": audio_duration,
+                "playback_mode": self.chat_service.config.get("voice_playback_mode", "interrupt")
             }
+
+        @self.app.post("/v1/audio/playback_mode")
+        def set_playback_mode(request: dict):
+            mode = request.get("mode", "interrupt")
+            if mode not in ("interrupt", "wait"):
+                return {"status": "error", "message": "Mode must be 'interrupt' or 'wait'"}
+            self.chat_service.config.set("voice_playback_mode", mode)
+            return {"status": "success", "playback_mode": mode}
 
         # =====================================================
         # STT
@@ -382,12 +404,14 @@ class APIServer:
 
                 silent = bool(request.silent)
 
-                print(f"[API] Chat request - text: {request.text[:50]}..., model: {model}, silent: {silent}")
+                print(f"[API] Chat request - text: {request.text[:50]}..., model: {model}, silent: {silent}, max_tokens: {request.max_tokens}, temp: {request.temperature}")
 
                 result = self.chat_service.send_message(
                     request.text,
                     model=model,
-                    silent=silent
+                    silent=silent,
+                    max_tokens=request.max_tokens,
+                    temperature=request.temperature
                 )
 
                 return {
@@ -400,6 +424,104 @@ class APIServer:
             except Exception as e:
                 print(f"[API] Chat error: {e}")
                 raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.get("/v1/webhook/whatsapp")
+        def whatsapp_verify():
+            mode = self.app.query_params.get("hub.mode")
+            token = self.app.query_params.get("hub.verify_token")
+            challenge = self.app.query_params.get("hub.challenge")
+
+            expected_token = self.chat_service.config.get("whatsapp_verify_token", "asimod_verify_token")
+
+            if mode == "subscribe" and token == expected_token:
+                return PlainTextResponse(content=challenge, status_code=200)
+            return PlainTextResponse(content="Forbidden", status_code=403)
+
+        @self.app.post("/v1/webhook/whatsapp")
+        async def whatsapp_webhook(request: Request):
+            try:
+                body = await request.json()
+                adapter = MessagingFactory.get_adapter("WhatsApp", self.chat_service.config)
+                if not adapter:
+                    return {"status": "error", "message": "WhatsApp not configured"}
+
+                msg = adapter.receive_message(body)
+                if not msg or not msg.get("text"):
+                    return {"status": "ok"}
+
+                user_id = msg["user_id"]
+                user_text = msg["text"]
+
+                print(f"[WhatsApp] Received from {user_id}: {user_text[:50]}")
+
+                result = self.chat_service.send_message(user_text, silent=False)
+                response_text = result.get("response", "")
+
+                voice_mode = self.chat_service.config.get("voice_mode", "autoplay")
+                if voice_mode == "autoplay":
+                    audio_path = self._generate_voice(response_text)
+                    if audio_path:
+                        adapter.send_audio(user_id, audio_path)
+                    else:
+                        adapter.send_text(user_id, response_text)
+                else:
+                    adapter.send_text(user_id, response_text)
+
+                return {"status": "ok"}
+
+            except Exception as e:
+                print(f"[WhatsApp] Webhook error: {e}")
+                return {"status": "error", "message": str(e)}
+
+        @self.app.post("/v1/webhook/telegram")
+        async def telegram_webhook(request: Request):
+            try:
+                body = await request.json()
+                adapter = MessagingFactory.get_adapter("Telegram", self.chat_service.config)
+                if not adapter:
+                    return {"status": "error", "message": "Telegram not configured"}
+
+                msg = adapter.receive_message(body)
+                if not msg or not msg.get("text"):
+                    return {"status": "ok"}
+
+                user_id = msg["user_id"]
+                user_text = msg["text"]
+
+                print(f"[Telegram] Received from {user_id}: {user_text[:50]}")
+
+                result = self.chat_service.send_message(user_text, silent=False)
+                response_text = result.get("response", "")
+
+                voice_mode = self.chat_service.config.get("voice_mode", "autoplay")
+                if voice_mode == "autoplay":
+                    audio_path = self._generate_voice(response_text)
+                    if audio_path:
+                        adapter.send_audio(user_id, audio_path)
+                    else:
+                        adapter.send_text(user_id, response_text)
+                else:
+                    adapter.send_text(user_id, response_text)
+
+                return {"status": "ok"}
+
+            except Exception as e:
+                print(f"[Telegram] Webhook error: {e}")
+                return {"status": "error", "message": str(e)}
+
+        def _generate_voice(self, text: str) -> str:
+            try:
+                self.chat_service.voice_service.speak_text(text)
+                save_dir = self.chat_service.config.get("voice_save_path", "audio")
+                files = []
+                if os.path.exists(save_dir):
+                    files = [f for f in os.listdir(save_dir) if f.startswith("voice_")]
+                if files:
+                    latest = sorted(files)[-1]
+                    return os.path.join(save_dir, latest)
+            except Exception as e:
+                print(f"[API] Voice generation error: {e}")
+            return None
 
     # =========================================================
     # RUN

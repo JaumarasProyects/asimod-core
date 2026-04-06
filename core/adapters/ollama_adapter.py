@@ -31,7 +31,7 @@ class OllamaAdapter(LLMPort):
         # Si no hay conexión o falla la respuesta, devolvemos lista vacía para no engañar al usuario
         return []
 
-    def generate_chat(self, history: list, system_prompt: str, model: str, images: list = None) -> str:
+    def generate_chat(self, history: list, system_prompt: str, model: str, images: list = None, max_tokens: int = None, temperature: float = None) -> str:
         """
         Envía un historial completo a Ollama usando el endpoint /api/chat.
         """
@@ -45,6 +45,13 @@ class OllamaAdapter(LLMPort):
                 "messages": messages,
                 "stream": False
             }
+            
+            if max_tokens is not None:
+                payload["options"] = {"num_predict": max_tokens}
+            if temperature is not None:
+                if "options" not in payload:
+                    payload["options"] = {}
+                payload["options"]["temperature"] = temperature
             
             # Nota: Ollama /api/chat soporta imágenes dentro del objeto del mensaje actual
             # Pero para simplicidad en este adaptador genérico, las incluimos en el último mensaje

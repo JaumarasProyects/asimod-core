@@ -9,7 +9,7 @@ class GGUFAdapter(LLMPort):
     Adaptador para modelos GGUF usando llama-cpp-python.
     No requiere Ollama - carga modelos directamente desde archivo.
     """
-    def __init__(self, models_dir=None, n_threads=8, n_ctx=4096, n_gpu_layers=99):
+    def __init__(self, models_dir=None, n_threads=8, n_ctx=8192, n_gpu_layers=99):
         if models_dir is None:
             models_dir = os.path.join(os.path.expanduser("~"), "Desktop", "ModelosGGUF")
         
@@ -59,12 +59,14 @@ class GGUFAdapter(LLMPort):
         except Exception as e:
             return False, f"Error al cargar: {str(e)}"
 
-    def generate_chat(self, history: List[dict], system_prompt: str, model: str, images: list = None) -> str:
+    def generate_chat(self, history: List[dict], system_prompt: str, model: str, images: list = None, max_tokens: int = None, temperature: float = None) -> str:
         """
         Genera una respuesta usando el modelo GGUF cargado.
         history: lista de mensajes [{"role": "user", "content": "..."}]
         system_prompt: prompt del sistema
         model: nombre del archivo del modelo (se cargará si es diferente)
+        max_tokens: límite de tokens de respuesta (None = usar valor por defecto)
+        temperature: temperatura de muestreo (None = usar valor por defecto)
         """
         if not self.llm:
             if not model:
@@ -84,12 +86,21 @@ class GGUFAdapter(LLMPort):
             if role in ["user", "assistant", "system"]:
                 messages.append({"role": role, "content": content})
 
+        stop_tokens = [
+            "Usuario:", "User:",
+            "<|im_end|>", "<|im_start|>",
+            "<end_of_turn>", "<end_of_text|>"
+        ]
+        
+        max_tokens_val = max_tokens if max_tokens is not None else 1024
+        temperature_val = temperature if temperature is not None else 0.7
+        
         try:
             output = self.llm.create_chat_completion(
                 messages=messages,
-                max_tokens=2048,
-                temperature=0.7,
-                stop=["Usuario:", "User:"]
+                max_tokens=max_tokens_val,
+                temperature=temperature_val,
+                stop=stop_tokens
             )
             return output['choices'][0]['message']['content']
         except Exception as e:

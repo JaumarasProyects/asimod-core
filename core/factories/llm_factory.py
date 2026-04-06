@@ -4,6 +4,9 @@ from core.adapters.openai_adapter import OpenAIAdapter
 from core.adapters.gemini_adapter import GeminiAdapter
 from core.adapters.generic_openai_adapter import GenericOpenAIAdapter
 from core.adapters.gguf_adapter import GGUFAdapter
+from core.adapters.llmstudio_adapter import LLMStudioAdapter
+from core.adapters.opencode_adapter import OpenCodeAgentAdapter
+
 
 class LLMFactory:
     """
@@ -11,7 +14,7 @@ class LLMFactory:
     """
     @staticmethod
     def list_providers() -> list:
-        return ["Ollama", "GGUF (Local)", "OpenAI", "Anthropic", "Gemini", "DeepSeek", "Groq", "Perplexity"]
+        return ["Ollama", "GGUF (Local)", "LLM Studio", "OpenCode Agent", "OpenAI", "Anthropic", "Gemini", "DeepSeek", "Groq", "Perplexity"]
 
     @staticmethod
     def get_adapter(provider_name, config):
@@ -25,10 +28,19 @@ class LLMFactory:
         elif provider_name == "GGUF (Local)":
             models_dir = config.get("gguf_models_dir")
             n_threads = config.get("gguf_n_threads", 8)
-            n_ctx = config.get("gguf_n_ctx", 4096)
+            n_ctx = config.get("gguf_n_ctx", 8192)
             n_gpu_layers = config.get("gguf_n_gpu_layers", 99)
             return GGUFAdapter(models_dir=models_dir, n_threads=n_threads, n_ctx=n_ctx, n_gpu_layers=n_gpu_layers)
-            
+
+        elif provider_name == "LLM Studio":
+            url = config.get("llmstudio_url", "http://localhost:1234/v1")
+            return LLMStudioAdapter(base_url=url)
+
+        elif provider_name == "OpenCode Agent":
+            url = config.get("opencode_url", "http://localhost:9090")
+            key = config.get("opencode_api_key", "")
+            return OpenCodeAgentAdapter(base_url=url, api_key=key)
+        
         elif provider_name == "OpenAI":
             key = config.get("openai_key", "")
             return OpenAIAdapter(api_key=key)

@@ -82,7 +82,7 @@ class ChatService(ChatPort):
             return self.current_adapter.list_models()
         return []
 
-    def send_message(self, text: str, model: str = None, images: list = None, silent: bool = False) -> Dict:
+    def send_message(self, text: str, model: str = None, images: list = None, silent: bool = False, max_tokens: int = None, temperature: float = None) -> Dict:
         """
         Envía un mensaje usando el contexto de memoria activo y procesa la respuesta.
 
@@ -100,6 +100,11 @@ class ChatService(ChatPort):
             model = self.config.get("last_model")
             print(f"[ChatService] Using default model: {model}")
 
+        if max_tokens is None:
+            max_tokens = self.config.get("max_tokens")
+        if temperature is None:
+            temperature = self.config.get("temperature")
+        
         # 1. Obtener contexto e instrucciones
         # Si silent, usamos el contexto actual pero sin contaminar el hilo
         history = self.memory.get_context()
@@ -114,7 +119,7 @@ class ChatService(ChatPort):
 
         # 3. Generar respuesta
         if self.current_adapter:
-            raw_response = self.current_adapter.generate_chat(history, system_prompt, model, images)
+            raw_response = self.current_adapter.generate_chat(history, system_prompt, model, images, max_tokens, temperature)
         else:
             raw_response = "Error: No hay un motor de LLM configurado."
 

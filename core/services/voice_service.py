@@ -16,6 +16,12 @@ class VoiceService:
         self.current_adapter = None
         self.stt_service = None  # Referencia opcional para sincronización
         self.is_playing = False  # Estado de reproducción actual
+        self.audio_start_time = None  # Timestamp cuando empieza
+        self.audio_duration = None  # Duración del audio
+        self._audio_queue = []  # Cola de audio para modo "wait"
+        self._queue_lock = threading.Lock()
+        self.on_audio_start = None  # Callback para inicio de audio
+        self.on_audio_end = None    # Callback para fin de audio
         self._set_adapter()
 
     def set_stt_service(self, stt_service):
@@ -135,13 +141,28 @@ class VoiceService:
                 self.stt_service.resume_capture(delay=0.1)
 
     def _play_audio_threaded(self, file_path):
-        thread = threading.Thread(target=self._play_audio, args=(file_path,), daemon=True)
-        thread.start()
+        playback_mode = self.config.get("voice_playback_mode", "interrupt")
+        
+        if playback_mode == "wait":
+            with self._queue_lock:
+                self._audio_queue.append(file_path)
+                if not self.is_playing:
+                    next_file = self._audio_queue.pop(0)
+                    thread = threading.Thread(target=self._play_audio, args=(next_file,), daemon=True)
+                    thread.start()
+        else:
+            with self._queue_lock:
+                self._audio_queue.clear()
+            thread = threading.Thread(target=self._play_audio, args=(file_path,), daemon=True)
+            thread.start()
 
     def _play_audio(self, file_path):
         """
         Reproduce el audio usando pygame coordinado con el STT.
         """
+        import time
+        start_time = time.time()
+        
         try:
             # 1. PAUSAR MICRO ANTES DE LA LOCUCIÓN
             if self.stt_service:
@@ -155,7 +176,11 @@ class VoiceService:
             pygame.mixer.music.load(file_path)
 
             self.is_playing = True
+            self.audio_start_time = start_time
             print(f"[VoiceService] Playing audio: {file_path}")
+            
+            if self.on_audio_start:
+                self.on_audio_start()
 
             pygame.mixer.music.play()
 
@@ -168,8 +193,19 @@ class VoiceService:
             print(f"[VoiceService] Error reproduciendo audio: {e}")
 
         finally:
-            # 2. MARCAR FIN DE AUDIO Y REANUDAR MICRO
             self.is_playing = False
+            self.audio_duration = time.time() - start_time
+
+            if self.on_audio_end:
+                self.on_audio_end()
 
             if self.stt_service:
                 self.stt_service.resume_capture()
+
+            playback_mode = self.config.get("voice_playback_mode", "interrupt")
+            if playback_mode == "wait":
+                with self._queue_lock:
+                    if self._audio_queue:
+                        next_file = self._audio_queue.pop(0)
+                        thread = threading.Thread(target=self._play_audio, args=(next_file,), daemon=True)
+                        thread.start()

@@ -20,17 +20,15 @@ class GeminiAdapter(LLMPort):
         with open(image_path, "rb") as image_file:
             return base64.b64encode(image_file.read()).decode('utf-8')
 
-    def generate_chat(self, history: list, system_prompt: str, model: str, images: list = None) -> str:
+    def generate_chat(self, history: list, system_prompt: str, model: str, images: list = None, max_tokens: int = None, temperature: float = None) -> str:
         if not self.api_key:
             return "Error: No se ha configurado la API Key de Gemini."
         
         try:
-            # Gemini usa una estructura de 'contents' y 'system_instruction'
             url = f"https://generativelanguage.googleapis.com/v1beta/models/{model if model else 'gemini-2.0-flash'}:generateContent?key={self.api_key}"
             
             headers = {"Content-Type": "application/json"}
             
-            # Formatear historial (Gemini usa 'user' y 'model' en lugar de 'assistant')
             contents = []
             for msg in history:
                 role = "user" if msg["role"] == "user" else "model"
@@ -39,7 +37,6 @@ class GeminiAdapter(LLMPort):
                     "parts": [{"text": msg["content"]}]
                 })
 
-            # Si hay imágenes, las añadimos al último contenido
             if images and contents:
                  for img_path in images:
                     b64_data = self._encode_image(img_path)
@@ -56,6 +53,11 @@ class GeminiAdapter(LLMPort):
                 },
                 "contents": contents
             }
+            
+            if max_tokens is not None:
+                payload["max_tokens"] = max_tokens
+            if temperature is not None:
+                payload["temperature"] = temperature
 
             response = requests.post(url, headers=headers, json=payload, timeout=30)
             if response.status_code == 200:
