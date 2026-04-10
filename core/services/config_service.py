@@ -42,8 +42,16 @@ class ConfigService:
             "voice_save_path": "audio",
             "voice_id": "es-ES-AlvaroNeural",
             "visualizer_enabled": False,
+            "destreaming_enabled": False,
+            "destreaming_chunk_size": 500,
             "stt_provider": "None",
             "stt_mode": "none",
+            "voice_command_enabled": False,
+            "voice_commands": {},
+            "cloudflare_tunnel_token": "",
+            "cloudflare_tunnel_id": "",
+            "cloudflare_tunnel_credentials": "",
+            "cloudflare_hostname": "",
             "api_port": 8000
         }
 
