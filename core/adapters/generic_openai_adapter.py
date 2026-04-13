@@ -61,6 +61,53 @@ class GenericOpenAIAdapter(LLMPort):
         except Exception as e:
             return f"Error de conexión con {self._name}: {str(e)}"
 
+    async def generate_chat_stream(self, history: list, system_prompt: str, model: str, images: list = None, max_tokens: int = None, temperature: float = None):
+        """Generador asíncrono para streaming compatible con OpenAI."""
+        if not self.api_key:
+            yield f"Error: No se ha configurado la API Key para {self._name}."
+            return
+            
+        url = f"{self.base_url}/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json"
+        }
+        
+        messages = [{"role": "system", "content": system_prompt}] + history
+        target_model = model if model else (self._models[0] if self._models else "default")
+        
+        payload = {
+            "model": target_model,
+            "messages": messages,
+            "stream": True # Habilitar streaming
+        }
+        
+        if max_tokens is not None: payload["max_tokens"] = max_tokens
+        if temperature is not None: payload["temperature"] = temperature
+        
+        try:
+            import json
+            async with httpx.AsyncClient() as client:
+                async with client.stream("POST", url, headers=headers, json=payload, timeout=60.0) as response:
+                    if response.status_code != 200:
+                        yield f"Error {self._name} {response.status_code}: {await response.aread()}"
+                        return
+                    
+                    async for line in response.aiter_lines():
+                        if not line.startswith("data: "): continue
+                        
+                        data_str = line[len("data: "):].strip()
+                        if data_str == "[DONE]": break
+                        
+                        try:
+                            chunk = json.loads(data_str)
+                            content = chunk["choices"][0].get("delta", {}).get("content", "")
+                            if content:
+                                yield content
+                        except: continue
+        except Exception as e:
+            yield f"Error stream {self._name}: {str(e)}"
+
     async def generate_response(self, prompt: str, model: str, images: list = None) -> str:
         if not self.api_key:
             return f"Error: No se ha configurado la API Key para {self._name}."

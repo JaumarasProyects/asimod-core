@@ -81,6 +81,7 @@
             padding: 15px 20px; display: flex; flex-direction: column; gap: 10px; 
             transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1); overflow: hidden;
             background: rgba(255,255,255,0.02);
+            flex-shrink: 0;
         }
         .studio-controls-ribbon.collapsed { height: 50px; padding: 10px 20px; opacity: 0.8; }
         .studio-controls-ribbon.collapsed #ribbonContent { display: none; }
@@ -92,21 +93,21 @@
         }
         .minimize-btn:hover { opacity: 1; }
 
-        .ribbon-row { display: flex; gap: 15px; align-items: flex-end; }
+        .ribbon-row { display: flex; gap: 15px; align-items: flex-end; flex-wrap: wrap; }
         .ribbon-actions { border-top: 1px solid rgba(255,255,255,0.03); padding-top: 10px; }
 
         .studio-textarea-small {
-            width: 100%; height: 60px; background: var(--bg-input); border: 1px solid rgba(255,255,255,0.1);
-            border-radius: 10px; padding: 10px; color: white; outline: none; resize: vertical; font-size: 0.85rem;
+            width: 100%; height: 50px; background: var(--bg-input); border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 10px; padding: 10px; color: white; outline: none; resize: none; font-size: 0.85rem;
         }
 
-        .contextual-grid { display: flex; gap: 15px; flex: 1; align-items: flex-end; }
-        .ctx-group { display: flex; flex-direction: column; gap: 5px; flex: 1; }
+        .contextual-grid { display: flex; gap: 15px; flex: 1; align-items: flex-end; flex-wrap: wrap; }
+        .ctx-group { display: flex; flex-direction: column; gap: 5px; min-width: 150px; flex: 1; }
 
         .generate-btn-ribbon {
-            min-width: 250px; background: var(--accent); color: var(--bg-dark); border: none; padding: 12px 25px;
+            min-width: 200px; background: var(--accent); color: var(--bg-dark); border: none; padding: 12px 25px;
             border-radius: 12px; font-weight: 800; font-size: 0.85rem; cursor: pointer; transition: all 0.3s;
-            display: flex; align-items: center; justify-content: center; gap: 10px;
+            display: flex; align-items: center; justify-content: center; gap: 10px; height: 45px;
         }
 
         .studio-viewport-v {
@@ -132,10 +133,11 @@
         @keyframes spin { to { transform: rotate(360deg); } }
 
         /* Estilos de inputs contextuales */
-        .ctx-select {
+        .ctx-select, .ctx-input {
             width: 100%; background: var(--bg-header); border: 1px solid rgba(255,255,255,0.1); 
-            color: white; padding: 10px; border-radius: 10px; font-size: 0.85rem; margin-bottom: 15px;
+            color: white; padding: 8px 12px; border-radius: 10px; font-size: 0.8rem; outline: none;
         }
+        .ctx-input:focus { border-color: var(--accent); }
     </style>
 
     <script>
@@ -166,30 +168,72 @@
                             <select class="ctx-select" id="ctxProvider">
                                 <option>Ollama</option>
                                 <option>Gemini</option>
+                                <option>OpenAI</option>
                             </select>
                         </div>
                         <div class="ctx-group">
                             <label class="studio-label">CREATIVIDAD (TEMP)</label>
-                            <input type="range" min="0" max="1" step="0.1" value="0.7" style="width:100%; accent-color:var(--accent); margin-bottom:8px;">
+                            <input type="range" id="temperature" min="0" max="1" step="0.1" value="0.7" style="width:100%; accent-color:var(--accent); margin-bottom:8px;">
                         </div>
                     `
                 },
                 'Imagen': {
                     controls: `
-                        <div class="ctx-group">
-                            <label class="studio-label">MOTOR DE IMAGEN</label>
-                            <select class="ctx-select" id="ctxEngine" style="margin:0;">
-                                <option>DALL-E 3</option>
-                                <option>ComfyUI</option>
-                                <option>Stable Diffusion</option>
+                        <div class="ctx-group" style="min-width:180px;">
+                            <label class="studio-label">MOTOR / ADAPTADOR</label>
+                            <select class="ctx-select" id="engine">
+                                <option value="DALL-E 3">DALL-E 3 (Cloud)</option>
+                                <option value="ComfyUI">ComfyUI (Local)</option>
+                                <option value="Stable Diffusion">Stable Diffusion (Local)</option>
                             </select>
                         </div>
                         <div class="ctx-group">
                             <label class="studio-label">RESOLUCIÓN</label>
-                            <div style="display:flex; gap:10px;">
-                                <button class="mode-btn active" style="flex:1; padding:8px;">1:1 SQ</button>
-                                <button class="mode-btn" style="flex:1; padding:8px;">16:9 HD</button>
-                            </div>
+                            <select class="ctx-select" id="resolution">
+                                <option value="Apaisada Pequeña (768x512)">Apaisada (768x512)</option>
+                                <option value="Cuadrada Pequeña (512x512)">Cuadrada (512x512)</option>
+                                <option value="Cuadrada Grande (1024x1024)">Retrato (1024x1024)</option>
+                                <option value="Apaisada Grande (1280x720)">Panorámica (1280x720)</option>
+                            </select>
+                        </div>
+                        <div class="ctx-group">
+                            <label class="studio-label">SEMILLA</label>
+                            <input type="number" class="ctx-input" id="seed" value="-1" title="-1 para aleatorio">
+                        </div>
+                        <div class="ctx-group" style="flex:2; min-width:250px;">
+                            <label class="studio-label">PROMPT NEGATIVO</label>
+                            <input type="text" class="ctx-input" id="neg_prompt" placeholder="Saca lo feo..." value="low quality, blurry, text">
+                        </div>
+                    `
+                },
+                'Video': {
+                    controls: `
+                        <div class="ctx-group">
+                            <label class="studio-label">TIPO</label>
+                            <select class="ctx-select" id="video_type">
+                                <option value="Simple">🎞️ Simple (Single Clip)</option>
+                                <option value="Compuesto">🎥 Compuesto (Story)</option>
+                            </select>
+                        </div>
+                        <div class="ctx-group">
+                            <label class="studio-label">SUBTIPO</label>
+                            <select class="ctx-select" id="video_subtype">
+                                <option value="text2video">Texto a Video</option>
+                                <option value="img2video">Imagen a Video</option>
+                                <option value="Img+Audio2Video">Talking Head</option>
+                            </select>
+                        </div>
+                        <div class="ctx-group">
+                            <label class="studio-label">RESOLUCIÓN</label>
+                            <select class="ctx-select" id="video_resolution">
+                                <option value="Apaisada SD (640x480)">SD (640x480)</option>
+                                <option value="Apaisada HD (1280x720)">HD (1280x720)</option>
+                                <option value="Cuadrada (640x640)">Square (640x640)</option>
+                            </select>
+                        </div>
+                        <div class="ctx-group" style="min-width:80px;">
+                            <label class="studio-label">DURAC (S)</label>
+                            <input type="number" class="ctx-input" id="video_duration" value="5">
                         </div>
                     `
                 },
@@ -197,9 +241,17 @@
                     controls: `
                         <div class="ctx-group">
                             <label class="studio-label">MOTOR DE VOZ</label>
-                            <select class="ctx-select" style="margin:0;">
-                                <option>Microsoft Edge</option>
-                                <option>ElevenLabs</option>
+                            <select class="ctx-select" id="audio_provider">
+                                <option value="Microsoft Edge">Microsoft Edge (Gratis)</option>
+                                <option value="ElevenLabs">ElevenLabs (Pro)</option>
+                            </select>
+                        </div>
+                        <div class="ctx-group">
+                            <label class="studio-label">TIPO</label>
+                            <select class="ctx-select" id="audio_type">
+                                <option>Voces</option>
+                                <option>Música</option>
+                                <option>Efectos</option>
                             </select>
                         </div>
                     `
@@ -208,26 +260,17 @@
                     controls: `
                         <div class="ctx-group">
                             <label class="studio-label">MOTOR 3D</label>
-                            <select class="ctx-select" id="ctx3DEngine" style="margin:0;">
-                                <option>Shap-E (Local)</option>
-                                <option>Rodin (Cloud)</option>
-                                <option>Luma (API)</option>
+                            <select class="ctx-select" id="3d_provider">
+                                <option value="ComfyUI">ComfyUI (Local)</option>
+                                <option value="Rodin">Rodin (Cloud)</option>
                             </select>
                         </div>
                         <div class="ctx-group">
-                            <label class="studio-label">FORMATO</label>
-                            <select class="ctx-select" id="ctx3DFormat" style="margin:0;">
-                                <option>.OBJ</option>
-                                <option>.GLB</option>
-                                <option>.STL</option>
+                            <label class="studio-label">TIPO</label>
+                            <select class="ctx-select" id="3d_type">
+                                <option>Texto a 3D</option>
+                                <option>Imagen a 3D</option>
                             </select>
-                        </div>
-                        <div class="ctx-group">
-                            <label class="studio-label">CALIDAD</label>
-                            <div style="display:flex; gap:10px;">
-                                <button class="mode-btn active" style="flex:1; padding:8px;">DRAFT</button>
-                                <button class="mode-btn" style="flex:1; padding:8px;">HIGH</button>
-                            </div>
                         </div>
                     `
                 }
@@ -258,6 +301,18 @@
                 btn.onclick = () => setMode(btn.getAttribute('data-mode'));
             });
 
+            // Recolectar parámetros de los controles contextuales
+            function collectParams() {
+                const params = {};
+                // Buscar selects e inputs dentro del contenedor contextual
+                selectors.context.querySelectorAll('select, input').forEach(el => {
+                    if (el.id) {
+                        params[el.id] = el.value;
+                    }
+                });
+                return params;
+            }
+
             // Acción de Generación
             selectors.btn.onclick = async () => {
                 const prompt = selectors.prompt.value.trim();
@@ -265,11 +320,13 @@
 
                 state.loading = true;
                 selectors.btn.disabled = true;
-                selectors.btn.innerHTML = `<span class="spinner" style="width:15px; height:15px; border-width:2px; margin:0;"></span> GENERANDO...`;
+                selectors.btn.innerHTML = `<span class="spinner" style="width:15px; height:15px; border-width:2px; margin:0; display:inline-block; vertical-align:middle;"></span> GENERANDO...`;
                 
                 selectors.loader.classList.remove('hidden');
                 selectors.placeholder.classList.add('hidden');
                 selectors.canvas.classList.add('hidden');
+
+                const contextualParams = collectParams();
 
                 try {
                     // LLAMADA AL BRIDGE DE ACCIONES (Sync-Wait)
@@ -281,10 +338,7 @@
                             params: {
                                 prompt: prompt,
                                 mode: state.mode,
-                                params: {
-                                    engine: document.getElementById('ctxEngine')?.value,
-                                    provider: document.getElementById('ctxProvider')?.value
-                                }
+                                params: contextualParams
                             }
                         })
                     });
@@ -308,10 +362,12 @@
                         
                         if (hasFile && payload.url) {
                             selectors.canvas.innerHTML = `
-                                <div style="display:flex; flex-direction:column; align-items:center; gap:20px;">
-                                    <img src="${payload.url}" style="max-width:100%; box-shadow:0 10px 30px rgba(0,0,0,0.5); border-radius:15px;" onerror="this.onerror=null; this.src='https://via.placeholder.com/800x450?text=Imagen+Generada+(Cargando...)';">
-                                    <div style="display:flex; gap:15px;">
-                                        <a href="${payload.url}" download class="mode-btn active">💾 DESCARGAR</a>
+                                <div style="display:flex; flex-direction:column; align-items:center; gap:20px; height:100%;">
+                                    <div style="flex:1; display:flex; align-items:center; justify-content:center; overflow:hidden; width:100%;">
+                                        <img src="${payload.url}" style="max-width:100%; max-height:100%; object-fit:contain; box-shadow:0 10px 30px rgba(0,0,0,0.5); border-radius:15px;" onerror="this.onerror=null; this.src='https://via.placeholder.com/800x450?text=Imagen+Generada+(Cargando...)';">
+                                    </div>
+                                    <div style="display:flex; gap:15px; padding-bottom:10px;">
+                                        <a href="${payload.url}" download class="mode-btn active" style="text-decoration:none;">💾 DESCARGAR RESULTADO</a>
                                     </div>
                                 </div>`;
                         } else {
@@ -336,7 +392,7 @@
                     console.error("[STUDIO] Error:", e);
                     selectors.loader.classList.add('hidden');
                     selectors.canvas.classList.remove('hidden');
-                    selectors.canvas.innerHTML = `<div class="asimod-card" style="border-color:#ff5555; color:#ff5555;">⚠️ ERROR: ${e.message}</div>`;
+                    selectors.canvas.innerHTML = `<div class="asimod-card" style="border-color:#ff5555; color:#ff5555; padding:20px;">⚠️ ERROR: ${e.message}</div>`;
                 } finally {
                     state.loading = false;
                     selectors.btn.disabled = false;

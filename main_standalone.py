@@ -62,6 +62,8 @@ def main():
             style_service=style_service,
             data_service=data_service
         )
+        # Sincronizar el motor de chat con el de módulos para modo AGENTE
+        chat_engine.set_module_service(module_service)
 
     api_server = APIServer(
         chat_service=chat_engine, 

@@ -175,3 +175,37 @@ class ModuleService:
     def get_module(self, module_id: str) -> Optional[BaseModule]:
         """Busca y retorna un módulo por su ID."""
         return self.loaded_modules.get(module_id)
+    def get_agent_tools_context(self) -> str:
+        """
+        Retorna un texto describiendo las herramientas (comandos) disponibles
+        en el módulo activo y los comandos globales para el prompt del Agente.
+        """
+        tools_desc = "HERRAMIENTAS DISPONIBLES (COMMANDS):\n"
+        
+        # 1. Comandos globales (Apertura de módulos)
+        tools_desc += "- GLOBAL: Puedes abrir módulos usando los comandos: "
+        modules = self.get_modules()
+        tools_desc += ", ".join([f"'abrir {mod.name.lower()}' (id: open_{mod.id})" for mod in modules])
+        tools_desc += "\n"
+
+        # 2. Comandos del módulo activo
+        if self.active_module:
+            tools_desc += f"- MÓDULO ACTUAL ({self.active_module.name}):\n"
+            cmds = self.active_module.get_voice_commands()
+            for trigger, action in cmds.items():
+                tools_desc += f"  * '{trigger}' -> ejecuta acción: {action}\n"
+        else:
+            tools_desc += "- No hay un módulo específico activo actualmente.\n"
+
+        tools_desc += "\nINSTRUCCIONES CRÍTICAS DE RESPUESTA:\n"
+        tools_desc += "1. Responde SIEMPRE en ESPAÑOL.\n"
+        tools_desc += "2. Genera ÚNICAMENTE un bloque JSON. NO añadas introducciones, narraciones ni explicaciones fuera del JSON.\n"
+        tools_desc += "3. NO narres tus pasos (ej: evita 'Paso 1', 'I need to...', 'Step 2') en el campo 'response'. El campo 'response' debe ser una respuesta natural y corta para el usuario.\n"
+        tools_desc += "4. Usa el campo 'thought' para tu razonamiento interno en español.\n"
+        tools_desc += "5. Para la herramienta 'instruction', pon el texto del prompt deseado en el campo 'params'.\n"
+        tools_desc += "6. Si el usuario pide crear/generar algo tras poner el prompt, usa la acción 'generate'.\n"
+        tools_desc += "7. Formato JSON estricto:\n"
+        tools_desc += '{\n  "thought": "tu plan interno en español",\n  "response": "tu mensaje amigable al usuario en español",\n  "action": "slug_de_la_accion_o_null",\n  "params": "texto_del_prompt_o_parametro_o_null"\n}\n'
+        tools_desc += "IMPORTANTE: Si no hay una acción clara, usa 'action': null.\n"
+        
+        return tools_desc

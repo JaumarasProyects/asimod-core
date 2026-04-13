@@ -277,6 +277,26 @@ class SettingsView(tk.Frame):
         self.chunk_size_entry = tk.Entry(destream_frame, bg=self.style.get_color("bg_input"), fg=self.style.get_color("text_main"), insertbackground=self.style.get_color("text_main"), 
                                          relief="flat", width=8, textvariable=self._chunk_size_var)
         self.chunk_size_entry.pack(side=tk.LEFT, padx=5)
+        
+        # Audio Agent Control (NUEVO)
+        agent_audio_frame = tk.Frame(self, bg=self.style.get_color("bg_main"))
+        agent_audio_frame.pack(fill=tk.X, padx=20, pady=(10, 0))
+
+        tk.Label(agent_audio_frame, text="Audio del Agente (Voz):", bg=self.style.get_color("bg_main"), fg=self.style.get_color("text_dim"), font=("Arial", 10)).pack(side=tk.LEFT)
+        
+        self._audio_agent_enabled = tk.BooleanVar(value=self.config.get("audio_agent", True))
+        self.chk_audio_agent = tk.Checkbutton(
+            agent_audio_frame, 
+            text="Activar voz en modo Agente",
+            bg=self.style.get_color("bg_main"), 
+            fg=self.style.get_color("text_main"),
+            selectcolor=self.style.get_color("bg_input"),
+            activebackground=self.style.get_color("bg_main"),
+            activeforeground=self.style.get_color("text_main"),
+            variable=self._audio_agent_enabled,
+            command=self._on_audio_agent_toggle
+        )
+        self.chk_audio_agent.pack(side=tk.LEFT, padx=10)
 
         # Botón Guardar
         save_btn = tk.Button(self, text="Guardar Cambios", bg=self.style.get_color("accent"), fg=self.style.get_color("btn_fg"), 
@@ -353,6 +373,11 @@ class SettingsView(tk.Frame):
             pass
         
         messagebox.showinfo("Destreaming", f"Destreaming {'activado' if enabled else 'desactivado'}")
+
+    def _on_audio_agent_toggle(self):
+        enabled = self._audio_agent_enabled.get()
+        self.config.set("audio_agent", enabled)
+        messagebox.showinfo("Audio Agente", f"Voz del agente {'activada' if enabled else 'desactivada'}")
 
     def _on_visualizer_toggle(self):
         enabled = self._viz_enabled.get()

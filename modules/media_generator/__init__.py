@@ -35,20 +35,18 @@ class MediaGeneratorModule(StandardModule):
         self.output_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "output"))
         self.gallery_path = self.output_root 
         
-            
         # Estado de comandos de voz
         self.awaiting_instruction = False
         self.awaiting_gallery_num = False
+        self.awaiting_type_selection = False
         self.last_gallery_wait_id = None  # ID para cancelar el temporizador de espera
-            
-        # Estado de comandos de voz
-        self.awaiting_instruction = False
-            
+        
         # Estado de modelos LLM para letras
         self.llm_models = []
-        self._fetch_llm_models()
+        # No disparamos fetch aquí para evitar colisión si el workspace no está listo.
+        # Lo hará setup_controllers.
 
-    def _on_llm_provider_change(self, provider_name):
+    def _on_provider_change(self, provider_name):
         """Cambia el proveedor LLM global y refresca la lista de modelos."""
         print(f"[MediaGenerator] Cambiando proveedor LLM a: {provider_name}")
         self.chat_service.switch_provider(provider_name)
@@ -59,7 +57,8 @@ class MediaGeneratorModule(StandardModule):
         self._fetch_llm_models()
         
         # Refrescar UI inmediatamente para mostrar estado 'Cargando...'
-        self.workspace.after(0, self._rebuild_audio_panel)
+        if hasattr(self, 'workspace') and self.workspace:
+            self.workspace.after(0, self._rebuild_audio_panel)
 
     def _fetch_llm_models(self):
         """Carga los modelos LLM disponibles en segundo plano."""
@@ -113,22 +112,21 @@ class MediaGeneratorModule(StandardModule):
         
         if mode == "Texto":
             providers = self.chat_service.get_providers_list()
+            current_p = self.chat_service.current_adapter.name if self.chat_service.current_adapter else "Ollama"
+            
             self.ctrl_panel.add_dropdown("Proveedor LLM", "provider", 
                                         providers, 
+                                        default=current_p,
                                         callback=self._on_provider_change)
-            if providers:
-                self._on_provider_change(providers[0])
-            else:
-                self.ctrl_panel.add_dropdown("Modelo", "model", ["Cargando..."])
+            # Ya no forzamos el cambio al inicializar, solo cargamos los modelos para el actual
+            self._fetch_llm_models()
                 
         elif mode == "Imagen":
             engines = self.image_service.get_engines_list()
-            self.ctrl_panel.add_dropdown("Motor de Imagen", "engine", 
-                                        engines, 
-                                        callback=self._on_image_engine_change)
-            
-            # Sub-Selectores para ComfyUI o DALL-E
-            self._on_image_engine_change(engines[0] if engines else "DALL-E 3")
+            # Priorizar ComfyUI como motor por defecto si está disponible
+            default_engine = "ComfyUI" if "ComfyUI" in engines else (engines[0] if engines else "DALL-E 3")
+            self.ctrl_panel.set_value("engine", default_engine)
+            self._on_image_engine_change(default_engine)
         elif mode == "Audio":
             self._rebuild_audio_panel()
         elif mode == "Video":
@@ -175,7 +173,10 @@ class MediaGeneratorModule(StandardModule):
         # 3. Separador sutil (Abajo de resultados)
         self.separator = tk.Frame(main_frame, bg="#333", height=1)
 
-        # 4. Panel de Controladores (ABAJO - Reservar primero)
+        # 4. Render inicial del workspace (DEBE ser antes de setup_controllers)
+        self.render_workspace(self.workspace)
+
+        # 5. Panel de Controladores (ABAJO)
         if self.show_controllers:
             self.ctrl_panel = ControllerPanel(main_frame, style=self.style)
             self.ctrl_panel.pack(fill=tk.X, side=tk.BOTTOM, padx=20, pady=(10, 20))
@@ -184,16 +185,10 @@ class MediaGeneratorModule(StandardModule):
             self.render_top_actions(self.ctrl_panel.actions_container)
             self.setup_controllers(self.ctrl_panel)
 
-        # Una vez reservado el footer, empaquetamos el área de resultados para que llene el RESTO
+        # Empaquetamos el área de contenido (Resultados)
         self.separator.pack(fill=tk.X, side=tk.BOTTOM)
         self.sub_widget_area.pack(fill=tk.BOTH, expand=True, padx=20, pady=(10, 0), side=tk.TOP)
 
-        # Render inicial del workspace
-        self.render_workspace(self.workspace)
-        return main_frame
-
-        # Render inicial del workspace
-        self.render_workspace(self.workspace)
         return main_frame
 
     def _on_gallery_back(self):
@@ -245,8 +240,6 @@ class MediaGeneratorModule(StandardModule):
         btn_clear = tk.Button(actions_frame, text="🗑️ Limpiar", 
                              bg=self.style.get_color("btn_bg"), fg=self.style.get_color("text_dim"), bd=0, padx=15, pady=8,
                              font=("Arial", 9), cursor="hand2", command=self._clear_all)
-        btn_clear.pack(side=tk.LEFT)
-
         btn_clear.pack(side=tk.LEFT)
 
     def render_workspace(self, parent):
@@ -479,7 +472,19 @@ class MediaGeneratorModule(StandardModule):
             except: pass
 
             neg_prompt = self._get_val("neg_prompt", web_params, default="")
-            return await adapter.generate_image(prompt, resolution=res, workflow_json=workflow_data, width=w, height=h, input_images=input_images, negative_prompt=neg_prompt)
+            
+            # Recuperar y procesar Semilla (Seed)
+            seed_val = self._get_val("seed", web_params, default="-1")
+            try:
+                seed = int(seed_val)
+                if seed == -1:
+                    import random
+                    seed = random.randint(1, 1125899906842624) # Rango estándar de ComfyUI
+            except:
+                import random
+                seed = random.randint(1, 1125899906842624)
+
+            return await adapter.generate_image(prompt, resolution=res, workflow_json=workflow_data, width=w, height=h, input_images=input_images, negative_prompt=neg_prompt, seed=seed)
         
         elif mode == "Audio":
             tipo = self._get_val("audio_type", web_params)
@@ -544,9 +549,9 @@ class MediaGeneratorModule(StandardModule):
                  return f"Error: Proveedor {prov} no disponible manualmente."
 
         elif mode == "Video":
-            v_type = self.ctrl_panel.get_value("video_type")
-            v_subtype = self.ctrl_panel.get_value("video_subtype")
-            w_file = self.ctrl_panel.get_value("video_workflow")
+            v_type = self._get_val("video_type", web_params, default="Simple")
+            v_subtype = self._get_val("video_subtype", web_params, default="text2video")
+            w_file = self._get_val("video_workflow", web_params)
             
             if not w_file:
                 return "Error: No se ha seleccionado ningún workflow de video."
@@ -569,14 +574,20 @@ class MediaGeneratorModule(StandardModule):
             # Recoger inputs dinámicos
             input_files = []
             if v_subtype == "Img+Audio2Video":
-                img = self.ctrl_panel.get_value("input_image")
-                if img and img != "Ninguno": input_files.append(img)
+                img = self._get_val("input_image", web_params)
+                if img and img != "Ninguno": 
+                    if not os.path.isabs(img): img = os.path.join(self.output_root, img)
+                    if os.path.exists(img): input_files.append(img)
                 
-                count = int(self.ctrl_panel.get_value("v_audio_count") or "1")
+                count_val = self._get_val("v_audio_count", web_params) or "1"
+                try: count = int(count_val)
+                except: count = 1
+
                 for i in range(1, count + 1):
-                    a_path = self.ctrl_panel.get_value(f"input_audio_{i}")
+                    a_path = self._get_val(f"input_audio_{i}", web_params)
                     if a_path and a_path != "Ninguno":
-                        input_files.append(a_path)
+                        if not os.path.isabs(a_path): a_path = os.path.join(self.output_root, a_path)
+                        if os.path.exists(a_path): input_files.append(a_path)
                 
                 # Inyección quirúrgica en el workflow para audios extra
                 if workflow_data and count > 1:
@@ -584,31 +595,29 @@ class MediaGeneratorModule(StandardModule):
                     if multitalk_node and "19" in workflow_data:
                         for i in range(2, count + 1):
                             new_id = str(100 + i)
-                            # Clonar nodo de carga 19
                             new_node = json.loads(json.dumps(workflow_data["19"]))
                             workflow_data[new_id] = new_node
-                            # Vincular en MultiTalk
                             multitalk_node["inputs"][f"audio_{i}"] = [new_id, 0]
-                            print(f"[MediaGenerator] Inyectando nodo extra de audio {i} (ID: {new_id})")
             else:
                 for k in ["input_image", "input_audio", "input_video"]:
-                    val = self.ctrl_panel.get_value(k)
+                    val = self._get_val(k, web_params)
                     if val and val != "Ninguno":
-                        input_files.append(val)
+                        if not os.path.isabs(val): val = os.path.join(self.output_root, val)
+                        if os.path.exists(val): input_files.append(val)
             
             # Resolución de Video
-            preset = self.ctrl_panel.get_value("video_resolution")
+            preset = self._get_val("video_resolution", web_params, default="Apaisada SD (640x480)")
             w, h = 640, 640 
             if preset == "Personalizado":
-                w = self.ctrl_panel.get_value("video_resolution_w")
-                h = self.ctrl_panel.get_value("video_resolution_h")
+                w = self._get_val("video_resolution_w", web_params, default=640)
+                h = self._get_val("video_resolution_h", web_params, default=640)
             elif preset:
                 import re
-                match = re.search(r"\((\d+)x(\d+)\)", preset)
+                match = re.search(r"\((\d+)x(\d+)\)", str(preset))
                 if match: w, h = match.groups()
             
-            dur = self.ctrl_panel.get_value("video_duration") or 5
-            neg_prompt = self.ctrl_panel.get_value("neg_prompt")
+            dur = self._get_val("video_duration", web_params, default=5)
+            neg_prompt = self._get_val("neg_prompt", web_params, default="")
             
             print(f"[MediaGenerator] Generando video ({w}x{h}, {dur}s) con ComfyUI. Inputs: {len(input_files)}")
             adapter = self.image_service.get_adapter("ComfyUI")
@@ -620,39 +629,40 @@ class MediaGeneratorModule(StandardModule):
                                                 duration=dur)
         
         elif mode == "3D":
-            g_type = self.ctrl_panel.get_value("3d_type")
-            g_provider = self.ctrl_panel.get_value("3d_provider")
-            w_file = self.ctrl_panel.get_value("3d_workflow")
-            
-            folder_map = {"Texto a 3D": "text_to_3d", "Imagen a 3D": "img_to_3d"}
-            sub = folder_map.get(g_type, "text_to_3d")
-            
-            if not w_file:
-                return "Error: No se ha seleccionado ningún workflow 3D."
-            
-            full_path = os.path.join(os.path.dirname(__file__), "workflows", "3d", sub, w_file)
-            workflow_data = None
-            if os.path.exists(full_path):
-                try:
-                    with open(full_path, "r", encoding="utf-8") as f:
-                        workflow_data = json.load(f)
-                except Exception as e:
-                    print(f"[MediaGenerator] Error cargando workflow 3D: {e}")
-            else:
-                return f"Error: No se encuentra el archivo de workflow: {w_file}"
-            
-            input_files = []
-            img_input = self.ctrl_panel.get_value("3d_input_image")
-            if img_input and img_input != "Ninguno":
-                input_files.append(img_input)
-            
-            print(f"[MediaGenerator] Generando 3D ({g_type}) con {g_provider}. Inputs: {len(input_files)}")
-            
-            if g_provider == "ComfyUI":
-                adapter = self.image_service.get_adapter("ComfyUI")
-                return await adapter.generate_image(prompt, workflow_json=workflow_data, input_images=input_files)
-            else:
-                return f"Error: Proveedor {g_provider} no soportado para 3D todavía."
+             g_type = self._get_val("3d_type", web_params, default="Texto a 3D")
+             g_provider = self._get_val("3d_provider", web_params, default="ComfyUI")
+             w_file = self._get_val("3d_workflow", web_params)
+             
+             if not w_file:
+                 return "Error: No se ha seleccionado ningún workflow 3D."
+             
+             folder_map = {"Texto a 3D": "text_to_3d", "Imagen a 3D": "img_to_3d"}
+             sub = folder_map.get(g_type, "text_to_3d")
+             
+             full_path = os.path.join(os.path.dirname(__file__), "workflows", "3d", sub, w_file)
+             workflow_data = None
+             if os.path.exists(full_path):
+                 try:
+                     with open(full_path, "r", encoding="utf-8") as f:
+                         workflow_data = json.load(f)
+                 except Exception as e:
+                     print(f"[MediaGenerator] Error cargando workflow 3D: {e}")
+             else:
+                 return f"Error: No se encuentra el archivo de workflow: {w_file}"
+             
+             input_files = []
+             img_input = self._get_val("3d_input_image", web_params)
+             if img_input and img_input != "Ninguno":
+                 if not os.path.isabs(img_input): img_input = os.path.join(self.output_root, img_input)
+                 if os.path.exists(img_input): input_files.append(img_input)
+             
+             print(f"[MediaGenerator] Generando 3D ({g_type}) con {g_provider}. Inputs: {len(input_files)}")
+             
+             if g_provider == "ComfyUI":
+                 adapter = self.image_service.get_adapter("ComfyUI")
+                 return await adapter.generate_image(prompt, workflow_json=workflow_data, input_images=input_files)
+             else:
+                 return f"Error: Proveedor {g_provider} no soportado para 3D todavía."
         
         else:
             # Texto (Fallback por defecto)
@@ -660,8 +670,8 @@ class MediaGeneratorModule(StandardModule):
             provider = self.ctrl_panel.get_value("provider") if (hasattr(self, 'ctrl_panel') and self.ctrl_panel) else None
             model = self.ctrl_panel.get_value("model") if (hasattr(self, 'ctrl_panel') and self.ctrl_panel) else None
             
-            # Sincronizar proveedor si se especifica
-            if provider:
+            # Sincronizar proveedor si se especifica y es distinto al actual
+            if provider and (not self.chat_service.current_adapter or self.chat_service.current_adapter.name != provider):
                 self.chat_service.switch_provider(provider)
             
             adapter = self.chat_service.current_adapter
@@ -759,6 +769,72 @@ class MediaGeneratorModule(StandardModule):
         prompt = self.prompt_text.get("1.0", tk.END).strip()
         if not prompt: return
         self.handle_generate_manual(prompt)
+
+    def _show_type_dropdown(self):
+        """Intenta desplegar visualmente el combo de tipo actual."""
+        if not self.ctrl_panel: return
+        
+        key_map = {
+            "Audio": "audio_type",
+            "Video": "video_type",
+            "3D": "3d_type",
+            "Imagen": "type"
+        }
+        
+        target_key = key_map.get(self.current_mode)
+        if target_key and target_key in self.ctrl_panel.controls:
+            combo = self.ctrl_panel.controls[target_key]
+            if isinstance(combo, ttk.Combobox):
+                combo.focus_set()
+                # Truco para desplegar: generar evento de flecha abajo
+                combo.event_generate('<Down>')
+
+    def _perform_type_selection(self, text):
+        """Captura el texto y busca una coincidencia en los tipos del modo actual."""
+        self.awaiting_type_selection = False
+        self.chat_service.stt_captured_by_module = False
+        
+        if not text or not self.ctrl_panel: return
+        
+        key_map = {
+            "Audio": "audio_type",
+            "Video": "video_type",
+            "3D": "3d_type",
+            "Imagen": "type"
+        }
+        
+        target_key = key_map.get(self.current_mode)
+        if not target_key or target_key not in self.ctrl_panel.controls:
+            self.chat_service.notify_system_msg(f"ASIMOD: El modo {self.current_mode} no tiene tipos seleccionables.", "#ff4444")
+            return
+
+        combo = self.ctrl_panel.controls[target_key]
+        if not isinstance(combo, ttk.Combobox): return
+        
+        options = combo['values']
+        text_clean = text.lower().strip()
+        
+        match = None
+        # Búsqueda exacta primero
+        for opt in options:
+            if opt.lower() == text_clean:
+                match = opt
+                break
+        
+        # Búsqueda parcial si no hubo exacta
+        if not match:
+            for opt in options:
+                if text_clean in opt.lower() or opt.lower() in text_clean:
+                    match = opt
+                    break
+        
+        if match:
+            self.ctrl_panel.set_value(target_key, match)
+            # Disparar manualmente el evento de selección para ejecutar callbacks
+            combo.event_generate("<<ComboboxSelected>>")
+            self.chat_service.notify_system_msg(f"ASIMOD: Tipo seleccionado: {match}", "#4EC9B0")
+        else:
+            self.chat_service.notify_system_msg(f"ASIMOD: No reconozco el tipo '{text}'. Inténtalo de nuevo.", "#ffaa00")
 
     def _cache_result_and_show(self, content, mode):
         """Muestra el resultado y lo organiza en disco. Retorna la ruta final."""
@@ -1129,6 +1205,12 @@ class MediaGeneratorModule(StandardModule):
             
         if not img_count: 
             img_count = self.ctrl_panel.get_value("img_count") or "1"
+        
+        # Validar numérico para evitar fallos en el bucle
+        try:
+            icount = int(img_count)
+        except:
+            icount = 1
             
         if not w_flow:
             w_flow = self.ctrl_panel.get_value("workflow")
@@ -1141,6 +1223,9 @@ class MediaGeneratorModule(StandardModule):
         self.ctrl_panel.add_dropdown("Motor de Imagen", "engine", engines, 
                                     default=engine_name,
                                     callback=lambda v: self._rebuild_image_panel(engine_name=v))
+        
+        # Si acabamos de entrar o no hay valores, forzar los predefinidos solicitados
+        is_first_build = not w_type and not w_subtype
 
         if engine_name == "DALL-E 3":
             self.ctrl_panel.add_dropdown("Resolución", "res", ["1024x1024", "1024x1792", "1792x1024"])
@@ -1151,9 +1236,12 @@ class MediaGeneratorModule(StandardModule):
             # Jerarquía de Workflows
             base_w = os.path.join(os.path.dirname(__file__), "workflows")
             w_struct = self.image_service.scan_workflows(base_w)
-            types = [t for t in w_struct.keys() if t.lower() not in ["audio", "video"]]
+            types = [t for t in w_struct.keys() if t.lower() not in ["audio", "video", "3d"]]
             
-            if not w_type and types: w_type = types[0]
+            if is_first_build:
+                w_type = "simple" if "simple" in [t.lower() for t in types] else (types[0] if types else None)
+            elif not w_type and types:
+                w_type = types[0]
             
             # Selector Tipo (Simple/Compuesta)
             self.ctrl_panel.add_dropdown("Tipo", "type", types, default=w_type,
@@ -1162,12 +1250,19 @@ class MediaGeneratorModule(StandardModule):
             # Selector Subtipo (text2img/img2img/etc)
             subtypes = w_struct.get(w_type, [])
             if subtypes:
-                if not w_subtype: w_subtype = subtypes[0]
+                if is_first_build:
+                    w_subtype = "text2img" if "text2img" in [s.lower() for s in subtypes] else subtypes[0]
+                elif not w_subtype:
+                    w_subtype = subtypes[0]
                 self.ctrl_panel.add_dropdown("Subtipo", "subtype", subtypes, default=w_subtype,
                                             callback=lambda v: self._rebuild_image_panel(w_subtype=v, w_flow=None))
             
             # Selector de archivo Workflow (Movido aquí para que siempre se vea primero)
             self._update_workflow_files(w_type, w_subtype, current_flow=w_flow)
+
+            # Control de Semilla (NUEVO)
+            current_seed = self.ctrl_panel.get_value("seed") or "-1"
+            self.ctrl_panel.add_input("Semilla (-1 = Aleatorio)", "seed", default=current_seed)
 
             # Según el subtipo, mostramos resolución o cargadores de imágenes
             if w_subtype and w_subtype.lower() == "img2img":
@@ -1175,7 +1270,12 @@ class MediaGeneratorModule(StandardModule):
                                             default=img_count,
                                             callback=lambda v: self._rebuild_image_panel(img_count=v))
                 for i in range(1, int(img_count) + 1):
-                    self.ctrl_panel.add_file_picker(f"Imagen {i}", f"input_image_{i}")
+                    key = f"input_image_{i}"
+                    container = self.ctrl_panel.add_file_picker(f"Imagen {i}", key)
+                    # Botón extra para usar lo que haya en la galería
+                    tk.Button(container, text="🖼️ Usar Seleccionada", bg="#333", fg="#4EC9B0", 
+                              bd=0, padx=8, font=("Arial", 8), cursor="hand2",
+                              command=lambda k=key: self._use_selected_media_as_input(k)).pack(side=tk.LEFT, padx=5)
             else:
                 res_options = [
                     "Cuadrada Pequeña (512x512)", "Cuadrada Grande (1024x1024)",
@@ -1184,7 +1284,7 @@ class MediaGeneratorModule(StandardModule):
                     "Personalizado"
                 ]
                 self.ctrl_panel.add_resolution_control("Resolución", "resolution", res_options, 
-                                                       default="Cuadrada Grande (1024x1024)")
+                                                       default="Apaisada Pequeña (768x512)")
             
             # 4. Campo de Prompt Negativo (para control avanzado)
             self.ctrl_panel.add_input("Prompt Negativo", "neg_prompt", 
@@ -1310,24 +1410,29 @@ class MediaGeneratorModule(StandardModule):
             self.ctrl_panel.add_dropdown("Workflow", "workflow", files, default=default_val)
         else:
             self.ctrl_panel.update_dropdown("workflow", files)
-            if default_val:
-                self.ctrl_panel.controls["workflow"].set(default_val)
 
-    def _on_provider_change(self, provider_name):
-        self.chat_service.switch_provider(provider_name)
-        def fetch_models():
-            try:
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                models = loop.run_until_complete(self.chat_service.get_available_models())
-                loop.close()
-                self.workspace.after(0, lambda: self._update_models_dropdown(models))
-            except Exception as e:
-                print(f"[MediaGenerator] Error fetching models: {e}")
-        threading.Thread(target=fetch_models, daemon=True).start()
+    def _use_selected_media_as_input(self, target_key):
+        """Toma la imagen actualmente visualizada en el workspace y la pone en el picker indicado."""
+        if not hasattr(self, "media_display") or not self.media_display:
+            return
+            
+        path = self.media_display.current_media_path
+        if not path or not os.path.exists(path):
+            self.chat_service.notify_system_msg("ASIMOD: No hay ninguna imagen seleccionada en la galería.", "#F44336")
+            return
+            
+        # Verificar extensión de imagen
+        ext = os.path.splitext(path)[1].lower()
+        if ext not in [".png", ".jpg", ".jpeg", ".webp"]:
+            self.chat_service.notify_system_msg("ASIMOD: El archivo seleccionado no es una imagen válida para generación.", "#F44336")
+            return
+            
+        # Inyectar en el controlador
+        self.ctrl_panel.set_value(target_key, path)
+        self.chat_service.notify_system_msg(f"ASIMOD: Imagen cargada en {target_key}.", "#4EC9B0")
 
     def _update_models_dropdown(self, models):
-        if self.ctrl_panel:
+        if self.ctrl_panel and self.ctrl_panel.winfo_exists():
             if "model" in self.ctrl_panel.controls:
                 self.ctrl_panel.update_dropdown("model", models)
             else:
@@ -1393,7 +1498,7 @@ class MediaGeneratorModule(StandardModule):
             "Personalizado"
         ]
         self.ctrl_panel.add_resolution_control("Resolución Video", "video_resolution", res_options, 
-                                               default="Cuadrada (640x640)")
+                                               default="Apaisada SD (640x480)")
         
         # 7. Duración y Prompt Negativo
         self.ctrl_panel.add_input("Duración (seg)", "video_duration", default="5")
@@ -1447,7 +1552,9 @@ class MediaGeneratorModule(StandardModule):
             "galería": "gallery_nav",
             "galeria": "gallery_nav",
             "instrucción": "instruction",
-            "instruccion": "instruction"
+            "instruccion": "instruction",
+            "tipo": "wait_for_type",
+            "tipos": "wait_for_type"
         }
         
         # Variantes naturales
@@ -1471,6 +1578,9 @@ class MediaGeneratorModule(StandardModule):
             if self.awaiting_gallery_num:
                 self._perform_gallery_selection(text)
                 return
+            if self.awaiting_type_selection:
+                self._perform_type_selection(text)
+                return
             return
 
         # 2. Comandos directos o activadores
@@ -1479,14 +1589,21 @@ class MediaGeneratorModule(StandardModule):
         if action_slug == "instruction":
             # Intentar ver si ya viene el prompt en la misma frase (ej: "instrucción pájaro azul")
             prompt_only = self._strip_trigger(text, ["instrucción", "instruccion"])
-            if prompt_only:
-                self._capture_prompt(prompt_only)
+            
+            # Si no hay trigger pero hay texto, y el comando es 'instruction', 
+            # asumimos que es una inyección directa (ej: desde el Agente)
+            final_prompt = prompt_only if prompt_only else (text if text and text.lower() not in ["instrucción", "instruccion"] else None)
+            
+            if final_prompt:
+                self._capture_prompt(final_prompt)
             else:
                 self.awaiting_instruction = True
                 self.chat_service.stt_captured_by_module = True
                 self.chat_service.notify_system_msg("ASIMOD: Esperando instrucción de prompt...", "#4EC9B0")
             return
 
+            return
+        
         if action_slug == "gallery_nav":
             # Intentar ver si ya hay un número en el comando "galería X"
             if not self._perform_gallery_selection(text, silent_if_fail=True):
@@ -1494,6 +1611,15 @@ class MediaGeneratorModule(StandardModule):
                 self.awaiting_gallery_num = True
                 self.chat_service.stt_captured_by_module = True
                 self.chat_service.notify_system_msg("ASIMOD: [Galería] Dime un número o 'atrás'...", "#4EC9B0")
+            return
+        
+        if action_slug == "wait_for_type":
+            self.awaiting_type_selection = True
+            self.chat_service.stt_captured_by_module = True
+            
+            # Feedback visual y sonoro
+            self._show_type_dropdown()
+            self.chat_service.notify_system_msg("ASIMOD: [Tipos] Dime la categoría a seleccionar...", "#4EC9B0")
             return
 
         if action_slug.startswith("set_mode_"):
@@ -1505,13 +1631,19 @@ class MediaGeneratorModule(StandardModule):
                 "set_mode_3d": "3D"
             }
             target = mode_map.get(action_slug)
-            if target:
-                if self.menu: self.menu.select(target)
-                else: self.on_menu_change(target)
+            if target and self.workspace:
+                # Thread Safety: Envolver cambio de modo en el hilo principal
+                self.workspace.after(0, lambda: self._safe_mode_change(target))
             return
 
         if action_slug == "generate":
-            self.handle_generate()
+            # Si el comando trae texto (prompt directo desde el Agente)
+            # Primero quitamos el trigger "generar" si existe al inicio
+            prompt_clean = self._strip_trigger(text, ["generar", "generate", "crear", "imagen de", "foto de", "haz una imagen de"])
+            
+            if self.workspace:
+                # Thread Safety: Inyectar y disparar en el hilo principal
+                self.workspace.after(0, lambda: self._safe_generate_with_prompt(prompt_clean))
             return
 
     def _strip_trigger(self, text, triggers):
@@ -1519,20 +1651,44 @@ class MediaGeneratorModule(StandardModule):
         text_clean = text.lower().strip()
         for t in triggers:
             if text_clean.startswith(t):
-                # Cortamos el trigger y limpiamos espacios
-                result = text_clean[len(t):].strip()
-                if result: return result
-        return None
+                # Cortamos el trigger del texto original (preservamos caso)
+                return text[len(t):].strip()
+        return text.strip() # Devolvemos todo el texto original limpio
 
     def _capture_prompt(self, text):
-        """Procesa y anota un prompt capturado por voz."""
-        print(f"[MediaGenerator] Capturando instrucción: {text}")
+        """Captura el texto y lo inyecta en el prompt_text de forma segura."""
+        self.awaiting_instruction = False
+        self.chat_service.stt_captured_by_module = False
+        
+        if self.workspace:
+            self.workspace.after(0, lambda: self._safe_inject_prompt(text))
+
+    def _safe_inject_prompt(self, text):
+        """Inyección de prompt segura para el hilo principal de Tkinter."""
+        if not self.prompt_text: return
         self.prompt_text.delete("1.0", tk.END)
         self.prompt_text.insert("1.0", text)
         self.prompt_text.config(fg=self.style.get_color("text_main"))
-        self.awaiting_instruction = False
-        self.chat_service.stt_captured_by_module = False
-        self.workspace.after(100, self.handle_generate)
+
+    def _safe_mode_change(self, target):
+        """Cambio de modo seguro para el hilo principal de Tkinter."""
+        if self.menu: self.menu.select(target)
+        else: self.on_menu_change(target)
+
+    def _safe_generate_with_prompt(self, prompt_clean):
+        """Inyección y generación segura para el hilo principal de Tkinter."""
+        if not self.prompt_text: return
+        # Si hay un prompt real (y no es solo la palabra 'generar')
+        if prompt_clean:
+            # Eliminar placeholder si existe
+            placeholder = f"Escribe aquí lo que quieres generar para {self.current_mode}..."
+            current = self.prompt_text.get("1.0", tk.END).strip()
+            
+            self.prompt_text.delete("1.0", tk.END)
+            self.prompt_text.insert("1.0", prompt_clean)
+            self.prompt_text.config(fg=self.style.get_color("text_main"))
+        
+        self.handle_generate()
 
     def _perform_gallery_selection(self, text, silent_if_fail=False):
         """Extrae el número o acción de navegación del texto y lo ejecuta en la galería."""

@@ -1,13 +1,18 @@
-# Media y Salidas
+# Media y Salidas (Locales y de Módulos)
 audio/
 output/
+**/audio/
+**/output/
 conversations/
 
 # Temporales y Grabaciones
 temp_stt_*.wav
 temp_recording.wav
+temp_recording_*.wav
 output.log
 nul
+Thumbs.db
+desktop.ini
 
 # Base de datos y Configuración Local
 app_data.db

@@ -88,6 +88,7 @@ class ComfyUIAdapter(ImagePort):
                     continue
 
                 class_type = node_info.get("class_type")
+                title = node_info.get("_meta", {}).get("title", "").lower()
 
                 # Detectar diversos tipos de cargadores
                 if class_type in ["LoadImage", "LoadAudio", "VHS_LoadVideo", "VideoLinearBatch"]:
@@ -95,7 +96,6 @@ class ComfyUIAdapter(ImagePort):
 
                 # Clasificar nodos de texto para inyección inteligente
                 if class_type in ["CLIPTextEncode", "PrimitiveStringMultiline", "TextEncodeAceStepAudio1.5"]:
-                    title = node_info.get("_meta", {}).get("title", "").lower()
                     target_key = "tags" if class_type == "TextEncodeAceStepAudio1.5" else \
                                  "text" if "text" in inputs else "value" if "value" in inputs else None
                     

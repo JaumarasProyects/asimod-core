@@ -54,17 +54,24 @@ class ChatService(ChatPort):
             on_stt_result=self._on_stt_result
         )
 
+        # Vinculación con Módulos (para modo AGENTE)
+        self.module_service = None
+
+        # --- INICIALIZACIÓN DE ESTADO ---
+        # Inicializar proveedor LLM
+        self.switch_provider(self.config.get("last_provider", "Ollama"))
+        # Cargar memoria inicial
+        last_thread = self.config.get("active_thread", "None")
+        self.memory.load_thread(last_thread)
+
+    def set_module_service(self, module_service):
+        """Asocia el servicio de módulos para el contexto de herramientas."""
+        self.module_service = module_service
+
     def notify_system_msg(self, text: str, color: str = None):
         """Notifica un mensaje para ser mostrado en la UI de chat sin TTS."""
         if self.on_system_msg_cb:
             self.on_system_msg_cb(text, color)
-
-        # Inicializar proveedor LLM
-        self.switch_provider(self.config.get("last_provider", "Ollama"))
-
-        # Cargar memoria inicial
-        last_thread = self.config.get("active_thread", "None")
-        self.memory.load_thread(last_thread)
 
     def _on_stt_complete(self, text: str):
         """
@@ -91,6 +98,8 @@ class ChatService(ChatPort):
             self.on_stt_result_cb(text)
 
     def switch_provider(self, provider_name: str):
+        if self.current_adapter and self.current_adapter.name == provider_name:
+            return
         self.current_adapter = LLMFactory.get_adapter(provider_name, self.config)
 
     def get_providers_list(self) -> List[str]:
@@ -141,39 +150,143 @@ class ChatService(ChatPort):
             
             # 1. Obtener contexto e instrucciones (Priorizar override si existe)
             history = self.memory.get_context()
-            if system_prompt is None:
-                system_prompt = self.memory.get_system_prompt(self.locale_service)
+            
+            # --- Lógica de MODO AGENTE ---
+            is_agent_mode = self.config.get("stt_mode") in ["AGENT", "AGENT_AUDIO"]
+            if is_agent_mode and self.module_service:
+                agent_context = self.module_service.get_agent_tools_context()
+                if system_prompt is None:
+                    system_prompt = self.memory.get_system_prompt(self.locale_service)
+                system_prompt = f"{system_prompt}\n\n{agent_context}"
+                print("[ChatService] MODO AGENTE ACTIVO: Inyectando contexto de herramientas.")
             else:
-                print(f"[ChatService] Overriding generic system prompt with custom instructions.")
+                if system_prompt is None:
+                    system_prompt = self.memory.get_system_prompt(self.locale_service)
 
             # 2. Si NO es silent, guardar mensaje del usuario
             if not silent:
                 self.memory.add_message("user", text)
-                # refrescar history tras añadir el mensaje del usuario
                 history = self.memory.get_context()
 
-            # 3. Generar respuesta de forma asíncrona
-            print(f"[ChatService] Generating response for model {model}...")
-            try:
-                if self.current_adapter:
-                    raw_response = await self.current_adapter.generate_chat(history, system_prompt, model, images, max_tokens, temperature)
-                else:
-                    raw_response = "Error: No hay un motor de LLM configurado."
-            except Exception as e:
-                print(f"[ChatService] Error in LLM generation: {e}")
-                traceback.print_exc()
-                raw_response = f"Error crítico durante la generación: {str(e)}"
+            # 3. Generar respuesta de forma asíncrona (con Reintentos para Agente)
+            max_attempts = 3 if is_agent_mode else 1
+            best_block = None
+            current_system_prompt = system_prompt
+            
+            for attempt in range(max_attempts):
+                if attempt > 0:
+                    # Inyectar aviso de reintento en el sistema para guiar al modelo
+                    if attempt == 1:
+                        current_system_prompt += "\n\nAVISO DE REINTENTO: Tu respuesta anterior no contenía un JSON procesable o faltaban campos. Responde ÚNICAMENTE con el bloque JSON solicitado en ESPAÑOL: { \"thought\": \"...\", \"response\": \"...\", \"action\": \"...\", \"params\": \"...\" }"
+                    else:
+                        current_system_prompt += "\n\nREINTENTO FINAL: El formato sigue siendo incorrecto. Por favor, envía SOLO el bloque JSON sin texto adicional, introducciones ni explicaciones fuera de él."
+                    print(f"[ChatService] Reintentando generación de Agente (Intento {attempt + 1})...")
 
-            # 4. Procesar texto
+                print(f"[ChatService] Generating response for model {model}...")
+                try:
+                    if self.current_adapter:
+                        raw_response = await self.current_adapter.generate_chat(history, current_system_prompt, model, images, max_tokens, temperature)
+                    else:
+                        raw_response = "Error: No hay un motor de LLM configurado."
+                        break
+                except Exception as e:
+                    print(f"[ChatService] Error en generación de LLM: {e}")
+                    traceback.print_exc()
+                    raw_response = f"Error crítico durante la generación: {str(e)}"
+                    break
+
+                # --- Post-procesado AGENTE (Parseador JSON) ---
+                agent_action = None
+                agent_params = None
+                if is_agent_mode:
+                    try:
+                        import json
+                        # 1. Función interna de limpieza agresiva para residuos técnicos
+                        def deep_clean(text):
+                            if not text: return ""
+                            t = text
+                            # Eliminar bloques de código markdown
+                            t = re.sub(r'```(?:json)?\s*.*?\s*```', '', t, flags=re.DOTALL)
+                            # Eliminar etiquetas técnicas de modelos
+                            tags = [r'<\|tool_call\|>', r'</?thought>', r'<\|.*?\|>', r'\[thought\]', r'\[/thought\]', r'---']
+                            for tag in tags:
+                                t = re.sub(tag, '', t, flags=re.IGNORECASE | re.DOTALL)
+                            # Eliminar guías de razonamiento típicas de modelos (I need to, Step 1, etc)
+                            narratives = [r'I need to.*?\n', r'Step \d+:.*?\n', r'Para continuar:.*?\n']
+                            for nar in narratives:
+                                t = re.sub(nar, '', t, flags=re.IGNORECASE | re.DOTALL)
+                            # Eliminar JSONs sueltos del texto
+                            t = re.sub(r'\{[^{}]*\}', '', t)
+                            t = re.sub(r'\{.*\}', '', t, flags=re.DOTALL)
+                            return t.strip()
+
+                        # 2. Buscar TODOS los bloques JSON y quedarnos con el que tenga 'action'
+                        json_blocks = re.findall(r'\{.*?\}', raw_response, re.DOTALL)
+                        if json_blocks:
+                            # Intentar encontrar el bloque que tenga contenido útil
+                            for block in reversed(json_blocks):
+                                try:
+                                    candidate = json.loads(block)
+                                    if "action" in candidate and candidate["action"] and candidate["action"] != "null":
+                                        best_block = candidate
+                                        break
+                                except: continue
+                            
+                            # Si ninguno tiene acción, coger el último válido
+                            if not best_block:
+                                for block in reversed(json_blocks):
+                                    try:
+                                        best_block = json.loads(block)
+                                        break
+                                    except: continue
+                        
+                        if best_block:
+                            thought = best_block.get("thought", "")
+                            clean_text_from_json = best_block.get("response", "")
+                            agent_action = best_block.get("action")
+                            agent_params = best_block.get("params")
+
+                            # Limpiar el texto extraído del JSON
+                            raw_response = deep_clean(clean_text_from_json)
+                            # Fallback si la limpieza borró demasiado o el campo estaba vacío
+                            if not raw_response or len(raw_response) < 2:
+                                raw_response = deep_clean(clean_text_from_json) or "Acción procesada."
+
+                            if thought:
+                                print(f"[Agente Pensamiento]: {thought}")
+                            
+                            # Si tenemos un bloque válido, salimos del bucle de reintentos
+                            break
+                        else:
+                            print(f"[ChatService] Advertencia: No se encontró JSON válido en intento {attempt + 1}")
+                            # Si es el último intento, limpiamos lo que haya para mostrarlo
+                            if attempt == max_attempts - 1:
+                                raw_response = deep_clean(raw_response)
+                    except Exception as je:
+                        print(f"[ChatService] Error parseando respuesta de Agente: {je}")
+                else:
+                    # Modo normal, un solo intento
+                    break
+
+            # 4. Procesar texto (TTS y Limpieza final)
             self.last_emojis = TextProcessor.extract_emojis(raw_response)
             clean_response = TextProcessor.clean_text_for_tts(raw_response)
+            
+            # --- Ejecutar acción de AGENTE si existe ---
+            if agent_action and self.module_service:
+                print(f"[Agente Ejecución]: Accionando herramienta '{agent_action}'...")
+                # Usamos el despachador de comandos existente
+                self.module_service.handle_voice_command(agent_action, agent_params or "")
 
             # 5. Si NO es silent, guardar respuesta en memoria
             if not silent:
                 self.memory.add_message("assistant", raw_response)
 
-            # 6. Si NO es silent Y NO saltamos TTS, lanzar TTS con voz de personaje si existe
-            if not silent and not skip_tts:
+            # 6. Si NO es silent Y NO saltamos TTS, lanzar TTS
+            # Verificación extra: si es modo Agente, respetar el flag 'audio_agent' de configuración
+            skip_agent_audio = is_agent_mode and not self.config.get("audio_agent", True)
+            
+            if not silent and not skip_tts and not skip_agent_audio:
                 char_voice = self.memory.data.get("voice_id")
                 char_provider = self.memory.data.get("voice_provider")
 

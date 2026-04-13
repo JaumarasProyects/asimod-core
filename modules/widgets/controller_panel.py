@@ -163,15 +163,24 @@ class ControllerPanel(tk.Frame):
         container.grid(row=row, column=1, sticky="w", pady=5)
         
         path_var = tk.StringVar(value=default or "Ninguno")
+        display_var = tk.StringVar(value=os.path.basename(path_var.get()) if path_var.get() != "Ninguno" else "Sin archivo")
         
-        lbl_path = tk.Label(container, text=os.path.basename(path_var.get()), bg=self.bg_color, fg="#888", font=("Arial", 8))
+        # Sincronizar etiqueta cuando cambie el path_var (usando trace)
+        def sync_label(*args):
+            p = path_var.get()
+            if p and p != "Ninguno":
+                display_var.set(os.path.basename(p))
+            else:
+                display_var.set("Sin archivo")
+        path_var.trace_add("write", sync_label)
+
+        lbl_path = tk.Label(container, textvariable=display_var, bg=self.bg_color, fg="#888", font=("Arial", 8))
         lbl_path.pack(side=tk.LEFT, padx=10)
 
         def pick_file():
             path = filedialog.askopenfilename(filetypes=file_types)
             if path:
                 path_var.set(path)
-                lbl_path.config(text=os.path.basename(path))
 
         btn = tk.Button(container, text="📁 Seleccionar", bg="#444", fg="white", bd=0, padx=8, font=("Arial", 8),
                          command=pick_file)

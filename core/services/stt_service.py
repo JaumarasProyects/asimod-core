@@ -9,10 +9,11 @@ class STTService:
 
     Modos soportados:
     - OFF
-    - CHAT
-    - COMMAND
-    - QUESTION
-    - VOICE_COMMAND (reconoce comandos del diccionario)
+    - OFF
+    - CHAT (Transcripción continua al chat)
+    - VOICE_COMMAND (Reconocimiento de comandos/atajos del diccionario)
+    - AGENT (Modo agentico por texto, sin micro)
+    - AGENT_AUDIO (Modo agentico con micro activo)
     """
 
     def __init__(self, config_service, on_chat_transcription=None, on_stt_result=None):
@@ -40,7 +41,7 @@ class STTService:
     def manage_microphone_thread(self):
         mode = str(self.config.get("stt_mode", "OFF")).upper()
 
-        if mode in ("CHAT", "COMMAND", "QUESTION", "VOICE_COMMAND") and self.adapter:
+        if mode in ("CHAT", "COMMAND", "QUESTION", "VOICE_COMMAND", "AGENT_AUDIO") and self.adapter:
             if not self.is_listening:
                 self.start_listening()
         else:
@@ -87,16 +88,9 @@ class STTService:
 
         print(f"[STTService] Recognized text in mode {mode}: {text}")
 
-        if mode == "CHAT":
+        if mode in ("CHAT", "AGENT_AUDIO"):
             if self.on_chat_transcription:
                 self.on_chat_transcription(text)
-
-        elif mode in ("COMMAND", "QUESTION"):
-            if self.on_stt_result:
-                self.on_stt_result(text)
-
-            if mode == "QUESTION":
-                self.config.set("stt_mode", "COMMAND")
 
         elif mode == "VOICE_COMMAND":
             command_matched = self._check_voice_commands(text)

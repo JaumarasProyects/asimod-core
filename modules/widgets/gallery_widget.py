@@ -79,7 +79,11 @@ class GalleryWidget(tk.Frame):
         self.canvas.itemconfig(self.canvas_window, width=event.width)
 
     def _on_mousewheel(self, event):
-        self.canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+        try:
+            if self.canvas.winfo_exists():
+                self.canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+        except:
+            pass
 
     def add_item(self, title, subtitle="", icon="📄", callback=None, is_folder=False, thumbnail_path=None):
         """Añade un elemento a la galería con soporte para miniaturas y validación de estado."""

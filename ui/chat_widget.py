@@ -375,19 +375,19 @@ class ChatWidget(tk.Frame):
                                   relief="flat", command=self.handle_send, cursor="hand2", width=8)
         self._btn_send.pack(side=tk.RIGHT, padx=2)
 
-        # STT Mode (Derecha - movido desde arriba)
-        stt_modes = ["OFF", "CHAT", "COMMAND", "VOICE_COMMAND"]
-        self.combo_stt_mode = ttk.Combobox(btns_frame, values=stt_modes, state="readonly", width=10)
+        # Stop (Derecha)
+        self._btn_stop = tk.Button(btns_frame, text="⏹ Stop", bg="#d43f3a", fg="white",
+                                  relief="flat", command=self._stop_audio, cursor="hand2")
+        self._btn_stop.pack(side=tk.RIGHT, padx=2)
+
+        # STT Mode (Derecha)
+        stt_modes = ["OFF", "CHAT", "VOICE_COMMAND", "AGENT", "AGENT_AUDIO"]
+        self.combo_stt_mode = ttk.Combobox(btns_frame, values=stt_modes, state="readonly", width=12)
         self.combo_stt_mode.pack(side=tk.RIGHT, padx=5)
         self.combo_stt_mode.bind("<<ComboboxSelected>>", self._on_stt_mode_change)
 
         self._lbl_stt_mode = tk.Label(btns_frame, text="STT:", bg=self.style.get_color("bg_main"), fg=self.style.get_color("text_dim"), font=("Arial", 8))
         self._lbl_stt_mode.pack(side=tk.RIGHT, padx=(5, 0))
-
-        # Stop (Derecha)
-        self._btn_stop = tk.Button(btns_frame, text="⏹ Stop", bg="#d43f3a", fg="white",
-                                  relief="flat", command=self._stop_audio, cursor="hand2")
-        self._btn_stop.pack(side=tk.RIGHT, padx=2)
 
         # Línea de archivos seleccionados
         self.lbl_files = tk.Label(self.chat_frame, text="", bg=self.style.get_color("bg_main"), fg="#4EC9B0", font=("Arial", 8, "italic"))
