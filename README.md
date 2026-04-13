@@ -1,117 +1,96 @@
-# ASIMOD Core 🤖🌌
+# ASIMOD Core: Universal Agentic Orchestrator 🤖🌌
 
-**ASIMOD Core** (Advanced Sensory Integrated Multimodal Orchestrating Device) is a comprehensive, modular AI ecosystem designed to serve as the unified brain for digital life, autonomous agents, and interactive avatars.
-
-Built on a robust **Ports & Adapters Architecture**, it seamlessly orchestrates Large Language Models (LLMs), Computer Vision, Speech-to-Text (STT), and Text-to-Speech (TTS) engines into a single, cohesive intelligence layer.
+> **[ES] Filosofía del Sistema:** ASIMOD Core es un **sistema agéntico de propósito general**. Su funcionalidad no está cableada en el núcleo; en su lugar, depende íntegramente de los **módulos acoplables** que el usuario desee integrar. Estos módulos son independientes y son los que crean la funcionalidad personalizada y específica que el usuario final necesita, transformando un "cerebro" genérico en una herramienta especializada.
 
 ---
 
-## 🏗️ System Architecture
+## 🧠 The Concept: Brain vs. Soul
 
-ASIMOD follows a hexagonal architecture, ensuring that core logic remains isolated from external services and user interfaces.
+ASIMOD (Advanced Sensory Integrated Multimodal Orchestrating Device) is designed as a **Universal Orchestrator**. 
 
-```mermaid
-graph TD
-    User([User]) <--> UI[Frontend: Standalone / Web]
-    UI <--> API[FastAPI Orchestrator]
-    
-    subgraph Core ["ASIMOD CORE (The Brain)"]
-        API <--> Service[Chat & Agent Service]
-        Service <--> Memory[(Persistent Memory)]
-        Service <--> Modules[[Modular Extensions]]
-    end
-    
-    subgraph Adapters ["Sensory & Logic Adapters"]
-        Modules <--> Tools[Tools: Browser, Terminal, etc.]
-        Service <--> LLM[LLMs: OpenAI, Gemini, Ollama]
-        Service <--> Vision[Vision: Cam, Screen, OCR]
-        Service <--> Voice[Voice: Edge TTS, ElevenLabs]
-    end
+- **The Core (The Brain):** Provides the fundamental infrastructure for multimodal interaction (Vision, Audio, Memory, API). It is an "empty" orchestrator that knows how to communicate but doesn't have a specific purpose.
+- **The Modules (The Soul):** Independent plugins that define the system's actual utility. Whether it's managing health, generating media, or controlling a robotic arm, the functionality lives in the modules.
+
+---
+
+## 🧩 The Module Ecosystem (Developer's Guide)
+
+Modules in ASIMOD are fully decoupled. You can add, remove, or swap modules without touching the core code. 
+
+### 🏗️ Integration Mechanics: How they connect
+The program performs a dynamic scan of the `modules/` directory at startup. If it find a folder with a valid class inheriting from `BaseModule`, it becomes part of the system's ecosystem immediately.
+
+- **Logic Integration:** The core imports your class and registers its methods.
+- **UI Integration (Local):** The core calls `get_widget()` to display your custom interface in the Standalone GUI.
+- **UI Integration (Remote):** If your module has a `web/` folder, the API server automatically mounts it at `/v1/modules/{module_id}/assets/` for the Dashboard.
+- **Resource Integration:** Any folder named `output/` inside your module will also be served as static assets.
+
+### 🤖 Creating Your First Module
+1. **Create the Folder:** Go to the `modules/` directory and create a new folder (e.g., `my_custom_tool/`).
+2. **Create the Entry Point:** Create an `__init__.py` inside that folder.
+3. **Inherit from `BaseModule`:** Define your class and provide it with a unique ID and Name.
+
+### 🎤 Commands & Agentic Intelligence
+This is the most critical part of a module. By defining commands, you provide the Agent with its "Soul":
+
+- **Voice Commands:** Traditional trigger phrases (e.g., "activate lights").
+- **Agentic Orders:** The Core reads your command list and injects it into the LLM's prompt. The Agent "discovers" that your module exists and understands what actions it can perform on your behalf.
+
+### 💻 Minimal Boilerplate Module
+```python
+import tkinter as tk
+from core.base_module import BaseModule
+
+class MyToolModule(BaseModule):
+    def __init__(self, chat_service, config, style, data_service=None):
+        super().__init__(chat_service, config, style, data_service)
+        self.name = "My Smart Tool"
+        self.id = "smart_tool"
+        self.icon = "🔧"
+
+    def get_widget(self, parent):
+        # Your custom Tkinter UI
+        frame = tk.Frame(parent, bg=self.style.get_color("bg_main"))
+        tk.Label(frame, text="Smart Control Panel", fg="white", bg="black").pack()
+        return frame
+
+    def get_voice_commands(self):
+        # These are SHARED with the Agent reasoning engine
+        return {
+            "turn on engine": "start_logic",
+            "set frequency": "adjust_freq"
+        }
+
+    def on_voice_command(self, action_slug, text):
+        # Implementation of your modular logic
+        if action_slug == "start_logic":
+            print("Modular logic executed!")
 ```
 
 ---
 
-## 🚀 Key Capabilities
+## 🚀 Key Systems
 
-### 🧠 Multimodal Intelligence
-- **Vision:** See the world through webcams, capture your screen in real-time, or analyze uploaded images.
-- **Audio:** High-performance STT and dual-mode TTS (Interrupt/Wait) for natural conversations.
-- **Agentic Logic:** The "Brain" can autonomously trigger actions within its installed modules based on natural language commands.
+### 🧠 Agentic Reasoning (The "Brain")
+Unlike static bots, ASIMOD uses an **Agentic Mode** to:
+- Analyze user intent via LLM.
+- Search for the appropriate module in the loaded ecosystem.
+- Trigger module-specific actions via JSON-structured reasoning based on the `get_voice_commands` metadata.
 
-### 💾 Persistent Persona Engine
-- **Threaded Memory:** Infinite conversation threads with full CRUD management.
-- **Character Profiles:** Each thread can have a unique personality, history, and voice configuration.
-- **Context Awareness:** Deep memory integration allows the AI to remember long-term interactions and user preferences.
-
-### 🌐 Remote & Local Control
-- **Web Dashboard:** A professional-grade remote interface for monitoring and control from any device.
-- **Standalone GUI:** A native Python application for ultra-low latency local interaction.
-- **Public Access:** Built-in Cloudflare Tunnel support for secure, passwordless remote access via public URLs.
+### 👁️ Sensory Integration (The "Inputs")
+The Core provides these sensors to the Agent:
+- **Vision:** Real-time analysis of webcam, screen, or files.
+- **Audio:** High-fidelity STT and dual-mode TTS (Interrupt/Wait).
+- **Memory:** Threaded, persistent context that grows with the user.
 
 ---
 
-## 🧩 The Module Ecosystem
+## 🖥️ Execution & Control
 
-ASIMOD Core is highly extensible through its module system. Each module can provide both logic (tools) and its own custom UI widgets.
-
-| Module | Description |
-| :--- | :--- |
-| **🎨 Media Generator** | Advanced AI workflows for generating Images, Videos, and 3D Assets. |
-| **🩺 Health** | Biometric tracking and real-time status monitoring. |
-| **📋 Projects** | Integrated task management and coordination hub. |
-| **💬 Communications** | Centralized contact management and messaging bridge. |
-| **🛠️ Utilities** | Essential tools: Notes, Terminal access, and System control. |
-
----
-
-## 🖥️ Getting Started
-
-### 1. Configuration
-The system uses a `settings.json` file. Ensure you provide your API keys there:
-```json
-{
-  "openai_key": "your-key",
-  "gemini_key": "your-key",
-  "ollama_url": "http://localhost:11434"
-}
-```
-
-### 2. Execution Modes
-- **Full Desktop UI:** `python main_standalone.py`
-- **Lightweight Server:** `python main_headless.py`
-- **Web Dashboard (Local Network):** Run `start_web_remote.bat`
-- **Public URL Access:** Run `start_remote_public.bat`
-
----
-
-## 🔌 API Documentation
-
-ASIMOD exposes a rich REST API on port `8000`.
-
-### Sensory & Chat
-- `POST /v1/chat`: Send a multimodal message (Text + Vision).
-- `POST /v1/audio/speak`: Trigger arbitrary TTS generation.
-- `POST /v1/stt/mode`: Switch between generic chat, commands, and agent modes.
-
-### Memory & Threads
-- `GET /v1/memories`: List all conversation threads.
-- `POST /v1/memories`: Create or switch to a thread.
-- `PATCH /v1/memories/profile`: Update the active character's identity.
-
-### Modules & Media
-- `GET /v1/modules`: List active modules and their UI states.
-- `POST /v1/modules/{id}/action`: Execute a modular tool (e.g., "Generate Image").
-- `GET /v1/gallery`: Browse and manage generated files in the `output` folder.
-
----
-
-## 🔒 Official Adapters (SDKs)
-
-Ready-to-use clients for integrating ASIMOD into your favorite engine:
-- **Unity (C#)**: `engine_adapters/UnityIntegration/`
-- **Unreal (C++)**: `engine_adapters/UnrealIntegration/`
-- **Godot (GDScript)**: `engine_adapters/GodotIntegration/`
-- **Python**: `engine_adapters/PythonIntegration/`
+ASIMOD offers multiple ways to interact with its agentic core:
+- **Standalone GUI:** Local Python application (Tkinter).
+- **Web Dashboard:** Remote management via FastAPI.
+- **Public Tunnels:** Secure remote access via Cloudflare.
 
 ---
 
