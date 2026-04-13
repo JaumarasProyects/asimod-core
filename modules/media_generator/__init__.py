@@ -15,7 +15,7 @@ from modules.widgets import MediaDisplayWidget
 class MediaGeneratorModule(StandardModule):
     def __init__(self, chat_service, config_service, style_service, data_service=None):
         super().__init__(chat_service, config_service, style_service, data_service=data_service)
-        self.name = "Media Generator"
+        self.name = "Media"
         self.id = "media_generator"
         self.icon = "🎨"
         
@@ -35,9 +35,14 @@ class MediaGeneratorModule(StandardModule):
         self.output_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "output"))
         self.gallery_path = self.output_root 
         
-        # Asegurar carpetas base
-        for sub in ["texto", "imagen", "audio", "video", "3d"]:
-            os.makedirs(os.path.join(self.output_root, sub), exist_ok=True)
+            
+        # Estado de comandos de voz
+        self.awaiting_instruction = False
+        self.awaiting_gallery_num = False
+        self.last_gallery_wait_id = None  # ID para cancelar el temporizador de espera
+            
+        # Estado de comandos de voz
+        self.awaiting_instruction = False
             
         # Estado de modelos LLM para letras
         self.llm_models = []
@@ -94,6 +99,10 @@ class MediaGeneratorModule(StandardModule):
         
         # 2. Refrescar el área de trabajo
         self.refresh_workspace()
+        
+        # 3. Sincronizar comandos de voz
+        if hasattr(self.chat_service, "module_service"):
+            self.chat_service.module_service.resync_module_commands()
 
     def _update_controllers_logic(self, mode):
         """Lógica interna para actualizar el ControllerPanel."""
@@ -1076,6 +1085,21 @@ class MediaGeneratorModule(StandardModule):
     def _on_folder_click(self, folder_name):
         self.gallery_path = os.path.join(self.gallery_path, folder_name)
         self._refresh_gallery_from_disk()
+        
+        # Periodo de gracia: Mantener el modo escucha 5 segundos tras entrar en carpeta
+        self.awaiting_gallery_num = True
+        self.chat_service.notify_system_msg("ASIMOD: [Galería] Carpeta abierta. Dime un número...", "#4EC9B0")
+        
+        if self.last_gallery_wait_id:
+            self.workspace.after_cancel(self.last_gallery_wait_id)
+        self.last_gallery_wait_id = self.workspace.after(5000, self._stop_gallery_wait)
+
+    def _stop_gallery_wait(self):
+        """Cancela la espera activa de número si se agota el tiempo."""
+        self.awaiting_gallery_num = False
+        self.chat_service.stt_captured_by_module = False
+        self.last_gallery_wait_id = None
+        # Opcional: Podríamos mostrar un mensaje de "Espera finalizada", pero mejor ser silencioso
 
     def _clear_all(self):
         self.prompt_text.delete("1.0", tk.END)
@@ -1407,11 +1431,158 @@ class MediaGeneratorModule(StandardModule):
         self.ctrl_panel.add_dropdown("Workflow de Video", "video_workflow", files, default=default_val)
 
     def get_voice_commands(self):
-        return {"generador": "show_main", "crear imagen": "gen_image", "generar texto": "gen_text"}
+        """Genera el diccionario de comandos basado en el modo actual."""
+        commands = {
+            "texto": "set_mode_texto",
+            "imagen": "set_mode_imagen",
+            "fotos": "set_mode_imagen",
+            "video": "set_mode_video",
+            "vídeo": "set_mode_video",
+            "3d": "set_mode_3d",
+            "tres d": "set_mode_3d",
+            "3 d": "set_mode_3d",
+            "audio": "set_mode_audio",
+            "sonido": "set_mode_audio",
+            "generar": "generate",
+            "galería": "gallery_nav",
+            "galeria": "gallery_nav",
+            "instrucción": "instruction",
+            "instruccion": "instruction"
+        }
+        
+        # Variantes naturales
+        commands["crear imagen"] = "set_mode_imagen"
+        commands["hacer un video"] = "set_mode_video"
+        commands["grabar video"] = "set_mode_video"
+        commands["hacer un vídeo"] = "set_mode_video"
+        commands["pon modo audio"] = "set_mode_audio"
+        commands["crear 3d"] = "set_mode_3d"
+        
+        return commands
 
     def on_voice_command(self, action_slug, text):
-        if action_slug == "gen_image": self.on_menu_change("Imagen")
-        elif action_slug == "gen_text": self.on_menu_change("Texto")
+        """Maneja la ejecución de los comandos de voz."""
+        
+        # 1. Tratar capturas activas (Modo espera)
+        if not action_slug:
+            if self.awaiting_instruction:
+                self._capture_prompt(text)
+                return
+            if self.awaiting_gallery_num:
+                self._perform_gallery_selection(text)
+                return
+            return
+
+        # 2. Comandos directos o activadores
+        print(f"[MediaGenerator] Comando ejecutado: {action_slug} (Text: {text})")
+        
+        if action_slug == "instruction":
+            # Intentar ver si ya viene el prompt en la misma frase (ej: "instrucción pájaro azul")
+            prompt_only = self._strip_trigger(text, ["instrucción", "instruccion"])
+            if prompt_only:
+                self._capture_prompt(prompt_only)
+            else:
+                self.awaiting_instruction = True
+                self.chat_service.stt_captured_by_module = True
+                self.chat_service.notify_system_msg("ASIMOD: Esperando instrucción de prompt...", "#4EC9B0")
+            return
+
+        if action_slug == "gallery_nav":
+            # Intentar ver si ya hay un número en el comando "galería X"
+            if not self._perform_gallery_selection(text, silent_if_fail=True):
+                # Si no había número, entrar en modo espera
+                self.awaiting_gallery_num = True
+                self.chat_service.stt_captured_by_module = True
+                self.chat_service.notify_system_msg("ASIMOD: [Galería] Dime un número o 'atrás'...", "#4EC9B0")
+            return
+
+        if action_slug.startswith("set_mode_"):
+            mode_map = {
+                "set_mode_texto": "Texto",
+                "set_mode_imagen": "Imagen",
+                "set_mode_video": "Video",
+                "set_mode_audio": "Audio",
+                "set_mode_3d": "3D"
+            }
+            target = mode_map.get(action_slug)
+            if target:
+                if self.menu: self.menu.select(target)
+                else: self.on_menu_change(target)
+            return
+
+        if action_slug == "generate":
+            self.handle_generate()
+            return
+
+    def _strip_trigger(self, text, triggers):
+        """Elimina el trigger del inicio del texto para obtener solo el prompt."""
+        text_clean = text.lower().strip()
+        for t in triggers:
+            if text_clean.startswith(t):
+                # Cortamos el trigger y limpiamos espacios
+                result = text_clean[len(t):].strip()
+                if result: return result
+        return None
+
+    def _capture_prompt(self, text):
+        """Procesa y anota un prompt capturado por voz."""
+        print(f"[MediaGenerator] Capturando instrucción: {text}")
+        self.prompt_text.delete("1.0", tk.END)
+        self.prompt_text.insert("1.0", text)
+        self.prompt_text.config(fg=self.style.get_color("text_main"))
+        self.awaiting_instruction = False
+        self.chat_service.stt_captured_by_module = False
+        self.workspace.after(100, self.handle_generate)
+
+    def _perform_gallery_selection(self, text, silent_if_fail=False):
+        """Extrae el número o acción de navegación del texto y lo ejecuta en la galería."""
+        self.awaiting_gallery_num = False
+        self.chat_service.stt_captured_by_module = False
+        text_clean = text.lower().strip()
+        
+        # 1. Comandos de navegación
+        nav_keywords = ["atrás", "atras", "retroceder", "volver", "subir"]
+        if any(k in text_clean for k in nav_keywords):
+            self._on_gallery_back()
+            return True
+
+        # 2. Mapeo de números (Palabras a Int)
+        num_map = {
+            "uno": 1, "dos": 2, "tres": 3, "cuatro": 4, "cinco": 5,
+            "seis": 6, "siete": 7, "ocho": 8, "nueve": 9, "diez": 10,
+            "once": 11, "doce": 12, "trece": 13, "catorce": 14, "quince": 15
+        }
+        
+        # Extraer número digitado o palabra
+        import re
+        match = re.search(r'\d+', text_clean)
+        num = None
+        if match:
+            num = int(match.group())
+        else:
+            for word, val in num_map.items():
+                if word in text_clean:
+                    num = val
+                    break
+        
+        if num and self.gallery:
+            success = self.gallery.trigger_index(num)
+            if success:
+                # Cancelar cualquier espera de carpeta pendiente si ya seleccionamos un ítem
+                if self.last_gallery_wait_id:
+                    self.workspace.after_cancel(self.last_gallery_wait_id)
+                    self.last_gallery_wait_id = None
+                
+                if hasattr(self, "media_display") and self.media_display:
+                    self.media_display.ensure_playing()
+                self.chat_service.notify_system_msg(f"Abriendo elemento {num}...", "#4EC9B0")
+                return True
+            else:
+                self.chat_service.notify_system_msg(f"Error: El número {num} no está en la lista.", "#FF6B6B")
+                return True
+        
+        return False
+
 
 class ComfyUIConfigView(tk.Frame):
     def __init__(self, parent, config, style, image_service, on_back=None):

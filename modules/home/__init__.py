@@ -104,6 +104,9 @@ class HomeModule(StandardModule):
         return cmds
 
     def on_voice_command(self, action_slug, text):
+        if not action_slug:
+            return
+            
         if action_slug.startswith("tab_"):
             tab_name = action_slug.replace("tab_", "")
             if tab_name in self.menu_items:

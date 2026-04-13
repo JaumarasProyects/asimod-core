@@ -389,6 +389,7 @@ class APIServer:
                 "voice_id": actual_voice if actual_voice else "es-ES-AlvaroNeural",
                 "stt_provider": self.chat_service.config.get("stt_provider", "None"),
                 "stt_mode": self.chat_service.config.get("stt_mode", "OFF"),
+                "stt_captured_by_module": getattr(self.chat_service, "stt_captured_by_module", False),
                 "char_name": self.chat_service.memory.data.get("name", ""),
                 "char_personality": self.chat_service.memory.data.get("personality", "")
             }

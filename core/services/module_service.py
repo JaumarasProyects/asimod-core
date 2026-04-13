@@ -100,13 +100,21 @@ class ModuleService:
         """Registra los nombres de los módulos como comandos globales de apertura."""
         base_cmds = {}
         for mid, mod in self.loaded_modules.items():
-            # Trigger: "agenda" -> Action: "open_agenda"
             trigger = mod.name.lower()
             base_cmds[trigger] = f"open_{mid}"
-            # También soportar variante "abrir agenda"
             base_cmds[f"abrir {trigger}"] = f"open_{mid}"
+            base_cmds[f"activa el {trigger}"] = f"open_{mid}"
+            base_cmds[f"activar {trigger}"] = f"open_{mid}"
+            base_cmds[f"panel de {trigger}"] = f"open_{mid}"
         
         self.chat_service.stt_service.set_base_module_commands(base_cmds)
+
+    def resync_module_commands(self):
+        """Fuerza la actualización de los comandos del módulo activo en el servicio de voz."""
+        if self.active_module:
+            commands = self.active_module.get_voice_commands()
+            self.chat_service.stt_service.set_contextual_commands(commands)
+            print(f"[ModuleService] Comandos de {self.active_module.name} re-sincronizados.")
 
     def activate_module(self, module_id: str):
         """Activa un módulo y actualiza los comandos de voz contextuales."""
@@ -147,6 +155,12 @@ class ModuleService:
 
     def handle_voice_command(self, action_slug: str, text: str):
         """Despacha el comando de voz al módulo activo o maneja la apertura de módulos."""
+        if not action_slug:
+            # Si no hay comando directo, lo pasamos al módulo activo por si está en modo espera (prompt/galería)
+            if self.active_module:
+                self.active_module.on_voice_command(None, text)
+            return
+
         # 1. Comprobar si es un comando de apertura de módulo
         if action_slug.startswith("open_"):
             module_id = action_slug.replace("open_", "")

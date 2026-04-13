@@ -113,22 +113,31 @@ class STTService:
                     print(f"[STTService] Error in voice command callback: {e}")
 
     def _check_voice_commands(self, text: str) -> str:
-        # 1. Comandos permanentes de configuración
-        commands = dict(self.config.get("voice_commands", {}))
-        
-        # 2. Comandos base (Activación de módulos)
-        if hasattr(self, 'base_module_commands') and self.base_module_commands:
-            commands.update(self.base_module_commands)
-        
-        # 3. Comandos contextuales (Módulo activo)
-        if self.contextual_commands:
-            commands.update(self.contextual_commands)
-
+        """
+        Evalúa el texto contra los diccionarios de comandos con prioridad:
+        Contextual (Módulo) > Base (Navegación) > Global (Configuración).
+        Usa coincidencia de la frase más larga para evitar ambigüedades.
+        """
         text_lower = text.lower()
         
-        for trigger, action in commands.items():
-            if trigger.lower() in text_lower:
-                return action
+        # 1. Preparar lista de comandos ordenados por longitud del trigger (descendente)
+        # Esto asegura que "crear 3d" se evalúe antes que "3".
+        all_priorities = [
+            self.contextual_commands,         # Prioridad 1: Módulo activo
+            self.base_module_commands,        # Prioridad 2: Navegación de paneles
+            dict(self.config.get("voice_commands", {})) # Prioridad 3: Configuración global
+        ]
+
+        for cmd_dict in all_priorities:
+            if not cmd_dict:
+                continue
+            
+            # Ordenar triggers por longitud para máxima precisión en este nivel de prioridad
+            sorted_triggers = sorted(cmd_dict.items(), key=lambda x: len(x[0]), reverse=True)
+            
+            for trigger, action in sorted_triggers:
+                if trigger.lower() in text_lower:
+                    return action
         
         return None
 

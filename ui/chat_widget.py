@@ -33,6 +33,10 @@ class ChatWidget(tk.Frame):
         self.chat_engine.on_stt_finished_cb = self._on_stt_finished
         self.stt_service.add_voice_command_callback(self._on_voice_command)
         
+        # Suscribir a mensajes de sistema/locales (sin voz)
+        if hasattr(self.chat_engine, "on_system_msg_cb"):
+            self.chat_engine.on_system_msg_cb = self._on_system_msg_notified
+        
         # Contenedor principal para las vistas
         self.container = tk.Frame(self, bg=self.style.get_color("bg_main"))
         self.container.pack(fill=tk.BOTH, expand=True)
@@ -641,19 +645,29 @@ class ChatWidget(tk.Frame):
             # Enviamos al chat en el hilo principal
             self.after(0, lambda: self._process_stt_input(text))
 
+    def _on_system_msg_notified(self, text, color=None):
+        """Muestra un mensaje del sistema en el chat (sin voz)."""
+        color = color or "#888"
+        self.after(0, lambda: self._append_message("ASIMOD", text, color))
+
     def _on_voice_command(self, command_matched, text):
         """Callback cuando se reconoce un comando de voz."""
         if command_matched:
-            winsound.MessageBeep(winsound.MB_OK)
+            winsound.Beep(800, 80)
             self.after(0, lambda: self._append_message("SYSTEM", f"Voice command recognized: {text} → {command_matched}", "#FF6B6B"))
         elif self.var_test_mode.get():
             text_lower = text.lower()
             if "comando" in text_lower or "prueba" in text_lower:
-                winsound.MessageBeep(winsound.MB_OK)
+                winsound.Beep(800, 80)
                 self.after(0, lambda: self._append_message("TEST MODE", f"Command detected: {text}", "#4ECDC4"))
         
         if text:
-            self.after(0, lambda: self._display_recognized_text(text))
+            # Solo mostrar el texto reconocido en el input si NO está siendo capturado por un módulo
+            if not getattr(self.chat_engine, "stt_captured_by_module", False):
+                self.after(0, lambda: self._display_recognized_text(text))
+            else:
+                # Opcional: Podríamos limpiar el input si algo quedó allí
+                self.after(0, lambda: self.input_field.delete(0, tk.END))
 
     def _display_recognized_text(self, text):
         """Muestra el texto reconocido en el input field."""

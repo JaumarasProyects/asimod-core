@@ -28,6 +28,10 @@ class ChatService(ChatPort):
         self._last_message_time = 0  # Timestamp del último mensaje procesado
         self._message_cooldown = 1.5  # Segundos de bloqueo forzado tras un mensaje
 
+        # Flag para que la UI sepa si el STT está siendo capturado por un módulo
+        # Si es True, la UI de chat no debería mostrar el texto en el input field
+        self.stt_captured_by_module = False
+
         # Estado actual de emociones para la API externa
         self.last_emojis = []
 
@@ -37,15 +41,23 @@ class ChatService(ChatPort):
         # Callback para exponer STT a Unity/API cuando trabaja en COMMAND/QUESTION
         self.on_stt_result_cb: Optional[Callable[[str], None]] = None
 
+        # Callback para notificar mensajes locales/sistema a la UI
+        self.on_system_msg_cb: Optional[Callable[[str, str], None]] = None
+
         # Servicios de voz
         self.voice_service = VoiceService(config_service, self.locale_service)
-
+        
         # STT con doble callback
         self.stt_service = STTService(
             config_service=config_service,
             on_chat_transcription=self._on_stt_complete,
             on_stt_result=self._on_stt_result
         )
+
+    def notify_system_msg(self, text: str, color: str = None):
+        """Notifica un mensaje para ser mostrado en la UI de chat sin TTS."""
+        if self.on_system_msg_cb:
+            self.on_system_msg_cb(text, color)
 
         # Inicializar proveedor LLM
         self.switch_provider(self.config.get("last_provider", "Ollama"))

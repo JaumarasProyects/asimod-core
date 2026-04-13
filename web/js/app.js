@@ -88,6 +88,7 @@ class AsimodApp {
 
     async init() {
         console.log("[ASIMOD] Inicializando sistema unificado...");
+        this._injectGalleryStyles();
         
         // El registro de eventos debe ser lo primero para que la UI sea funcional
         this.setupEventListeners();
@@ -729,16 +730,29 @@ class AsimodApp {
         console.log(`[ASIMOD] Chat ${isHidden ? 'oculto' : 'visible'}`);
     }
 
-    async loadGallery(path = null) {
+    /* Inyectar CSS para numeración de galería */
+    _injectGalleryStyles() {
+        const style = document.createElement('style');
+        style.innerHTML = `
+            .gallery-item { position: relative; }
+            .gallery-item-index {
+                position: absolute; top: 10px; left: 10px; background: var(--accent); color: var(--bg-dark);
+                font-weight: 800; font-size: 0.7rem; padding: 2px 6px; border-radius: 4px; z-index: 2;
+                box-shadow: 0 2px 10px rgba(0,0,0,0.5); pointer-events: none;
+            }
+        `;
+        document.head.appendChild(style);
+    }
+
+    async loadGallery(path = null, moduleIdParam = null) {
         if (!this.galleryList) return;
         
-        // Reset path if we change module
+        // Estado inicial de carga
+        this.galleryList.innerHTML = '<div style="padding:40px; text-align:center;"><span class="loading-spinner"></span><div style="margin-top:10px; font-size:0.8rem; opacity:0.5;">Cargando Galería...</div></div>';
+        
+        // Reset path si cambiamos de módulo
         if (path === null) {
-            // Smart Navigation: jump to module subfolder if no path is specified
-            const defaultMap = {
-                'media_generator': 'imagen',
-                'communications': 'audio'
-            };
+            const defaultMap = { 'media_generator': 'imagen', 'communications': 'audio' };
             this.currentGalleryPath = defaultMap[this.activeModule?.id] || '';
         } else {
             this.currentGalleryPath = path;
@@ -748,19 +762,30 @@ class AsimodApp {
             const moduleId = moduleIdParam || (this.activeModule ? this.activeModule.id : '');
             console.log(`[ASIMOD] Solicitando galería: mod=${moduleId}, path=${this.currentGalleryPath}`);
             const url = `/v1/gallery?module_id=${moduleId}&path=${encodeURIComponent(this.currentGalleryPath)}`;
-            const resp = await fetch(url);
-            if (!resp.ok) return;
-            const data = await resp.json();
             
+            const resp = await fetch(url);
+            
+            // Limpiar el mensaje de carga antes de procesar el éxito o error
             this.galleryList.innerHTML = '';
+
+            if (!resp.ok) {
+                const errData = await resp.json().catch(() => ({}));
+                this.galleryList.innerHTML = `<div style="padding:20px; color:var(--accent); text-align:center; font-size:0.8rem;">Error ${resp.status}: ${errData.message || 'No se pudo cargar la galería'}</div>`;
+                return;
+            }
+            
+            const data = await resp.json();
             const items = data.items || [];
+            this.currentGalleryItems = items; // Guardar para acceso por voz/índice
+            let currentIndex = 1;
             
             // 1. Botón "Atrás" si no estamos en la raíz
             if (data.can_go_back) {
                 const backBtn = document.createElement('div');
                 backBtn.className = 'gallery-nav-back';
                 backBtn.innerHTML = `<span>⬅</span> ATRÁS / PARENT`;
-                backBtn.onclick = () => {
+                backBtn.onclick = (e) => {
+                    e.stopPropagation();
                     const parts = this.currentGalleryPath.split('/');
                     parts.pop();
                     this.loadGallery(parts.join('/'));
@@ -799,17 +824,28 @@ class AsimodApp {
                     `;
                 }
 
-                el.onclick = () => {
+                el.onclick = (e) => {
+                    e.stopPropagation();
                     if (type === 'folder') {
                         this.loadGallery(item.path);
                     } else {
                         this.previewMedia(item);
                     }
                 };
+
+                // Añadir número de índice
+                const indexSpan = document.createElement('span');
+                indexSpan.className = 'gallery-item-index';
+                indexSpan.innerText = currentIndex++;
+                el.appendChild(indexSpan);
+
                 this.galleryList.appendChild(el);
             });
         } catch (e) {
             console.error("[ASIMOD] Error cargando galería:", e);
+            if (this.galleryList) {
+                this.galleryList.innerHTML = `<div style="padding:20px; color:red; text-align:center; font-size:0.8rem;">Excepción: ${e.message}</div>`;
+            }
         }
     }
 

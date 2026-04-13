@@ -61,6 +61,9 @@ class GalleryWidget(tk.Frame):
         # Soporte para rueda del ratón
         self.canvas.bind_all("<MouseWheel>", self._on_mousewheel)
 
+        # Registro de elementos numerados
+        self.item_callbacks = [] # Lista de funciones (índice 0 = nada, 1 = elem 1)
+
     def set_back_visibility(self, visible):
         """Muestra u oculta el botón de retroceso."""
         if visible:
@@ -107,6 +110,15 @@ class GalleryWidget(tk.Frame):
             color = (self.style.get_color("accent") if self.style else "#ffd700") if is_folder else (self.style.get_color("text_dim") if self.style else "#aaa")
             icon_lbl = tk.Label(item_frame, text=icon, bg=self.item_bg, fg=color, font=("Arial", 14 if not is_folder else 12))
             icon_lbl.pack(side=tk.LEFT, padx=(0, 10))
+            
+        # 3. Número de índice (si existe)
+        index = len(self.item_callbacks) + 1
+        self.item_callbacks.append(callback)
+        
+        num_bg = self.style.get_color("accent") if self.style else "#4EC9B0"
+        num_lbl = tk.Label(item_frame, text=str(index), bg=num_bg, fg="white", 
+                           font=("Arial", 7, "bold"), width=3, pady=2)
+        num_lbl.pack(side=tk.LEFT, padx=(0, 10))
         
         # Textos
         txt_frame = tk.Frame(item_frame, bg=self.item_bg)
@@ -142,10 +154,21 @@ class GalleryWidget(tk.Frame):
                 for grandchild in child.winfo_children():
                     grandchild.config(bg=color)
 
+    def trigger_index(self, index):
+        """Ejecuta el callback del elemento en el índice dado (1-based)."""
+        idx = index - 1
+        if 0 <= idx < len(self.item_callbacks):
+            cb = self.item_callbacks[idx]
+            if cb:
+                cb()
+                return True
+        return False
+
     def clear(self):
         """Limpia todos los elementos de la galería de forma segura."""
         if not self.winfo_exists(): return
         if not self.scrollable_frame.winfo_exists(): return
         
+        self.item_callbacks = []
         for widget in self.scrollable_frame.winfo_children():
             widget.destroy()
