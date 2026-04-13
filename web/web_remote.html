@@ -1,0 +1,782 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ASIMOD - Control Remoto</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #1a1a2e; color: #eee; min-height: 100vh; display: flex; flex-direction: column; }
+        
+        header { background: #16213e; padding: 10px 15px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #0f3460; }
+        h1 { font-size: 1.3rem; color: #e94560; }
+        .header-right { display: flex; gap: 10px; align-items: center; }
+        .status-badge { background: #0f3460; padding: 5px 12px; border-radius: 20px; font-size: 0.8rem; }
+        .api-status { background: #0f3460; padding: 4px 10px; border-radius: 15px; font-size: 0.75rem; }
+        
+        .toolbar { background: #16213e; padding: 10px; border-bottom: 1px solid #0f3460; max-height: 300px; overflow-y: auto; }
+        .toolbar-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 8px; }
+        .toolbar-row:last-child { margin-bottom: 0; }
+        .toolbar-label { font-size: 0.75rem; color: #888; min-width: 60px; }
+        .toolbar select, .toolbar input { background: #0f3460; color: #eee; border: 1px solid #333; padding: 5px 8px; border-radius: 4px; font-size: 0.8rem; }
+        .toolbar select { min-width: 100px; }
+        .toolbar input[type="number"] { width: 70px; }
+        .toolbar input[type="text"] { width: 120px; }
+        .toolbar button { background: #0f3460; color: #eee; border: none; padding: 5px 12px; border-radius: 4px; cursor: pointer; font-size: 0.8rem; }
+        .toolbar button:hover { background: #1a4a7a; }
+        .toolbar button.primary { background: #e94560; }
+        .toolbar button.primary:hover { background: #d63850; }
+        
+        .main { flex: 1; display: flex; flex-direction: column; max-width: 800px; margin: 0 auto; width: 100%; padding: 15px; }
+        .chat-container { flex: 1; overflow-y: auto; background: #16213e; border-radius: 12px; padding: 15px; margin-bottom: 15px; min-height: 300px; max-height: 60vh; }
+        .message { margin-bottom: 12px; padding: 10px 14px; border-radius: 12px; max-width: 85%; word-wrap: break-word; }
+        .message.user { background: #e94560; color: #fff; align-self: flex-end; margin-left: auto; }
+        .message.asimod { background: #0f3460; color: #fff; display: flex; flex-direction: column; gap: 8px; }
+        .message.system { background: #2d4a3e; color: #4ec9b0; font-size: 0.85rem; }
+        .message audio { width: 100%; height: 32px; margin-top: 5px; border-radius: 5px; filter: invert(0.8) hue-rotate(180deg); opacity: 0.8; }
+        
+        .input-area { display: flex; gap: 10px; align-items: center; }
+        .input-area input { flex: 1; padding: 12px 16px; border: none; border-radius: 25px; background: #16213e; color: #eee; font-size: 1rem; outline: none; }
+        .input-area input:focus { box-shadow: 0 0 0 2px #e94560; }
+        .input-area button { padding: 12px 20px; border: none; border-radius: 25px; background: #e94560; color: #fff; font-size: 1rem; cursor: pointer; font-weight: 600; }
+        .input-area button:hover { background: #d63850; }
+        .input-area button:disabled { background: #555; cursor: not-allowed; }
+        
+        .controls { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 15px; }
+        .control-btn { padding: 10px 14px; background: #0f3460; border: none; border-radius: 8px; color: #eee; cursor: pointer; font-size: 0.85rem; }
+        .control-btn:hover { background: #1a4a7a; }
+        .control-btn.active-toggle { background: #e94560; box-shadow: 0 0 8px rgba(233, 69, 96, 0.5); }
+        .control-btn.recording { background: #e94560; animation: pulse 0.8s infinite; border: 2px solid #fff; }
+        @keyframes pulse { 0% { opacity: 1; transform: scale(1); } 50% { opacity: 0.7; transform: scale(1.05); } 100% { opacity: 1; transform: scale(1); } }
+        
+        .model-info { font-size: 0.75rem; color: #666; margin-top: 10px; text-align: center; }
+        .files-label { font-size: 0.8rem; color: #4ec9b0; margin-bottom: 10px; }
+        
+        .collapsible { cursor: pointer; user-select: none; }
+        .collapsible::before { content: "▼ "; font-size: 0.7rem; }
+        .collapsed .toolbar-content { display: none; }
+        .collapsed::before { content: "▶ "; }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>🤖 ASIMOD</h1>
+        <div class="header-right">
+            <span class="api-status" id="apiStatus">API: ...</span>
+            <span class="status-badge" id="status">Conectando...</span>
+        </div>
+    </header>
+    
+    <div class="toolbar collapsible" id="toolbar">
+        <div class="toolbar-content">
+            <!-- Row 1: Memory/Thread -->
+            <div class="toolbar-row">
+                <span class="toolbar-label">📚 Memoria:</span>
+                <select id="comboMemory" style="width: 200px;"></select>
+                <button id="btnRefreshMem">🔄</button>
+                <button id="btnNewThread">➕ Nuevo</button>
+            </div>
+            
+            <!-- Row 2: Profile -->
+            <div class="toolbar-row">
+                <span class="toolbar-label">👤 Nombre:</span>
+                <input type="text" id="entCharName" placeholder="Nombre" style="width: 100px;">
+                <span class="toolbar-label">Personalidad:</span>
+                <input type="text" id="entCharPers" placeholder="Personalidad" style="width: 180px;">
+                <span class="toolbar-label">Voz:</span>
+                <select id="comboCharMotor" style="width: 100px;"></select>
+                <select id="comboCharVoice" style="width: 150px;"></select>
+                <button id="btnSaveProfile" class="primary">💾</button>
+            </div>
+            
+            <!-- Row 3: AI Provider -->
+            <div class="toolbar-row">
+                <span class="toolbar-label">🤖 Motor AI:</span>
+                <select id="comboProvider" style="width: 130px;"></select>
+                <span class="toolbar-label">Modelo:</span>
+                <select id="comboModel" style="width: 180px;"></select>
+            </div>
+            
+            <!-- Row 4: Inference -->
+            <div class="toolbar-row">
+                <span class="toolbar-label">⚙️ Max Tokens:</span>
+                <input type="number" id="spinMaxTokens" min="64" max="4096" value="1024">
+                <span class="toolbar-label">Temp:</span>
+                <input type="number" id="sliderTemp" min="0.1" max="2.0" step="0.1" value="0.7" style="width: 60px;">
+            </div>
+            
+            <!-- Row 5: TTS -->
+            <div class="toolbar-row">
+                <span class="toolbar-label">🔊 TTS:</span>
+                <select id="comboVoice" style="width: 100px;"></select>
+                <span class="toolbar-label">Modo:</span>
+                <select id="comboVoiceMode" style="width: 90px;">
+                    <option value="autoplay">autoplay</option>
+                    <option value="path">path</option>
+                </select>
+                <span class="toolbar-label">Voz:</span>
+                <select id="comboVoiceId" style="width: 180px;"></select>
+            </div>
+            
+            <!-- Row 6: STT -->
+            <div class="toolbar-row">
+                <span class="toolbar-label">🎤 STT:</span>
+                <select id="comboSttProvider" style="width: 150px;"></select>
+                <span class="toolbar-label">Modo:</span>
+                <select id="comboSttMode" style="width: 120px;">
+                    <option value="OFF">OFF</option>
+                    <option value="CHAT">CHAT</option>
+                    <option value="COMMAND">COMMAND</option>
+                    <option value="VOICE_COMMAND">VOICE_COMMAND</option>
+                </select>
+            </div>
+        </div>
+    </div>
+
+    <div class="main">
+        <div class="controls">
+            <button class="control-btn" id="cameraBtn">📷 Cámara</button>
+            <button class="control-btn" id="screenBtn">🖥️ Pantalla</button>
+            <button class="control-btn" id="imageBtn">📁 Imagen</button>
+            <input type="file" id="imageInput" accept="image/*" style="display: none;">
+            <button class="control-btn active-toggle" id="micBtn">🎤 Voz</button>
+            <button class="control-btn" id="speakBtn">🔊 Hablar</button>
+            <button class="control-btn" id="stopBtn">⏹ Parar</button>
+            <button class="control-btn" id="clearBtn">🗑 Limpiar</button>
+            <button class="control-btn" id="toggleToolbar">▼ Herramientas</button>
+        </div>
+        
+        <div class="chat-container" id="chat"></div>
+        <div class="files-label" id="filesLabel"></div>
+        
+        <div class="input-area">
+            <input type="text" id="messageInput" placeholder="Escribe un mensaje..." autofocus>
+            <button id="sendBtn">Enviar</button>
+        </div>
+        
+        <div class="model-info" id="modelInfo"></div>
+    </div>
+
+    <script>
+        const API_URL = window.location.origin;
+        
+        // Elements
+        const chat = document.getElementById('chat');
+        const input = document.getElementById('messageInput');
+        const sendBtn = document.getElementById('sendBtn');
+        const statusBadge = document.getElementById('status');
+        const apiStatus = document.getElementById('apiStatus');
+        const modelInfo = document.getElementById('modelInfo');
+        const filesLabel = document.getElementById('filesLabel');
+        const toolbar = document.getElementById('toolbar');
+        const micBtn = document.getElementById('micBtn');
+        const cameraBtn = document.getElementById('cameraBtn');
+        
+        const audioPlayer = new Audio();
+        let audioCtx = null;
+        let isAudioOutputEnabled = true;
+        let isVoiceActive = true; 
+        let recognition = null;
+        let currentImage = null;
+        let videoStream = null;
+        let recordingTimer = null;
+        let isRecording = false;
+        
+        // === UI Functions ===
+        function addMessage(text, isUser = true, audioUrl = null) {
+            const div = document.createElement('div');
+            div.className = `message ${isUser ? 'user' : 'asimod'}`;
+            
+            const textDiv = document.createElement('div');
+            textDiv.textContent = text;
+            div.appendChild(textDiv);
+
+            if (audioUrl) {
+                const audio = document.createElement('audio');
+                audio.controls = true;
+                audio.src = audioUrl;
+                div.appendChild(audio);
+            }
+
+            chat.appendChild(div);
+            chat.scrollTop = chat.scrollHeight;
+            return div;
+        }
+        
+        function unlockAudio() {
+            if (!isAudioOutputEnabled) return;
+            
+            // 1. Priming HTML5 Audio
+            audioPlayer.src = "data:audio/wav;base64,UklGRigAAABXQVZFav7//7//v/+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+";
+            audioPlayer.play().catch(() => {});
+
+            // 2. Priming Web Audio API (más robusto para móviles)
+            if (!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            if (audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+            console.log("Audio hardware primed/unlocked");
+        }
+        
+        function showFiles(files) {
+            filesLabel.textContent = files.length ? `📷 Archivos: ${files.join(', ')}` : '';
+        }
+        
+        // === API Calls ===
+        async function checkStatus() {
+            try {
+                const res = await fetch(`${API_URL}/v1/status`);
+                const data = await res.json();
+                statusBadge.textContent = '🟢 Conectado';
+                apiStatus.textContent = `API: ${data.provider}`;
+                modelInfo.textContent = `${data.provider} • ${data.model}`;
+                return data;
+            } catch (e) {
+                statusBadge.textContent = '🔴 Desconectado';
+                apiStatus.textContent = 'API: Error';
+                modelInfo.textContent = 'API no disponible';
+                return null;
+            }
+        }
+        
+        async function loadProviders() {
+            try {
+                const res = await fetch(`${API_URL}/v1/providers`);
+                const data = await res.json();
+                return data.providers || [];
+            } catch (e) { return []; }
+        }
+        
+        async function loadVoiceProviders() {
+            try {
+                const res = await fetch(`${API_URL}/v1/voice_providers`);
+                const data = await res.json();
+                return data.voice_providers || [];
+            } catch (e) { return []; }
+        }
+        
+        async function loadModels(provider) {
+            try {
+                const res = await fetch(`${API_URL}/v1/models?provider=${provider}`);
+                const data = await res.json();
+                return data.models || [];
+            } catch (e) { return []; }
+        }
+        
+        async function loadVoices(provider) {
+            try {
+                const res = await fetch(`${API_URL}/v1/voices?provider=${provider}`);
+                const data = await res.json();
+                return data.voices || [];
+            } catch (e) { return []; }
+        }
+        
+        async function loadMemories() {
+            try {
+                const res = await fetch(`${API_URL}/v1/memories`);
+                const data = await res.json();
+                return data && data.memories ? data : { memories: [] };
+            } catch (e) { 
+                console.error("Error loading memories:", e);
+                return { memories: [] }; 
+            }
+        }
+        
+        async function setConfig(key, value) {
+            try {
+                // Enviamos objeto directo para que APIServer lo procese bien
+                const body = {};
+                body[key] = value;
+                
+                await fetch(`${API_URL}/v1/config`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                });
+            } catch (e) { console.error(e); }
+        }
+        
+        async function sendChat(text, options = {}) {
+            const formData = new FormData();
+            formData.append('text', text);
+            formData.append('silent', options.silent || false);
+            formData.append('play_audio', options.play_audio || false);
+            if (options.model) formData.append('model', options.model);
+            if (options.max_tokens) formData.append('max_tokens', options.max_tokens);
+            if (options.temperature) formData.append('temperature', options.temperature);
+            if (options.image) formData.append('image', options.image);
+            
+            const res = await fetch(`${API_URL}/v1/chat`, {
+                method: 'POST',
+                body: formData
+            });
+            return await res.json();
+        }
+        
+        // === Event Handlers ===
+        async function sendMessage(text) {
+            addMessage(text, true);
+            sendBtn.disabled = true;
+            sendBtn.textContent = '...';
+            
+            const options = { silent: false, play_audio: isVoiceActive };
+            if (currentImage) {
+                options.image = currentImage;
+            }
+            
+            try {
+                const data = await sendChat(text, options);
+                
+                let audioUrl = null;
+                if (data.audio_path) {
+                    const filename = data.audio_path.split(/[\\/]/).pop();
+                    audioUrl = `${API_URL}/v1/audio/file/${filename}`;
+                }
+
+                addMessage(data.response || 'Sin respuesta', false, audioUrl);
+                
+                if (audioUrl && isAudioOutputEnabled) {
+                    const filename = data.audio_path.split(/[\\/]/).pop();
+                    playAudioFile(filename);
+                }
+                
+                currentImage = null;
+                showFiles([]);
+            } catch (e) {
+                addMessage('Error: ' + e.message, false);
+            }
+            
+            sendBtn.disabled = false;
+            sendBtn.textContent = 'Enviar';
+            input.value = '';
+            input.focus();
+        }
+        
+        async function playAudioFile(filename) {
+            if (!isAudioOutputEnabled) return;
+            console.log("Playing audio file:", filename);
+            try {
+                audioPlayer.pause();
+                audioPlayer.src = `${API_URL}/v1/audio/file/${filename}`;
+                audioPlayer.load(); // Forzar carga
+                
+                const playPromise = audioPlayer.play();
+                if (playPromise !== undefined) {
+                    playPromise.catch(e => {
+                        console.warn('Autoplay prevented or interrupted:', e);
+                        // Reintentar unlock en el próximo gesto
+                    });
+                }
+            } catch (e) { console.error('Error playing audio:', e); }
+        }
+        
+        // === Image Capture ===
+        async function captureImage(source) {
+            try {
+                let stream = null;
+                if (source === 'camera') {
+                    stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+                } else if (source === 'screen') {
+                    stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+                }
+                
+                if (!stream) return;
+                
+                videoStream = stream;
+                const video = document.createElement('video');
+                video.srcObject = stream;
+                video.autoplay = true;
+                video.play();
+                
+                video.onloadedmetadata = () => {
+                    const canvas = document.createElement('canvas');
+                    canvas.width = video.videoWidth;
+                    canvas.height = video.videoHeight;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(video, 0, 0);
+                    
+                    stream.getTracks().forEach(t => t.stop());
+                    
+                    canvas.toBlob(async (blob) => {
+                        currentImage = blob;
+                        showFiles(['📷 Imagen capturada']);
+                    }, 'image/jpeg', 0.9);
+                };
+            } catch (e) {
+                console.error('Capture error:', e);
+                alert('Error al capturar: ' + e.message);
+            }
+        }
+        
+        document.getElementById('imageInput').addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                currentImage = file;
+                showFiles(['📷 ' + file.name]);
+            }
+        });
+        
+        document.getElementById('cameraBtn').addEventListener('click', () => captureImage('camera'));
+        document.getElementById('screenBtn').addEventListener('click', () => captureImage('screen'));
+        document.getElementById('imageBtn').addEventListener('click', () => document.getElementById('imageInput').click());
+        
+        // === Send Button ===
+        sendBtn.addEventListener('click', () => {
+            unlockAudio();
+            const text = input.value.trim();
+            if (text) sendMessage(text);
+        });
+
+        input.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                unlockAudio();
+                const text = input.value.trim();
+                if (text) sendMessage(text);
+            }
+        });
+        
+        // === Control Buttons ===
+        document.getElementById('speakBtn').addEventListener('click', async () => {
+            try {
+                await fetch(`${API_URL}/v1/audio/speak`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text: 'Conexión establecida con ASIMOD remote.' })
+                });
+            } catch (e) { alert('Error: ' + e.message); }
+        });
+        
+        document.getElementById('stopBtn').addEventListener('click', async () => {
+            try {
+                if (audioPlayer) {
+                    audioPlayer.pause();
+                }
+                await fetch(`${API_URL}/v1/audio/stop`, { method: 'POST' });
+            } catch (e) { alert('Error: ' + e.message); }
+        });
+        
+        document.getElementById('clearBtn').addEventListener('click', () => {
+            chat.innerHTML = '';
+        });
+        
+        document.getElementById('toggleToolbar').addEventListener('click', () => {
+            toolbar.classList.toggle('collapsed');
+            document.getElementById('toggleToolbar').textContent = 
+                toolbar.classList.contains('collapsed') ? '▶ Herramientas' : '▼ Herramientas';
+        });
+        
+        // === Voice Recording & Audio Toggle ===
+        let mediaRecorder = null;
+        let audioChunks = [];
+
+        // Inicializar estado visual del botón
+        if (isAudioOutputEnabled) micBtn.classList.add('active-toggle');
+
+        async function startRecording() {
+            if (isRecording) return;
+            unlockAudio();
+            isRecording = true;
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                mediaRecorder = new MediaRecorder(stream);
+                audioChunks = [];
+
+                mediaRecorder.ondataavailable = (event) => {
+                    audioChunks.push(event.data);
+                };
+
+                mediaRecorder.onstop = async () => {
+                    const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+                    sendAudioToServer(audioBlob);
+                    stream.getTracks().forEach(track => track.stop());
+                };
+
+                mediaRecorder.start();
+                micBtn.classList.add('recording');
+                micBtn.textContent = '🎤 Grabando...';
+            } catch (err) {
+                console.error('Error al acceder al micrófono:', err);
+                alert('No se pudo acceder al micrófono. Asegúrate de usar HTTPS y dar permisos.');
+                isRecording = false;
+            }
+        }
+
+        function stopRecording() {
+            if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+                mediaRecorder.stop();
+                micBtn.classList.remove('recording');
+                micBtn.textContent = '🎤 Voz';
+                isRecording = false;
+            }
+        }
+
+        async function sendAudioToServer(blob) {
+            const formData = new FormData();
+            formData.append('file', blob, 'web_audio.wav');
+
+            try {
+                const res = await fetch(`${API_URL}/v1/stt/process`, {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await res.json();
+                if (data.status === 'success' && data.text) {
+                    addMessage(data.text, true);
+                    sendMessage(data.text);
+                } else {
+                    console.error('STT Error:', data.message);
+                }
+            } catch (err) {
+                console.error('Network error sending audio:', err);
+            }
+            micBtn.textContent = '🎤 Voz';
+        }
+
+        // Lógica de Toggle vs Grabación
+        micBtn.addEventListener('mousedown', (e) => {
+            recordingTimer = setTimeout(startRecording, 200); // Si mantiene más de 200ms, graba
+        });
+
+        micBtn.addEventListener('mouseup', (e) => {
+            clearTimeout(recordingTimer);
+            if (isRecording) {
+                stopRecording();
+            } else {
+                // Fue un click corto -> Toggle Audio Output
+                isAudioOutputEnabled = !isAudioOutputEnabled;
+                if (isAudioOutputEnabled) {
+                    micBtn.classList.add('active-toggle');
+                    // Gesto de audio para habilitar en iOS
+                    const silentAudio = new Audio();
+                    silentAudio.play().catch(() => {});
+                } else {
+                    micBtn.classList.remove('active-toggle');
+                }
+            }
+        });
+
+        micBtn.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            recordingTimer = setTimeout(startRecording, 200);
+        });
+
+        micBtn.addEventListener('touchend', (e) => {
+            e.preventDefault();
+            clearTimeout(recordingTimer);
+            if (isRecording) {
+                stopRecording();
+            } else {
+                isAudioOutputEnabled = !isAudioOutputEnabled;
+                if (isAudioOutputEnabled) {
+                    micBtn.classList.add('active-toggle');
+                } else {
+                    micBtn.classList.remove('active-toggle');
+                }
+            }
+        });
+        
+        // === Toolbar Controls ===
+        document.getElementById('comboProvider').addEventListener('change', async (e) => {
+            const provider = e.target.value;
+            await setConfig('last_provider', provider);
+            const models = await loadModels(provider);
+            const comboModel = document.getElementById('comboModel');
+            comboModel.innerHTML = models.map(m => `<option value="${m}">${m}</option>`).join('');
+        });
+        
+        document.getElementById('comboVoice').addEventListener('change', async (e) => {
+            const provider = e.target.value;
+            await setConfig('voice_provider', provider);
+            const voices = await loadVoices(provider);
+            const comboVoiceId = document.getElementById('comboVoiceId');
+            const comboCharVoice = document.getElementById('comboCharVoice');
+            const options = voices.map(v => `<option value="${v.id}">${v.name}</option>`).join('');
+            comboVoiceId.innerHTML = options;
+            comboCharVoice.innerHTML = options;
+        });
+        
+        document.getElementById('spinMaxTokens').addEventListener('change', async (e) => {
+            await setConfig('max_tokens', parseInt(e.target.value));
+        });
+        
+        document.getElementById('sliderTemp').addEventListener('change', async (e) => {
+            await setConfig('temperature', parseFloat(e.target.value));
+        });
+        
+        document.getElementById('comboSttProvider').addEventListener('change', async (e) => {
+            await setConfig('stt_provider', e.target.value);
+        });
+        
+        document.getElementById('comboSttMode').addEventListener('change', async (e) => {
+            await fetch(`${API_URL}/v1/stt/mode`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ mode: e.target.value })
+            });
+            await setConfig('stt_mode', e.target.value);
+        });
+        
+        // Also update TTS voice dropdown when profile voice changes
+        document.getElementById('comboCharVoice').addEventListener('change', async (e) => {
+            const voiceId = e.target.value;
+            await setConfig('voice_id', voiceId);
+            document.getElementById('comboVoiceId').value = voiceId;
+        });
+        
+        // When profile motor changes, load its voices
+        document.getElementById('comboCharMotor').addEventListener('change', async (e) => {
+            const provider = e.target.value;
+            const voices = await loadVoices(provider);
+            const comboVoiceId = document.getElementById('comboVoiceId');
+            const comboCharVoice = document.getElementById('comboCharVoice');
+            const options = voices.map(v => `<option value="${v.id}">${v.name}</option>`).join('');
+            comboVoiceId.innerHTML = options;
+            comboCharVoice.innerHTML = options;
+        });
+        
+        document.getElementById('btnSaveProfile').addEventListener('click', async () => {
+            const name = document.getElementById('entCharName').value;
+            const pers = document.getElementById('entCharPers').value;
+            const motor = document.getElementById('comboCharMotor').value;
+            const voice = document.getElementById('comboCharVoice').value;
+            
+            // Save to current memory profile
+            try {
+                await fetch(`${API_URL}/v1/memories`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        name,
+                        personality: pers,
+                        voice_id: voice !== 'None' ? voice : null,
+                        voice_provider: motor !== 'None' ? motor : null
+                    })
+                });
+                addMessage('Perfil guardado', false);
+            } catch (e) { alert('Error: ' + e.message); }
+        });
+        
+        document.getElementById('btnNewThread').addEventListener('click', async () => {
+            const name = prompt('Nombre del personaje:');
+            if (!name) return;
+            const pers = prompt('Personalidad:') || '';
+            
+            try {
+                await fetch(`${API_URL}/v1/memories`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ thread_id: name, name: name, personality: pers })
+                });
+                await refreshMemories();
+                addMessage(`Nuevo hilo creado: ${name}`, false);
+            } catch (e) { alert('Error: ' + e.message); }
+        });
+        
+        document.getElementById('btnRefreshMem').addEventListener('click', refreshMemories);
+        
+        async function refreshMemories() {
+            try {
+                const data = await loadMemories();
+                const mems = data.memories || [];
+                const combo = document.getElementById('comboMemory');
+                if (!combo) return;
+                
+                combo.innerHTML = mems.map(m => {
+                    const id = typeof m === 'string' ? m : m.id;
+                    const name = typeof m === 'object' ? (m.name || id) : id;
+                    return `<option value="${id}">${name}</option>`;
+                }).join('');
+                return mems;
+            } catch (e) {
+                console.error("Error refreshing memories UI:", e);
+                return [];
+            }
+        }
+        
+        // === Initialize ===
+        async function init() {
+            console.log("Initializing web remote...");
+            const data = await checkStatus().catch(e => {
+                console.warn("checkStatus failed on init, continuing...", e);
+                return null;
+            });
+            
+            // Intentar cargar lo básico independientemente de si el servidor responde status ahora
+            const providers = await loadProviders();
+            document.getElementById('comboProvider').innerHTML = 
+                providers.map(p => `<option value="${p}">${p}</option>`).join('');
+            
+            // Load voice providers from API
+            const voiceProviders = await loadVoiceProviders();
+            document.getElementById('comboVoice').innerHTML = 
+                voiceProviders.map(p => `<option value="${p}">${p}</option>`).join('');
+            document.getElementById('comboCharMotor').innerHTML = 
+                voiceProviders.map(p => `<option value="${p}">${p}</option>`).join('');
+            
+            // Load models for current provider
+            const models = await loadModels(data.provider);
+            document.getElementById('comboModel').innerHTML = 
+                models.map(m => `<option value="${m}">${m}</option>`).join('');
+            
+            // Load voices for current voice provider
+            const voices = await loadVoices(data.voice_provider || 'Edge TTS');
+            document.getElementById('comboVoiceId').innerHTML = 
+                voices.map(v => `<option value="${v.id}">${v.name}</option>`).join('');
+            document.getElementById('comboCharVoice').innerHTML = 
+                voices.map(v => `<option value="${v.id}">${v.name}</option>`).join('');
+            
+            // Load STT providers - could also add API endpoint
+            const sttProviders = ['None', 'Standard (Google)'];
+            document.getElementById('comboSttProvider').innerHTML = 
+                sttProviders.map(p => `<option value="${p}">${p}</option>`).join('');
+            
+            // Load memories
+            await refreshMemories();
+            
+            if (data) {
+                // Set values from status (current config)
+                document.getElementById('comboProvider').value = data.provider;
+                document.getElementById('comboVoice').value = data.voice_provider || 'Edge TTS';
+                document.getElementById('comboVoiceMode').value = data.voice_mode || 'autoplay';
+                isVoiceActive = (data.voice_mode === 'autoplay');
+                btnVoice.classList.toggle('active-toggle', isVoiceActive);
+                document.getElementById('comboSttProvider').value = data.stt_provider || 'None';
+                document.getElementById('comboSttMode').value = data.stt_mode || 'OFF';
+                document.getElementById('spinMaxTokens').value = data.max_tokens || 1024;
+                document.getElementById('sliderTemp').value = data.temperature || 0.7;
+
+                if (data.active_thread) {
+                    document.getElementById('comboMemory').value = data.active_thread;
+                }
+                
+                // Forzar Edge TTS y Dalia si es la carga inicial o no está configurado
+                if (!data.voice_id || data.voice_id === 'None') {
+                    // ... (rest of logic)
+                    document.getElementById('comboVoice').value = 'Edge TTS';
+                    const event = new Event('change');
+                    document.getElementById('comboVoice').dispatchEvent(event);
+                    setTimeout(() => {
+                        document.getElementById('comboVoiceId').value = 'es-MX-DaliaNeural';
+                        document.getElementById('comboCharVoice').value = 'es-MX-DaliaNeural';
+                        setConfig('voice_provider', 'Edge TTS');
+                        setConfig('voice_id', 'es-MX-DaliaNeural');
+                    }, 500);
+                }
+
+                // Set profile values if available
+                if (data.char_name) document.getElementById('entCharName').value = data.char_name;
+                if (data.char_personality) document.getElementById('entCharPers').value = data.char_personality;
+                if (data.voice_id) {
+                    document.getElementById('comboVoiceId').value = data.voice_id;
+                    document.getElementById('comboCharVoice').value = data.voice_id;
+                }
+            }
+        }
+        
+        init();
+        setInterval(checkStatus, 10000);
+    </script>
+</body>
+</html>
