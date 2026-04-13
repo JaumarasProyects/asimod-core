@@ -1,0 +1,122 @@
+<div class="module-web-view">
+    <link rel="stylesheet" href="/v1/widgets/widgets.css">
+    
+    <header style="margin-bottom:40px; display: flex; justify-content: space-between; align-items: flex-end;">
+        <div>
+            <h1 style="font-size:3rem; font-weight:800; background: linear-gradient(to right, #fff, var(--accent)); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">SISTEMA ASIMOD</h1>
+            <p style="color:var(--text-dim); font-size:1.1rem; margin-top:10px;">Panel de Control unificado y supervisión de IA.</p>
+        </div>
+        <div class="date-time" style="text-align:right;">
+            <div id="homeTime" style="font-size:2rem; font-weight:700;">--:--</div>
+            <div id="homeDate" style="color:var(--accent); font-weight:600; letter-spacing:1px; text-transform:uppercase; font-size:0.8rem;">Cargando...</div>
+        </div>
+    </header>
+
+    <!-- Grid de Status -->
+    <div class="home-grid" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:25px;">
+        
+        <!-- Estado del Núcleo -->
+        <div class="asimod-card" style="position:relative; overflow:hidden;">
+            <div style="position:absolute; top:-20px; right:-20px; font-size:6rem; opacity:0.05;">🧠</div>
+            <h3 style="color:var(--accent); font-size:0.8rem; letter-spacing:1px; text-transform:uppercase; margin-bottom:15px;">Estado del Núcleo</h3>
+            <div style="font-size:2rem; font-weight:700; margin-bottom:5px;">ONLINE</div>
+            <p style="color:var(--text-dim); font-size:0.9rem;">Sincronización con el modelo LLM activa y estable.</p>
+        </div>
+
+        <!-- Memoria y Contexto -->
+        <div class="asimod-card" style="position:relative; overflow:hidden;">
+            <div style="position:absolute; top:-20px; right:-20px; font-size:6rem; opacity:0.05;">💾</div>
+            <h3 style="color:var(--accent); font-size:0.8rem; letter-spacing:1px; text-transform:uppercase; margin-bottom:15px;">Memoria de Corto Plazo</h3>
+            <div id="homeMemoryCount" style="font-size:2rem; font-weight:700; margin-bottom:5px;">--</div>
+            <p style="color:var(--text-dim); font-size:0.9rem;">Fragmentos de contexto almacenados en la sesión actual.</p>
+        </div>
+
+        <!-- Voz y Percepción -->
+        <div class="asimod-card" style="position:relative; overflow:hidden;">
+            <div style="position:absolute; top:-20px; right:-20px; font-size:6rem; opacity:0.05;">🎤</div>
+            <h3 style="color:var(--accent); font-size:0.8rem; letter-spacing:1px; text-transform:uppercase; margin-bottom:15px;">Voz y Escucha</h3>
+            <div id="homeSTTStatus" style="font-size:1.5rem; font-weight:700; margin-bottom:5px;">ESCUCHA ACTIVA</div>
+            <p style="color:var(--text-dim); font-size:0.9rem;">Adaptador STT listo para procesar comandos de voz.</p>
+        </div>
+
+    </div>
+
+    <!-- Sección de Acciones Rápidas -->
+    <div style="margin-top:50px;">
+        <h2 style="margin-bottom:25px; font-size:1.2rem; font-weight:700;">ACCIONES RÁPIDAS</h2>
+        <div style="display:flex; gap:15px; flex-wrap:wrap;">
+            <button class="quick-action-btn" onclick="asimod.sendChat('Genera un resumen de mi día')">📋 Resumen del Día</button>
+            <button class="quick-action-btn" onclick="asimod.sendChat('Activa el modo de alta performance')">🚀 Optimizar LLM</button>
+            <button class="quick-action-btn" onclick="asimod.sendChat('Limpia la memoria actual')">🧹 Limpiar Contexto</button>
+            <button class="quick-action-btn" onclick="document.getElementById('mobileChatTrigger').click()">💬 Abrir Chat Completo</button>
+        </div>
+    </div>
+
+    <style>
+        .quick-action-btn {
+            background: rgba(255,255,255,0.03);
+            border: 1px solid rgba(255,255,255,0.08);
+            color: white;
+            padding: 12px 25px;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-size: 0.9rem;
+            font-weight: 600;
+        }
+        .quick-action-btn:hover {
+            background: var(--accent);
+            color: var(--bg-dark);
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(0,0,0,0.2);
+        }
+    </style>
+
+    <!-- Cargamos Widgets Globales -->
+    <script src="/v1/widgets/widgets.js"></script>
+    <script>
+        (function() {
+            console.log("[HOME] Actualizando Dashboard con Widgets Globales...");
+            
+            // Actualizar reloj
+            function updateClock() {
+                const now = new Date();
+                const timeEl = document.getElementById('homeTime');
+                const dateEl = document.getElementById('homeDate');
+                if (timeEl) timeEl.innerText = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                if (dateEl) dateEl.innerText = now.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' });
+            }
+            setInterval(updateClock, 1000);
+            updateClock();
+
+            // Sincronizar datos con el núcleo
+            async function syncData() {
+                try {
+                    const status = await fetch('/v1/status').then(r => r.json());
+                    const memEl = document.getElementById('homeMemoryCount');
+                    const sttEl = document.getElementById('homeSTTStatus');
+                    
+                    if (memEl) memEl.innerText = "Sincronizada";
+                    if (sttEl) sttEl.innerText = status.stt_mode === 'OFF' ? 'MICRO DESACTIVADO' : 'ESCUCHA: ' + status.stt_mode;
+                } catch(e) {}
+            }
+            syncData();
+
+            // Definir puente de comunicación si no existe
+            window.asimod = window.asimod || {
+                sendChat: (text) => {
+                    const input = document.getElementById('chatInput');
+                    const send = document.getElementById('chatSend');
+                    if (input && send) {
+                        input.value = text;
+                        send.click();
+                        // Abrir el panel de chat si está oculto
+                        if (window.app && window.app.chatSide && window.app.chatSide.classList.contains('hidden')) {
+                            window.app.toggleChat();
+                        }
+                    }
+                }
+            };
+        })();
+    </script>
+</div>

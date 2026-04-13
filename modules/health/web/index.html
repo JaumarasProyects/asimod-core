@@ -1,0 +1,205 @@
+<div class="module-web-view health-dashboard">
+    <!-- Visual Health Dashboard -->
+    <header class="health-header">
+        <h1 class="health-title">DASHBOARD DE SALUD</h1>
+        <p class="health-subtitle">Sincronización biométrica activa</p>
+    </header>
+
+    <div class="health-grid">
+        <!-- Rings Section -->
+        <div class="health-card rings-card">
+            <h2 class="card-label">ACTIVIDAD DIARIA</h2>
+            <div class="rings-container" id="ringsContainer">
+                <!-- Rings will be injected here -->
+            </div>
+        </div>
+
+        <!-- Weekly Chart -->
+        <div class="health-card chart-card">
+            <h2 class="card-label">ACTIVIDAD SEMANAL</h2>
+            <div class="bar-chart" id="weeklyChart">
+                <!-- Bars will be injected here -->
+            </div>
+            <div class="chart-labels">
+                <span>L</span><span>M</span><span>X</span><span>J</span><span>V</span><span>S</span><span>D</span>
+            </div>
+        </div>
+
+        <!-- Shopping List -->
+        <div class="health-card list-card">
+            <h2 class="card-label">LISTA DE COMPRA INTELIGENTE</h2>
+            <div class="shopping-list" id="shoppingList">
+                <!-- List items will be injected here -->
+            </div>
+        </div>
+    </div>
+
+    <style>
+        .health-dashboard { display: flex; flex-direction: column; gap: 20px; padding: 10px; }
+        .health-header { margin-bottom: 20px; }
+        .health-title { font-size: 1.8rem; font-weight: 800; letter-spacing: -1px; }
+        .health-subtitle { color: var(--text-dim); font-size: 0.9rem; }
+
+        .health-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            grid-template-rows: auto auto;
+            gap: 20px;
+        }
+
+        .health-card {
+            background: rgba(255,255,255,0.03);
+            border: 1px solid rgba(255,255,255,0.05);
+            border-radius: 25px;
+            padding: 25px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .card-label { font-size: 0.75rem; color: var(--text-dim); font-weight: 800; letter-spacing: 1px; text-transform: uppercase; }
+
+        /* Rings */
+        .rings-container {
+            display: flex;
+            justify-content: space-around;
+            align-items: center;
+            padding: 20px 0;
+            gap: 20px;
+        }
+        .health-ring {
+            position: relative;
+            width: 100px; height: 100px;
+            display: flex; align-items: center; justify-content: center;
+        }
+        .health-ring svg { transform: rotate(-90deg); width: 100px; height: 100px; }
+        .health-ring circle { fill: none; stroke-width: 8; stroke-linecap: round; }
+        .ring-bg { stroke: rgba(255,255,255,0.05); }
+        .ring-val { transition: stroke-dashoffset 1s ease-out; }
+
+        .ring-text {
+            position: absolute;
+            display: flex; flex-direction: column; align-items: center;
+        }
+        .ring-n { font-size: 1.2rem; font-weight: 800; }
+        .ring-u { font-size: 0.6rem; color: var(--text-dim); }
+
+        /* Chart */
+        .chart-card { grid-column: span 2; }
+        .bar-chart {
+            display: flex; align-items: flex-end; justify-content: space-between;
+            height: 150px; padding: 20px 0 10px 0; border-bottom: 1px solid rgba(255,255,255,0.05);
+        }
+        .chart-bar {
+            width: 12%; background: var(--accent); border-radius: 8px 8px 2px 2px;
+            transition: height 1s ease-out; opacity: 0.8;
+            position: relative;
+        }
+        .chart-bar:hover { opacity: 1; filter: brightness(1.2); }
+        .chart-labels { display: flex; justify-content: space-between; padding-top: 5px; }
+        .chart-labels span { flex: 1; text-align: center; color: var(--text-dim); font-size: 0.75rem; font-weight: 700; }
+
+        /* List */
+        .list-card { grid-column: span 2; }
+        .shopping-list { display: flex; flex-direction: column; gap: 10px; }
+        .list-item {
+            background: rgba(255,255,255,0.02); padding: 12px 20px; border-radius: 12px;
+            display: flex; align-items: center; gap: 15px; border: 1px solid transparent;
+        }
+        .list-item:hover { border-color: var(--accent); background: rgba(255,255,255,0.05); }
+        .check-box { width: 20px; height: 20px; border: 2px solid var(--accent); border-radius: 6px; cursor: pointer; }
+
+        @media (max-width: 768px) {
+            .health-grid { grid-template-columns: 1fr; }
+            .chart-card, .list-card { grid-column: span 1; }
+            .rings-container { flex-wrap: wrap; }
+        }
+    </style>
+
+    <script>
+        (function() {
+            async function loadHealthData() {
+                try {
+                    const resp = await fetch('/v1/modules/health/action', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ action: 'handle_get_data' })
+                    });
+                    const data = await resp.json();
+                    if (data.status === 'success') {
+                        renderRings(data.result.rings);
+                        renderChart(data.result.stats);
+                        renderList(data.result.shopping_list);
+                    }
+                } catch (e) {
+                    console.error("Health Data Error:", e);
+                }
+            }
+
+            function renderRings(rings) {
+                const container = document.getElementById('ringsContainer');
+                container.innerHTML = '';
+                
+                const colors = { sport: '#4EC9B0', sleep: '#4a90e2', calories: '#FFA500' };
+                
+                Object.entries(rings).forEach(([key, ring]) => {
+                    const r = 40;
+                    const c = Math.PI * (r * 2);
+                    const pct = (ring.value / ring.total);
+                    const offset = c - (pct * c);
+                    
+                    const ringEl = document.createElement('div');
+                    ringEl.className = 'health-ring';
+                    ringEl.innerHTML = `
+                        <svg>
+                            <circle class="ring-bg" cx="50" cy="50" r="${r}"></circle>
+                            <circle class="ring-val" cx="50" cy="50" r="${r}" 
+                                    style="stroke:${colors[key]}; stroke-dasharray:${c}; stroke-dashoffset:${c};">
+                            </circle>
+                        </svg>
+                        <div class="ring-text">
+                            <span class="ring-n">${ring.value}</span>
+                            <span class="ring-u">${ring.unit}</span>
+                        </div>
+                    `;
+                    container.appendChild(ringEl);
+                    
+                    // Animar
+                    setTimeout(() => {
+                        ringEl.querySelector('.ring-val').style.strokeDashoffset = offset;
+                    }, 100);
+                });
+            }
+
+            function renderChart(stats) {
+                const container = document.getElementById('weeklyChart');
+                container.innerHTML = '';
+                const max = Math.max(...stats);
+                
+                stats.forEach(val => {
+                    const h = (val / max) * 100;
+                    const bar = document.createElement('div');
+                    bar.className = 'chart-bar';
+                    bar.style.height = '0%';
+                    container.appendChild(bar);
+                    
+                    setTimeout(() => {
+                        bar.style.height = h + '%';
+                    }, 500);
+                });
+            }
+
+            function renderList(items) {
+                const container = document.getElementById('shoppingList');
+                container.innerHTML = items.map(item => `
+                    <div class="list-item">
+                        <div class="check-box"></div>
+                        <span>${item}</span>
+                    </div>
+                `).join('');
+            }
+
+            loadHealthData();
+        })();
+    </script>
+</div>

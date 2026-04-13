@@ -1,0 +1,226 @@
+<div class="module-web-view utilities-view">
+    <header class="utils-header">
+        <h1 class="utils-title">UTILIDADES ASIMOD</h1>
+        <nav class="utils-nav">
+            <button class="mode-btn active" data-mode="calculadora">🧮 CALCULADORA</button>
+            <button class="mode-btn" data-mode="notas">📝 NOTAS</button>
+            <button class="mode-btn" data-mode="camara">📷 CÁMARA</button>
+        </nav>
+    </header>
+
+    <main class="utils-content">
+        <!-- Calculator -->
+        <div id="viewCalculadora" class="util-pane active">
+            <div class="calc-container asimod-card">
+                <div class="calc-display" id="calcDisplay">0</div>
+                <div class="calc-grid">
+                    <button class="calc-btn op" data-val="C">C</button>
+                    <button class="calc-btn op" data-val="/">/</button>
+                    <button class="calc-btn op" data-val="*">*</button>
+                    <button class="calc-btn op" data-val="DEL">⌫</button>
+                    
+                    <button class="calc-btn" data-val="7">7</button>
+                    <button class="calc-btn" data-val="8">8</button>
+                    <button class="calc-btn" data-val="9">9</button>
+                    <button class="calc-btn op" data-val="-">-</button>
+                    
+                    <button class="calc-btn" data-val="4">4</button>
+                    <button class="calc-btn" data-val="5">5</button>
+                    <button class="calc-btn" data-val="6">6</button>
+                    <button class="calc-btn op" data-val="+">+</button>
+                    
+                    <button class="calc-btn" data-val="1">1</button>
+                    <button class="calc-btn" data-val="2">2</button>
+                    <button class="calc-btn" data-val="3">3</button>
+                    <button class="calc-btn equal" data-val="=">=</button>
+                    
+                    <button class="calc-btn wide" data-val="0">0</button>
+                    <button class="calc-btn" data-val=".">.</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Notepad -->
+        <div id="viewNotas" class="util-pane">
+            <div class="notepad-container asimod-card">
+                <input type="text" id="noteTitle" placeholder="Título de la nota..." class="note-title-input">
+                <textarea id="noteContent" placeholder="Empieza a escribir tus ideas aquí..." class="note-textarea"></textarea>
+                <div class="note-footer">
+                    <span id="saveStatus" class="save-status">Guardado automáticamente</span>
+                    <button id="btnSaveNote" class="mode-btn active">💾 GUARDAR</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Camera -->
+        <div id="viewCamara" class="util-pane">
+            <div class="camera-container asimod-card">
+                <video id="webcam" autoplay playsinline class="camera-preview"></video>
+                <div class="camera-controls">
+                    <button id="btnStartCam" class="mode-btn active">🎥 INICIAR</button>
+                    <button id="btnSnap" class="mode-btn hidden">📸 CAPTURAR</button>
+                </div>
+                <canvas id="camCanvas" class="hidden"></canvas>
+            </div>
+        </div>
+    </main>
+
+    <style>
+        .utilities-view { display: flex; flex-direction: column; gap: 30px; height: 100%; }
+        .utils-header { display: flex; justify-content: space-between; align-items: center; }
+        .utils-title { font-size: 1.5rem; font-weight: 800; letter-spacing: -1px; }
+        .utils-nav { display: flex; gap: 10px; }
+
+        .util-pane { display: none; height: 100%; align-items: center; justify-content: center; }
+        .util-pane.active { display: flex; }
+
+        /* Calculator */
+        .calc-container { width: 320px; padding: 25px; border-radius: 30px; }
+        .calc-display {
+            background: rgba(0,0,0,0.3); padding: 20px; border-radius: 15px;
+            text-align: right; font-size: 2rem; font-weight: 800; margin-bottom: 20px;
+            overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        }
+        .calc-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+        .calc-btn {
+            aspect-ratio: 1; border-radius: 15px; border: none; background: rgba(255,255,255,0.05);
+            color: white; font-size: 1.2rem; font-weight: 700; cursor: pointer; transition: all 0.2s;
+        }
+        .calc-btn:hover { background: rgba(255,255,255,0.1); transform: scale(1.05); }
+        .calc-btn.op { color: var(--accent); background: rgba(255,255,255,0.02); }
+        .calc-btn.equal { grid-row: span 2; aspect-ratio: auto; background: var(--accent); color: var(--bg-dark); }
+        .calc-btn.wide { grid-column: span 2; aspect-ratio: auto; }
+
+        /* Notepad */
+        .notepad-container { 
+            width: 100%; max-width: 800px; height: 500px; padding: 30px; 
+            display: flex; flex-direction: column; gap: 20px;
+        }
+        .note-title-input {
+            background: none; border: none; border-bottom: 1px solid rgba(255,255,255,0.1);
+            color: white; font-size: 1.5rem; font-weight: 800; padding: 10px 0; outline: none;
+        }
+        .note-textarea {
+            flex: 1; background: none; border: none; color: rgba(255,255,255,0.8);
+            font-size: 1rem; line-height: 1.6; resize: none; outline: none;
+        }
+        .note-footer { display: flex; justify-content: space-between; align-items: center; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 15px; }
+        .save-status { font-size: 0.75rem; color: var(--text-dim); }
+
+        /* Camera */
+        .camera-container {
+            width: 100%; max-width: 640px; aspect-ratio: 4/3; padding: 20px;
+            display: flex; flex-direction: column; gap: 15px; position: relative;
+        }
+        .camera-preview { width: 100%; height: 100%; border-radius: 15px; background: black; object-fit: cover; }
+        .camera-controls { display: flex; gap: 10px; justify-content: center; }
+
+        @media (max-width: 768px) {
+            .utils-header { flex-direction: column; align-items: flex-start; gap: 20px; }
+            .calc-container { width: 100%; }
+        }
+    </style>
+
+    <script>
+        (function() {
+            let currentExpression = "";
+            let currentNoteId = null;
+            let autoSaveTimer = null;
+            let stream = null;
+
+            // --- CALCULADORA ---
+            const display = document.getElementById('calcDisplay');
+            document.querySelectorAll('.calc-btn').forEach(btn => {
+                btn.onclick = () => {
+                    const val = btn.dataset.val;
+                    if (val === "=") {
+                        try {
+                            display.innerText = eval(currentExpression);
+                            currentExpression = display.innerText;
+                        } catch { display.innerText = "Error"; currentExpression = ""; }
+                    } else if (val === "C") {
+                        currentExpression = "";
+                        display.innerText = "0";
+                    } else if (val === "DEL") {
+                        currentExpression = currentExpression.slice(0, -1);
+                        display.innerText = currentExpression || "0";
+                    } else {
+                        currentExpression += val;
+                        display.innerText = currentExpression;
+                    }
+                };
+            });
+
+            // --- NOTAS ---
+            const titleInput = document.getElementById('noteTitle');
+            const contentInput = document.getElementById('noteContent');
+            const statusLabel = document.getElementById('saveStatus');
+
+            async function saveNote() {
+                const title = titleInput.value.trim() || "Nueva Nota";
+                const content = contentInput.value;
+                statusLabel.innerText = "Guardando...";
+                
+                try {
+                    const resp = await fetch('/v1/modules/utilities/action', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            action: 'handle_save_note',
+                            params: { title, content, note_id: currentNoteId }
+                        })
+                    });
+                    const data = await resp.json();
+                    if (data.status === 'success') {
+                        currentNoteId = data.result.note_id;
+                        statusLabel.innerText = "Guardado a las " + new Date().toLocaleTimeString();
+                        // Refrescar galería lateral
+                        if (window.app && window.app.loadGallery) window.app.loadGallery();
+                    }
+                } catch (e) { statusLabel.innerText = "Error al guardar"; }
+            }
+
+            [titleInput, contentInput].forEach(el => {
+                el.oninput = () => {
+                    clearTimeout(autoSaveTimer);
+                    autoSaveTimer = setTimeout(saveNote, 1500);
+                };
+            });
+
+            document.getElementById('btnSaveNote').onclick = saveNote;
+
+            // --- CÁMARA ---
+            const video = document.getElementById('webcam');
+            const btnStart = document.getElementById('btnStartCam');
+            const btnSnap = document.getElementById('btnSnap');
+
+            btnStart.onclick = async () => {
+                try {
+                    if (stream) {
+                        stream.getTracks().forEach(t => t.stop());
+                        video.srcObject = null;
+                        stream = null;
+                        btnStart.innerText = "🎥 INICIAR";
+                        btnSnap.classList.add('hidden');
+                    } else {
+                        stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                        video.srcObject = stream;
+                        btnStart.innerText = "🛑 PARAR";
+                        btnSnap.classList.remove('hidden');
+                    }
+                } catch (e) { alert("Error al acceder a la cámara: " + e.message); }
+            };
+
+            // --- NAVEGACIÓN ---
+            document.querySelectorAll('.mode-btn').forEach(btn => {
+                btn.onclick = () => {
+                    const mode = btn.dataset.mode;
+                    if (!mode) return;
+                    document.querySelectorAll('.mode-btn, .util-pane').forEach(el => el.classList.remove('active'));
+                    btn.classList.add('active');
+                    document.getElementById('view' + mode.charAt(0).toUpperCase() + mode.slice(1)).classList.add('active');
+                };
+            });
+        })();
+    </script>
+</div>

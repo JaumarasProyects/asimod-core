@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ASIMOD 3D Viewer</title>
+    <style>
+        body { margin: 0; background-color: #0b0f19; overflow: hidden; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        #canvas-container { width: 100vw; height: 100vh; }
+        #loader {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            color: #0af; font-size: 1.2rem; text-transform: uppercase; letter-spacing: 2px;
+            text-align: center;
+        }
+        .controls-hint {
+            position: absolute; bottom: 20px; left: 20px;
+            color: rgba(255,255,255,0.4); font-size: 0.8rem;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="loader">Cargando Modelo 3D...<br><span id="progress">0%</span></div>
+    <div class="controls-hint">RATÓN: Rotar | SCROLL: Zoom | SHIFT+RATÓN: Panorámica</div>
+    <div id="canvas-container"></div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/OBJLoader.js"></script>
+
+    <script>
+        let scene, camera, renderer, controls, model;
+
+        function init(modelPath) {
+            const container = document.getElementById('canvas-container');
+            
+            // Scene setup
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x0b0f19);
+            
+            // Fog for depth
+            scene.fog = new THREE.Fog(0x0b0f19, 10, 50);
+
+            // Camera
+            camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(5, 5, 5);
+
+            // Renderer
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.outputEncoding = THREE.sRGBEncoding;
+            renderer.shadowMap.enabled = true;
+            container.appendChild(renderer.domElement);
+
+            // Controls
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+
+            // Lights
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+            scene.add(ambientLight);
+
+            const dirLight = new THREE.DirectionalLight(0xffffff, 1);
+            dirLight.position.set(5, 10, 7.5);
+            dirLight.castShadow = true;
+            scene.add(dirLight);
+            
+            const fillLight = new THREE.PointLight(0x00aaff, 0.5);
+            fillLight.position.set(-5, 5, -5);
+            scene.add(fillLight);
+
+            // Grid helper
+            const grid = new THREE.GridHelper(20, 20, 0x444444, 0x222222);
+            grid.position.y = -1;
+            scene.add(grid);
+
+            // Load Model
+            loadModel(modelPath);
+
+            // Window Resize
+            window.addEventListener('resize', onWindowResize, false);
+            animate();
+        }
+
+        function loadModel(path) {
+            const loaderDiv = document.getElementById('loader');
+            const progressSpan = document.getElementById('progress');
+            const ext = path.split('.').pop().toLowerCase();
+            
+            let loader;
+            if (ext === 'glb' || ext === 'gltf') {
+                loader = new THREE.GLTFLoader();
+            } else if (ext === 'obj') {
+                loader = new THREE.OBJLoader();
+            } else {
+                loaderDiv.innerHTML = "Formato no soportado: " + ext;
+                return;
+            }
+
+            loader.load(path, 
+                (result) => {
+                    model = result.scene || result;
+                    scene.add(model);
+                    
+                    // Center and scale
+                    const box = new THREE.Box3().setFromObject(model);
+                    const center = box.getCenter(new THREE.Vector3());
+                    const size = box.getSize(new THREE.Vector3());
+                    
+                    const maxDim = Math.max(size.x, size.y, size.z);
+                    const scale = 3 / maxDim;
+                    model.scale.set(scale, scale, scale);
+                    model.position.sub(center.multiplyScalar(scale));
+                    
+                    loaderDiv.style.display = 'none';
+                },
+                (xhr) => {
+                    const p = Math.round((xhr.loaded / xhr.total) * 100);
+                    progressSpan.innerText = p + "%";
+                },
+                (error) => {
+                    console.error(error);
+                    loaderDiv.innerHTML = "Error cargando el modelo";
+                }
+            );
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            renderer.render(scene, camera);
+        }
+
+        // Esta función será llamada desde Python inyectando la ruta del modelo
+        function loadExternalModel(path) {
+             if (renderer) {
+                 // Reset scene
+                 if (model) scene.remove(model);
+                 document.getElementById('loader').style.display = 'block';
+                 loadModel(path);
+             } else {
+                 init(path);
+             }
+        }
+    </script>
+</body>
+</html>

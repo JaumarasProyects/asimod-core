@@ -1,0 +1,163 @@
+import os
+import sys
+import importlib.util
+import inspect
+from typing import Optional
+from core.base_module import BaseModule
+
+class ModuleService:
+    """
+    Gestor de módulos de ASIMOD. Escanea, carga y gestiona el ciclo de vida de los plugins.
+    """
+    def __init__(self, chat_service, config_service, style_service, data_service=None):
+        self.chat_service = chat_service
+        self.config = config_service
+        self.style = style_service
+        self.data_service = data_service
+        self.modules_dir = self.config.get("modules_path", "modules")
+        self.loaded_modules = {}
+        self.active_module = None
+        self.on_module_activated = None  # Callback para notificar a la UI
+        
+        # Añadir la carpeta de módulos al path para que los módulos puedan importar widgets
+        abs_modules_path = os.path.abspath(self.modules_dir)
+        if abs_modules_path not in sys.path:
+            sys.path.append(abs_modules_path)
+        
+        # Conectar con el servicio de voz
+        self.chat_service.stt_service.set_voice_command_callback(self.handle_voice_command)
+        
+        # Asegurar que la carpeta existe
+        if not os.path.exists(self.modules_dir):
+            os.makedirs(self.modules_dir)
+            
+        self.load_modules()
+
+    def load_modules(self):
+        """Escanea la carpeta de módulos e importa dinámicamente las clases que heredan de BaseModule."""
+        self.loaded_modules = {}
+        if not os.path.exists(self.modules_dir):
+            return
+
+        for entry in os.listdir(self.modules_dir):
+            if entry == "widgets" or entry.startswith("__"): # Reservado o caché
+                continue
+                
+            full_path = os.path.join(self.modules_dir, entry)
+            # Buscamos carpetas con __init__.py o archivos .py
+            module_file = None
+            if os.path.isdir(full_path):
+                init_path = os.path.join(full_path, "__init__.py")
+                if os.path.exists(init_path):
+                    module_file = init_path
+            elif entry.endswith(".py") and entry != "__init__.py":
+                module_file = full_path
+
+            if module_file:
+                try:
+                    module_name = entry.replace(".py", "")
+                    spec = importlib.util.spec_from_file_location(module_name, module_file)
+                    mod = importlib.util.module_from_spec(spec)
+                    spec.loader.exec_module(mod)
+
+                    # Buscar clases que hereden de BaseModule DEFINIDAS en este módulo
+                    for name, obj in inspect.getmembers(mod):
+                        if (inspect.isclass(obj) and 
+                            issubclass(obj, BaseModule) and 
+                            obj is not BaseModule and
+                            obj.__module__ == mod.__name__): # <-- Solo clases locales
+                            
+                            instance = obj(self.chat_service, self.config, self.style, data_service=self.data_service)
+                            self.loaded_modules[instance.id] = instance
+                            print(f"[ModuleService] Módulo cargado: {instance.name} ({instance.id})")
+
+                except Exception as e:
+                    print(f"[ModuleService] Error cargando {entry}: {e}")
+        
+        # Registrar comandos base UNA SOLA VEZ al final del escaneo
+        self._register_base_commands()
+
+    def get_modules(self):
+        """Devuelve la lista de módulos ordenados por prioridad (Home primero)."""
+        all_mods = list(self.loaded_modules.values())
+        
+        # Prioridad personalizada: home e id de los modulos mas importantes
+        priority = ["home", "agenda", "media_generator"]
+        
+        def sort_key(mod):
+            try:
+                # Si está en la lista de prioridad, su índice es el peso (0, 1, 2...)
+                # Si no, un peso alto (99) + nombre alfabético
+                if mod.id in priority:
+                    return (priority.index(mod.id), mod.name)
+                return (99, mod.name)
+            except:
+                return (100, mod.name)
+
+        return sorted(all_mods, key=sort_key)
+
+    def _register_base_commands(self):
+        """Registra los nombres de los módulos como comandos globales de apertura."""
+        base_cmds = {}
+        for mid, mod in self.loaded_modules.items():
+            # Trigger: "agenda" -> Action: "open_agenda"
+            trigger = mod.name.lower()
+            base_cmds[trigger] = f"open_{mid}"
+            # También soportar variante "abrir agenda"
+            base_cmds[f"abrir {trigger}"] = f"open_{mid}"
+        
+        self.chat_service.stt_service.set_base_module_commands(base_cmds)
+
+    def activate_module(self, module_id: str):
+        """Activa un módulo y actualiza los comandos de voz contextuales."""
+        # Protección contra recursión: si ya está activo el ID solicitado, no hacer nada
+        if self.active_module and self.active_module.id == module_id:
+            return self.active_module
+
+        if self.active_module:
+            self.active_module.on_deactivate()
+            self.chat_service.stt_service.clear_contextual_commands()
+
+        if module_id in self.loaded_modules:
+            self.active_module = self.loaded_modules[module_id]
+            self.active_module.on_activate()
+            
+            # Inyectar comandos de voz en el STTService
+            commands = self.active_module.get_voice_commands()
+            if commands:
+                self.chat_service.stt_service.set_contextual_commands(commands)
+            
+            print(f"[ModuleService] Módulo activado: {self.active_module.name}")
+            
+            # Notificar a la UI si hay un callback registrado
+            if self.on_module_activated:
+                self.on_module_activated(module_id)
+
+            return self.active_module
+        
+        self.active_module = None
+        return None
+
+    def deactivate_active_module(self):
+        if self.active_module:
+            self.active_module.on_deactivate()
+            self.chat_service.stt_service.clear_contextual_commands()
+            self.active_module = None
+            print("[ModuleService] Módulo desactivado.")
+
+    def handle_voice_command(self, action_slug: str, text: str):
+        """Despacha el comando de voz al módulo activo o maneja la apertura de módulos."""
+        # 1. Comprobar si es un comando de apertura de módulo
+        if action_slug.startswith("open_"):
+            module_id = action_slug.replace("open_", "")
+            print(f"[ModuleService] Petición de apertura recibida por voz: {module_id}")
+            self.activate_module(module_id)
+            return
+
+        # 2. Despachar al módulo activo para comandos internos del módulo
+        if self.active_module:
+            self.active_module.on_voice_command(action_slug, text)
+
+    def get_module(self, module_id: str) -> Optional[BaseModule]:
+        """Busca y retorna un módulo por su ID."""
+        return self.loaded_modules.get(module_id)

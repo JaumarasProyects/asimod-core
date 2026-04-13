@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ASIMOD | Web Dashboard</title>
+    <link rel="stylesheet" href="/web/css/style.css?v=2.0.2">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+</head>
+<body class="loading">
+    <div id="app" class="dashboard-shell">
+        <!-- Backdrop for mobile -->
+        <div id="backdrop" class="drawer-backdrop" style="display:none;"></div>
+        
+        <!-- Sidebar -->
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <div class="logo">
+                   <span class="logo-icon">💠</span>
+                   <span class="logo-text">ASIMOD</span>
+                </div>
+                <button class="icon-btn" id="sidebarToggle" title="Expandir/Contraer Menú">◀</button>
+                <button class="mobile-toggle" id="mobileToggle">☰</button>
+            </div>
+            <nav class="sidebar-nav" id="sidebarNav">
+                <!-- Módulos cargados dinámicamente -->
+            </nav>
+            <div class="sidebar-footer">
+                <div class="status-indicator">
+                    <span class="dot online"></span>
+                    <span class="status-text">Core Activo</span>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content Area -->
+        <main class="main-content">
+            <!-- Top Navigation / Menú Superior / Tabs -->
+            <header class="top-nav" id="topNav">
+                <div class="top-nav-left">
+                    <div class="active-module-info">
+                        <span id="moduleIcon" class="module-icon">🏠</span>
+                        <h1 id="moduleName">Inicio</h1>
+                    </div>
+                </div>
+
+                <div class="top-nav-center">
+                    <button class="core-toggle-btn" id="coreTrigger">⚡ NÚCLEO</button>
+                </div>
+                
+                <div class="top-nav-right">
+                    <!-- Quick Controls UI -->
+                    <div class="quick-controls">
+                        <button class="ctrl-btn" id="micToggle" title="Activar/Desactivar Voz">🎤</button>
+                        <button class="ctrl-btn" id="cameraSnap" title="Capturar Cámara">📷</button>
+                        <button class="ctrl-btn" id="screenSnap" title="Capturar Pantalla">🖥️</button>
+                    </div>
+                </div>
+            </header>
+
+            <!-- Bottom Content (Gallery + Workspace) -->
+            <div class="content-body" id="contentArea">
+                <div class="gallery-side-wrapper" style="display:flex; position:relative;">
+                    <div class="gallery-side collapsed" id="gallerySide">
+                        <div class="gallery-header">
+                            <h2 id="galleryTitle">LIBRERÍA</h2>
+                        </div>
+                        <div class="gallery-list" id="galleryList">
+                            <!-- Items de la galería -->
+                        </div>
+                    </div>
+                    <button class="gallery-toggle-handle" id="galleryToggle" title="Cerrar/Abrir Librería">▶</button>
+                </div>
+                
+                <section class="workspace-area">
+                    <div id="workspaceContent" class="workspace-content">
+                        <!-- Contenido dinámico del módulo -->
+                        <div class="welcome-screen">
+                            <h2>Bienvenido a ASIMOD</h2>
+                            <p>Selecciona un módulo en la barra lateral para comenzar.</p>
+                        </div>
+                    </div>
+                </section>
+            </div>
+        </main>
+
+        <!-- Chat Side (Now with Integrated Top Panel) -->
+        <div class="chat-side" id="chatSide">
+            <!-- Technical Control Panel (Collapsed by default) -->
+            <div id="techPanelContainer" class="side-tech-panel collapsed">
+                <div class="tech-panel-header">
+                    <span class="panel-title">⚙️ CENTRO DE CONTROL</span>
+                    <div class="tech-filler"></div>
+                    <button id="btnRefreshFull" class="icon-btn" title="Refrescar">🔄</button>
+                    <button id="toggleTechSidebar" class="btn-toggle-panel" title="Expandir/Contraer">▼</button>
+                </div>
+                <div class="tech-panel-content">
+                    <!-- Row 1: Memory -->
+                    <div class="tech-sidebar-row">
+                        <label>📚 MEMORIA</label>
+                        <div class="input-group">
+                            <select id="techMemory"></select>
+                            <button id="btnNewThread" class="icon-btn" title="Nuevo Hilo">➕</button>
+                        </div>
+                    </div>
+
+                    <!-- Row 2: Profile -->
+                    <div class="tech-sidebar-row">
+                        <label>👤 PERSONAJE</label>
+                        <input type="text" id="charName" placeholder="Nombre">
+                        <textarea id="charPers" placeholder="Personalidad" rows="3"></textarea>
+                        <div class="input-group">
+                            <select id="charVoiceMotor"></select>
+                            <select id="charVoiceId"></select>
+                        </div>
+                        <button id="btnSaveProfile" class="primary-btn">GUARDAR PERFIL</button>
+                    </div>
+
+                    <!-- Row 3: AI Engine -->
+                    <div class="tech-sidebar-row">
+                        <label>🤖 MOTOR LLM</label>
+                        <select id="techProvider"></select>
+                        <select id="techModel"></select>
+                    </div>
+
+                    <!-- Row 4: Inference -->
+                    <div class="tech-sidebar-row">
+                        <label>⚙️ CONFIGURACIÓN</label>
+                        <div class="setting-item">
+                            <span>Max Tokens</span>
+                            <input type="number" id="spinMaxTokens" min="64" max="8192">
+                        </div>
+                        <div class="setting-item">
+                            <span>Temp: <span id="labelTemp">0.7</span></span>
+                            <input type="range" id="sliderTemp" min="0.1" max="2.0" step="0.1">
+                        </div>
+                    </div>
+
+                    <!-- Row 5: Voice Output -->
+                    <div class="tech-sidebar-row">
+                        <label>🔊 SALIDA (TTS)</label>
+                        <select id="ttsProvider"></select>
+                        <select id="ttsMode">
+                            <option value="autoplay">Reproducir Todo</option>
+                            <option value="path">Solo Archivo</option>
+                        </select>
+                        <select id="ttsVoiceId"></select>
+                    </div>
+
+                    <!-- Row 6: Audio Input -->
+                    <div class="tech-sidebar-row">
+                        <label>🎤 ENTRADA (STT)</label>
+                        <select id="sttProvider"></select>
+                        <select id="sttMode">
+                            <option value="OFF">APAGADO</option>
+                            <option value="CHAT">CHAT CONTINUO</option>
+                            <option value="COMMAND">SOLO COMANDOS</option>
+                            <option value="VOICE_COMMAND">COMANDOS VOZ</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Chat Panel (Permanent below settings) -->
+            <div id="chatPanelContainer" class="side-chat-view">
+                <div class="chat-header">
+                    <button id="closeChat" class="icon-btn mobile-only-inline" title="Cerrar Panel">◀</button>
+                    <span>CONEXIÓN CON NÚCLEO</span>
+                    <button id="clearChat" class="icon-btn" title="Limpiar Chat">🗑</button>
+                </div>
+                <div class="chat-messages" id="chatMessages"></div>
+                <div class="image-preview" id="imagePreview" style="display:none; padding:10px; border-top:1px solid rgba(255,255,255,0.05); text-align:center;">
+                    <img id="previewImg" style="max-width:100%; border-radius:8px; border:1px solid var(--accent);">
+                    <button id="removeImg" style="position:absolute; background:red; color:white; border:none; border-radius:50%; width:20px; height:20px; cursor:pointer;">×</button>
+                </div>
+                <div class="chat-input-area">
+                    <div class="main-input-row">
+                        <input type="text" id="chatInput" placeholder="Escribe al sistema...">
+                        <button id="chatSend" title="Enviar Mensaje">🚀</button>
+                    </div>
+                    <div class="extra-controls-row">
+                        <div class="vision-control">
+                            <span>📽️ VISIÓN:</span>
+                            <select id="visionMode">
+                                <option value="OFF">APAGADO</option>
+                                <option value="CAMERA">CÁMARA</option>
+                                <option value="SCREEN">PANTALLA</option>
+                                <option value="FILE">IMAGEN</option>
+                            </select>
+                        </div>
+                        <button id="audioStopBtn" class="stop-btn">⏹ STOP AUDIO</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal para Mobile (Chat Overlay) -->
+    <button id="mobileChatTrigger" class="mobile-chat-btn">💬</button>
+
+    <script src="/web/js/app.js?v=2.0.2"></script>
+</body>
+</html>

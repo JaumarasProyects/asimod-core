@@ -1,0 +1,81 @@
+<!-- ASIMOD Agenda Module - Modular View -->
+<div class="module-web-view">
+    <link rel="stylesheet" href="/v1/widgets/widgets.css">
+    
+    <header style="margin-bottom:40px; display: flex; justify-content: space-between; align-items: center;">
+        <div>
+            <h1 style="font-size:2.2rem; font-weight:800; color:var(--accent);">AGENDA PERSONAL</h1>
+            <p style="color:var(--text-dim);">Gestión de eventos y tareas sincronizadas.</p>
+        </div>
+        <button class="add-event-btn" onclick="asimod.sendChat('Añade un evento a mi agenda')">➕ Nuevo Evento</button>
+    </header>
+
+    <div style="display:grid; grid-template-columns: 1fr 300px; gap:30px;">
+        
+        <!-- Timeline principal -->
+        <div class="asimod-card" style="padding:30px;">
+            <h3 style="font-size:0.9rem; color:var(--accent); font-weight:800; text-transform:uppercase; letter-spacing:1px; margin-bottom:25px;">PRÓXIMOS EVENTOS</h3>
+            <div id="agendaTimeline"></div>
+        </div>
+
+        <!-- Panel Lateral: Calendario / Info -->
+        <div style="display:flex; flex-direction:column; gap:20px;">
+            <div class="asimod-card" style="text-align:center;">
+                <div style="font-size:3rem; font-weight:800; margin-bottom:5px;">24</div>
+                <div style="color:var(--accent); font-weight:700; text-transform:uppercase; font-size:0.8rem; letter-spacing:2px;">ABRIL 2024</div>
+            </div>
+
+            <div class="asimod-card">
+                <h4 style="font-size:0.7rem; color:var(--text-dim); margin-bottom:15px; text-transform:uppercase;">RESUMEN DE CARGA</h4>
+                <div style="display:flex; align-items:center; gap:10px; margin-bottom:10px;">
+                    <div style="flex:1; height:6px; background:rgba(255,255,255,0.05); border-radius:10px; overflow:hidden;">
+                        <div style="width:65%; height:100%; background:var(--accent);"></div>
+                    </div>
+                    <span style="font-size:0.75rem; font-weight:700;">65%</span>
+                </div>
+                <p style="font-size:0.75rem; color:var(--text-dim);">Tienes 3 tareas críticas para hoy.</p>
+            </div>
+        </div>
+
+    </div>
+
+    <style>
+        .add-event-btn {
+            background: var(--accent);
+            color: var(--bg-dark);
+            border: none;
+            padding: 12px 20px;
+            border-radius: 12px;
+            font-weight: 800;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+        .add-event-btn:hover { transform: scale(1.05); }
+    </style>
+
+    <!-- Cargamos la librería de widgets compartida -->
+    <script src="/v1/widgets/widgets.js"></script>
+    <script>
+        (function() {
+            console.log("[AGENDA] Cargando interfaz con widgets compartidos...");
+            
+            // Datos de prueba (En el futuro vendrán de un fetch a /v1/agenda)
+            const mockEvents = [
+                { time: "09:00", title: "Reunión de Sincronización", desc: "Revisión de los objetivos semanales con el equipo técnico." },
+                { time: "11:30", title: "Análisis de Datos IA", desc: "Evaluar los logs del servidor y optimizar tiempos de respuesta." },
+                { time: "14:00", title: "Llamada con Cliente", desc: "Demostración de las nuevas capacidades modulares de ASIMOD." },
+                { time: "17:00", title: "Optimización de Backend", desc: "Refactorización del servicio de widgets global." }
+            ];
+
+            // Usamos la función global compartida para renderizar
+            if (window.asimod && window.asimod.renderEventList) {
+                asimod.renderEventList('agendaTimeline', mockEvents);
+            } else {
+                console.warn("[AGENDA] Esperando carga de widgets.js...");
+                setTimeout(() => {
+                    if (window.asimod.renderEventList) asimod.renderEventList('agendaTimeline', mockEvents);
+                }, 500);
+            }
+        })();
+    </script>
+</div>

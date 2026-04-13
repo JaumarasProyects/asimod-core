@@ -1,0 +1,351 @@
+<div class="module-web-view media-studio">
+    <link rel="stylesheet" href="/v1/widgets/widgets.css">
+    
+    <!-- Top Mode Menu -->
+    <header class="studio-header">
+        <div class="studio-title-group">
+            <h1 class="studio-title">ASIMOD STUDIO</h1>
+            <p class="studio-subtitle">Generación de contenido profesional asistida por IA</p>
+        </div>
+        <nav class="studio-nav" id="studioModes">
+            <button class="mode-btn active" data-mode="Texto">📝 TEXTO</button>
+            <button class="mode-btn" data-mode="Imagen">🎨 IMAGEN</button>
+            <button class="mode-btn" data-mode="Audio">🔊 AUDIO</button>
+            <button class="mode-btn" data-mode="Video">🎬 VIDEO</button>
+            <button class="mode-btn" data-mode="3D">📦 3D</button>
+        </nav>
+    </header>
+
+    <div class="studio-layout-v">
+        
+        <!-- Top Control Ribbon (Minimizable) -->
+        <div class="studio-controls-ribbon asimod-card" id="topControls">
+            <div class="ribbon-header">
+                <span class="studio-label" style="margin:0;">⚙️ CONFIGURACIÓN</span>
+                <button class="minimize-btn" id="toggleRibbon" title="Contraer/Expandir">▲</button>
+            </div>
+            
+            <div class="ribbon-content" id="ribbonContent">
+                <!-- Row 1: Prompt -->
+                <div class="ribbon-row">
+                    <div style="flex:1;">
+                        <label class="studio-label">PROMPT / INSTRUCCIONES</label>
+                        <textarea id="studioPrompt" placeholder="Describe lo que quieres generar..." class="studio-textarea-small"></textarea>
+                    </div>
+                </div>
+
+                <!-- Row 2: Options & Generate -->
+                <div class="ribbon-row ribbon-actions">
+                    <div id="contextualControls" class="contextual-grid">
+                        <!-- Se llena dinámicamente -->
+                    </div>
+                    
+                    <button id="btnGenerateStudio" class="generate-btn-ribbon">
+                        <span class="btn-icon">✨</span> GENERAR <span id="modeName">Texto</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Dynamic Viewport (Takes remaining height) -->
+        <main class="studio-viewport-v" id="studioViewport">
+            <div id="viewportPlaceholder" class="viewport-placeholder">
+                <div class="placeholder-icon">🎯</div>
+                <p>Listo para procesar tu solicitud.</p>
+            </div>
+            
+            <div id="viewportCanvas" class="viewport-canvas">
+                <!-- Aquí se inyecta el Markdown o la Imagen -->
+            </div>
+
+            <!-- Loader Overlay -->
+            <div id="viewportLoader" class="viewport-loader hidden">
+                <div class="spinner"></div>
+                <p>Estudio procesando...</p>
+            </div>
+        </main>
+    </div>
+
+    <style>
+        .media-studio { display: flex; flex-direction: column; height: 100%; gap: 15px; overflow: hidden; }
+        
+        .studio-header {
+            display: flex; justify-content: space-between; align-items: center; 
+            padding-bottom: 10px; border-bottom: 1px solid rgba(255,255,255,0.05); flex-shrink: 0;
+        }
+
+        .studio-layout-v { display: flex; flex-direction: column; gap: 15px; flex: 1; min-height: 0; }
+
+        /* Ribbon Style */
+        .studio-controls-ribbon { 
+            padding: 15px 20px; display: flex; flex-direction: column; gap: 10px; 
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1); overflow: hidden;
+            background: rgba(255,255,255,0.02);
+        }
+        .studio-controls-ribbon.collapsed { height: 50px; padding: 10px 20px; opacity: 0.8; }
+        .studio-controls-ribbon.collapsed #ribbonContent { display: none; }
+
+        .ribbon-header { display: flex; justify-content: space-between; align-items: center; }
+        .minimize-btn { 
+            background: none; border: none; color: var(--accent); cursor: pointer; 
+            font-size: 1rem; padding: 5px; opacity: 0.5; transition: opacity 0.2s;
+        }
+        .minimize-btn:hover { opacity: 1; }
+
+        .ribbon-row { display: flex; gap: 15px; align-items: flex-end; }
+        .ribbon-actions { border-top: 1px solid rgba(255,255,255,0.03); padding-top: 10px; }
+
+        .studio-textarea-small {
+            width: 100%; height: 60px; background: var(--bg-input); border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 10px; padding: 10px; color: white; outline: none; resize: vertical; font-size: 0.85rem;
+        }
+
+        .contextual-grid { display: flex; gap: 15px; flex: 1; align-items: flex-end; }
+        .ctx-group { display: flex; flex-direction: column; gap: 5px; flex: 1; }
+
+        .generate-btn-ribbon {
+            min-width: 250px; background: var(--accent); color: var(--bg-dark); border: none; padding: 12px 25px;
+            border-radius: 12px; font-weight: 800; font-size: 0.85rem; cursor: pointer; transition: all 0.3s;
+            display: flex; align-items: center; justify-content: center; gap: 10px;
+        }
+
+        .studio-viewport-v {
+            flex: 1; background: rgba(0,0,0,0.1); border-radius: 20px; border: 1px solid rgba(255,255,255,0.05);
+            position: relative; overflow: hidden; display: flex; align-items: flex-start; justify-content: center;
+        }
+
+        .viewport-canvas { width: 100%; height: 100%; padding: 30px; overflow-y: auto; }
+        .viewport-canvas.hidden { display: none; }
+        .viewport-placeholder { padding: 80px 0; text-align: center; color: var(--text-dim); }
+        .viewport-placeholder.hidden { display: none; }
+
+        .viewport-loader {
+            position: absolute; inset: 0; background: rgba(0,0,0,0.7); backdrop-filter: blur(5px);
+            display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 5;
+        }
+        .viewport-loader.hidden { display: none; }
+
+        .spinner {
+            width: 40px; height: 40px; border: 4px solid rgba(255,255,255,0.1); border-top-color: var(--accent);
+            border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 20px;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* Estilos de inputs contextuales */
+        .ctx-select {
+            width: 100%; background: var(--bg-header); border: 1px solid rgba(255,255,255,0.1); 
+            color: white; padding: 10px; border-radius: 10px; font-size: 0.85rem; margin-bottom: 15px;
+        }
+    </style>
+
+    <script>
+        (function() {
+            const state = {
+                mode: 'Texto',
+                loading: false
+            };
+
+            const selectors = {
+                nav: document.getElementById('studioModes'),
+                prompt: document.getElementById('studioPrompt'),
+                btn: document.getElementById('btnGenerateStudio'),
+                modeLabel: document.getElementById('modeName'),
+                context: document.getElementById('contextualControls'),
+                canvas: document.getElementById('viewportCanvas'),
+                placeholder: document.getElementById('viewportPlaceholder'),
+                loader: document.getElementById('viewportLoader'),
+                ribbon: document.getElementById('topControls'),
+                toggle: document.getElementById('toggleRibbon')
+            };
+
+            const configs = {
+                'Texto': {
+                    controls: `
+                        <div class="ctx-group">
+                            <label class="studio-label">PROVEEDOR</label>
+                            <select class="ctx-select" id="ctxProvider">
+                                <option>Ollama</option>
+                                <option>Gemini</option>
+                            </select>
+                        </div>
+                        <div class="ctx-group">
+                            <label class="studio-label">CREATIVIDAD (TEMP)</label>
+                            <input type="range" min="0" max="1" step="0.1" value="0.7" style="width:100%; accent-color:var(--accent); margin-bottom:8px;">
+                        </div>
+                    `
+                },
+                'Imagen': {
+                    controls: `
+                        <div class="ctx-group">
+                            <label class="studio-label">MOTOR DE IMAGEN</label>
+                            <select class="ctx-select" id="ctxEngine" style="margin:0;">
+                                <option>DALL-E 3</option>
+                                <option>ComfyUI</option>
+                                <option>Stable Diffusion</option>
+                            </select>
+                        </div>
+                        <div class="ctx-group">
+                            <label class="studio-label">RESOLUCIÓN</label>
+                            <div style="display:flex; gap:10px;">
+                                <button class="mode-btn active" style="flex:1; padding:8px;">1:1 SQ</button>
+                                <button class="mode-btn" style="flex:1; padding:8px;">16:9 HD</button>
+                            </div>
+                        </div>
+                    `
+                },
+                'Audio': {
+                    controls: `
+                        <div class="ctx-group">
+                            <label class="studio-label">MOTOR DE VOZ</label>
+                            <select class="ctx-select" style="margin:0;">
+                                <option>Microsoft Edge</option>
+                                <option>ElevenLabs</option>
+                            </select>
+                        </div>
+                    `
+                },
+                '3D': {
+                    controls: `
+                        <div class="ctx-group">
+                            <label class="studio-label">MOTOR 3D</label>
+                            <select class="ctx-select" id="ctx3DEngine" style="margin:0;">
+                                <option>Shap-E (Local)</option>
+                                <option>Rodin (Cloud)</option>
+                                <option>Luma (API)</option>
+                            </select>
+                        </div>
+                        <div class="ctx-group">
+                            <label class="studio-label">FORMATO</label>
+                            <select class="ctx-select" id="ctx3DFormat" style="margin:0;">
+                                <option>.OBJ</option>
+                                <option>.GLB</option>
+                                <option>.STL</option>
+                            </select>
+                        </div>
+                        <div class="ctx-group">
+                            <label class="studio-label">CALIDAD</label>
+                            <div style="display:flex; gap:10px;">
+                                <button class="mode-btn active" style="flex:1; padding:8px;">DRAFT</button>
+                                <button class="mode-btn" style="flex:1; padding:8px;">HIGH</button>
+                            </div>
+                        </div>
+                    `
+                }
+            };
+
+            // Lógica de Minimizar
+            selectors.toggle.onclick = () => {
+                const isCollapsed = selectors.ribbon.classList.toggle('collapsed');
+                selectors.toggle.innerText = isCollapsed ? '▼' : '▲';
+            };
+
+            function setMode(mode) {
+                state.mode = mode;
+                selectors.modeLabel.innerText = mode;
+                
+                // Actualizar Botones nav
+                selectors.nav.querySelectorAll('.mode-btn').forEach(btn => {
+                    btn.classList.toggle('active', btn.getAttribute('data-mode') === mode);
+                });
+
+                // Actualizar Controles
+                selectors.context.innerHTML = configs[mode] ? configs[mode].controls : '<p style="color:var(--text-dim); font-size:0.8rem;">Modo en desarrollo...</p>';
+                selectors.prompt.placeholder = `Describe lo que quieres generar para ${mode}...`;
+            }
+
+            // Bindings Nav
+            selectors.nav.querySelectorAll('.mode-btn').forEach(btn => {
+                btn.onclick = () => setMode(btn.getAttribute('data-mode'));
+            });
+
+            // Acción de Generación
+            selectors.btn.onclick = async () => {
+                const prompt = selectors.prompt.value.trim();
+                if (!prompt || state.loading) return;
+
+                state.loading = true;
+                selectors.btn.disabled = true;
+                selectors.btn.innerHTML = `<span class="spinner" style="width:15px; height:15px; border-width:2px; margin:0;"></span> GENERANDO...`;
+                
+                selectors.loader.classList.remove('hidden');
+                selectors.placeholder.classList.add('hidden');
+                selectors.canvas.classList.add('hidden');
+
+                try {
+                    // LLAMADA AL BRIDGE DE ACCIONES (Sync-Wait)
+                    const resp = await fetch('/v1/modules/media_generator/action', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            action: 'handle_generate_from_web',
+                            params: {
+                                prompt: prompt,
+                                mode: state.mode,
+                                params: {
+                                    engine: document.getElementById('ctxEngine')?.value,
+                                    provider: document.getElementById('ctxProvider')?.value
+                                }
+                            }
+                        })
+                    });
+
+                    const data = await resp.json();
+                    
+                    // Extraer el payload real del bridge
+                    let payload = data.result || data;
+                    if (typeof payload === 'string' && payload.startsWith('{')) {
+                        try { payload = JSON.parse(payload); } catch(e) {}
+                    }
+
+                    const isSuccess = data.status === 'success' || (payload && payload.status === 'success');
+
+                    if (isSuccess) {
+                        selectors.loader.classList.add('hidden');
+                        selectors.canvas.classList.remove('hidden');
+                        
+                        // Prioridad: Si hay una URL en el payload, es un archivo/imagen
+                        const hasFile = payload.type === 'file' || payload.url;
+                        
+                        if (hasFile && payload.url) {
+                            selectors.canvas.innerHTML = `
+                                <div style="display:flex; flex-direction:column; align-items:center; gap:20px;">
+                                    <img src="${payload.url}" style="max-width:100%; box-shadow:0 10px 30px rgba(0,0,0,0.5); border-radius:15px;" onerror="this.onerror=null; this.src='https://via.placeholder.com/800x450?text=Imagen+Generada+(Cargando...)';">
+                                    <div style="display:flex; gap:15px;">
+                                        <a href="${payload.url}" download class="mode-btn active">💾 DESCARGAR</a>
+                                    </div>
+                                </div>`;
+                        } else {
+                            // Extraer el texto limpio (content o el objeto completo si no hay más)
+                            const cleanText = payload.content || (typeof payload === 'string' ? payload : (payload.result || JSON.stringify(payload)));
+                            
+                            selectors.canvas.innerHTML = `
+                                <div class="asimod-card" style="padding:30px; line-height:1.7; font-size:1.05rem; white-space:pre-wrap; border-left:4px solid var(--accent); background:rgba(255,255,255,0.02);">
+                                    ${cleanText}
+                                </div>`;
+                        }
+                        
+                        // Refrescar galería global si existe
+                        if (window.app && window.app.loadGallery) window.app.loadGallery();
+
+                    } else {
+                        const errorMsg = data.message || payload.message || "Error en la generación";
+                        throw new Error(errorMsg);
+                    }
+
+                } catch (e) {
+                    console.error("[STUDIO] Error:", e);
+                    selectors.loader.classList.add('hidden');
+                    selectors.canvas.classList.remove('hidden');
+                    selectors.canvas.innerHTML = `<div class="asimod-card" style="border-color:#ff5555; color:#ff5555;">⚠️ ERROR: ${e.message}</div>`;
+                } finally {
+                    state.loading = false;
+                    selectors.btn.disabled = false;
+                    selectors.btn.innerHTML = `<span class="btn-icon">✨</span> GENERAR <span id="modeName">${state.mode}</span>`;
+                }
+            };
+
+            // Inicializar
+            setMode('Texto');
+        })();
+    </script>
+</div>

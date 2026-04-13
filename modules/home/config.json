@@ -1,0 +1,13 @@
+{
+  "layout": {
+    "show_gallery": true,
+    "tabs": {
+      "Dashboard": [
+        "calendar"
+      ],
+      "Agenda": [
+        "events"
+      ]
+    }
+  }
+}

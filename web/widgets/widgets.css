@@ -1,0 +1,90 @@
+/* 
+   ASIMOD SHARED WIDGET SYSTEM 
+   Versión: 1.0
+   Estilos base reutilizables para todos los módulos.
+*/
+
+:root {
+    --widget-bg: rgba(255, 255, 255, 0.03);
+    --widget-border: 1px solid rgba(255, 255, 255, 0.08);
+    --widget-radius: 20px;
+    --widget-shadow: 0 10px 30px rgba(0,0,0,0.2);
+}
+
+/* Contenedor Base - Card */
+.asimod-card {
+    background: var(--widget-bg);
+    border: var(--widget-border);
+    border-radius: var(--widget-radius);
+    padding: 20px;
+    box-shadow: var(--widget-shadow);
+    transition: transform 0.3s ease, border-color 0.3s ease;
+}
+
+.asimod-card:hover {
+    border-color: var(--accent);
+    transform: translateY(-5px);
+}
+
+/* Widget de Lista de Eventos (Agenda) */
+.event-timeline {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+.event-entry {
+    display: flex;
+    gap: 20px;
+    padding: 15px;
+    background: rgba(255,255,255,0.02);
+    border-radius: 15px;
+    border-left: 4px solid var(--accent);
+    transition: background 0.2s;
+}
+
+.event-entry:hover {
+    background: rgba(255,255,255,0.05);
+}
+
+.event-time {
+    min-width: 60px;
+    font-weight: 800;
+    color: var(--accent);
+    font-size: 0.9rem;
+    text-align: right;
+}
+
+.event-info {
+    flex: 1;
+}
+
+.event-title {
+    font-weight: 700;
+    font-size: 1rem;
+    margin-bottom: 5px;
+    color: white;
+}
+
+.event-desc {
+    font-size: 0.85rem;
+    color: var(--text-dim);
+    line-height: 1.4;
+}
+
+/* Status Pill */
+.status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 12px;
+    border-radius: 50px;
+    font-size: 0.7rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    background: rgba(255,255,255,0.05);
+}
+
+.status-online { color: #4ec9b0; background: rgba(78,201,176,0.1); }
+.status-offline { color: #ff6b6b; background: rgba(255,107,107,0.1); }

@@ -1,0 +1,167 @@
+<div class="module-web-view communication-view">
+    <header class="comm-header">
+        <div id="contactProfile" class="contact-profile">
+            <div class="contact-avatar">👤</div>
+            <div class="contact-info">
+                <h1 id="contactName" class="contact-name">Selecciona un Contacto</h1>
+                <p id="contactRole" class="contact-role">Módulo de Comunicaciones</p>
+            </div>
+        </div>
+        <nav class="comm-tabs">
+            <button class="tab-btn active" data-tab="mensajeria">MENSAJERÍA</button>
+            <button class="tab-btn" data-tab="correo">CORREO</button>
+            <button class="tab-btn" data-tab="redes">REDES</button>
+        </nav>
+    </header>
+
+    <main class="comm-content">
+        <div id="servicesGrid" class="services-grid">
+            <!-- Service cards will be injected here -->
+        </div>
+    </main>
+
+    <style>
+        .communication-view { display: flex; flex-direction: column; gap: 30px; padding: 10px; }
+        
+        .comm-header {
+            display: flex; justify-content: space-between; align-items: center;
+            padding-bottom: 20px; border-bottom: 1px solid rgba(255,255,255,0.05);
+        }
+
+        .contact-profile { display: flex; align-items: center; gap: 20px; }
+        .contact-avatar {
+            width: 70px; height: 70px; background: rgba(255,255,255,0.03);
+            border-radius: 50%; display: flex; align-items: center; justify-content: center;
+            font-size: 2rem; border: 2px solid rgba(255,255,255,0.05);
+        }
+        .contact-name { font-size: 1.6rem; font-weight: 800; letter-spacing: -1px; }
+        .contact-role { color: var(--accent); font-size: 0.8rem; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; }
+
+        .comm-tabs { display: flex; gap: 10px; }
+        .tab-btn {
+            background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05);
+            color: var(--text-dim); padding: 10px 20px; font-size: 0.8rem; font-weight: 800;
+            border-radius: 12px; cursor: pointer; transition: all 0.3s;
+        }
+        .tab-btn.active { background: var(--accent); color: var(--bg-dark); border-color: var(--accent); }
+
+        .services-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 20px;
+        }
+
+        .service-card {
+            background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.05);
+            border-radius: 25px; padding: 30px; display: flex; flex-direction: column;
+            align-items: center; text-align: center; gap: 15px; transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+        .service-card:hover {
+            transform: translateY(-10px); background: rgba(255,255,255,0.06);
+            border-color: var(--accent); box-shadow: 0 20px 40px rgba(0,0,0,0.3);
+        }
+
+        .service-icon { font-size: 3rem; margin-bottom: 10px; }
+        .service-name { font-size: 1.2rem; font-weight: 800; color: white; }
+        .service-desc { font-size: 0.85rem; color: var(--text-dim); line-height: 1.5; }
+        
+        .service-btn {
+            margin-top: 10px; background: var(--accent); color: var(--bg-dark);
+            border: none; padding: 12px 30px; border-radius: 12px; font-weight: 800;
+            cursor: pointer; transition: all 0.3s; width: 100%;
+        }
+        .service-btn:hover { transform: scale(1.05); filter: brightness(1.2); }
+
+        @media (max-width: 768px) {
+            .comm-header { flex-direction: column; align-items: flex-start; gap: 20px; }
+            .comm-tabs { width: 100%; overflow-x: auto; padding-bottom: 5px; }
+        }
+    </style>
+
+    <script>
+        (function() {
+            let currentContact = null;
+            let currentMode = 'mensajeria';
+
+            async function init() {
+                try {
+                    const resp = await fetch('/v1/modules/communications/action', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ action: 'handle_get_active_contact' })
+                    });
+                    const data = await resp.json();
+                    if (data.status === 'success') {
+                        renderProfile(data.contact);
+                    }
+                } catch (e) { console.error(e); }
+            }
+
+            function renderProfile(contact) {
+                currentContact = contact;
+                document.getElementById('contactName').innerText = contact.name;
+                document.getElementById('contactRole').innerText = contact.role || "Contacto";
+                renderServices();
+            }
+
+            function renderServices() {
+                const grid = document.getElementById('servicesGrid');
+                grid.innerHTML = '';
+                
+                const services = getServicesForMode(currentMode, currentContact);
+                
+                services.forEach(s => {
+                    const card = document.createElement('div');
+                    card.className = 'service-card';
+                    card.innerHTML = `
+                        <div class="service-icon">${s.icon}</div>
+                        <div class="service-name">${s.name}</div>
+                        <p class="service-desc">Acceso directo a ${s.name} para sincronización externa.</p>
+                        <button class="service-btn">ABRIR SERVICIO</button>
+                    `;
+                    card.querySelector('button').onclick = () => window.open(s.url, '_blank');
+                    grid.appendChild(card);
+                });
+            }
+
+            function getServicesForMode(mode, contact) {
+                if (!contact) return [];
+                const phone = contact.phone || "";
+                const email = contact.email || "";
+
+                if (mode === 'mensajeria') {
+                    return [
+                        { name: "WhatsApp", icon: "💬", url: `https://api.whatsapp.com/send?phone=${phone}` },
+                        { name: "Telegram", icon: "✈️", url: `https://web.telegram.org` },
+                        { name: "Discord", icon: "🎮", url: `https://discord.com` }
+                    ];
+                } else if (mode === 'correo') {
+                    return [
+                        { name: "Gmail", icon: "📧", url: `https://mail.google.com/mail/?view=cm&fs=1&to=${email}` },
+                        { name: "Outlook", icon: "📨", url: `mailto:${email}` }
+                    ];
+                } else if (mode === 'redes') {
+                    const social = contact.social || { github: "https://github.com" };
+                    return Object.entries(social).map(([plat, url]) => ({
+                        name: plat.charAt(0).toUpperCase() + plat.slice(1),
+                        icon: "🌐",
+                        url: url
+                    }));
+                }
+                return [];
+            }
+
+            // Tab events
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                btn.onclick = () => {
+                    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
+                    currentMode = btn.dataset.tab;
+                    renderServices();
+                };
+            });
+
+            init();
+        })();
+    </script>
+</div>
