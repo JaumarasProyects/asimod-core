@@ -1,0 +1,18 @@
+{
+    "id": "char_nadia",
+    "name": "Nadia",
+    "role": "Jugadora de Poker",
+    "public_profile": "Mujer madura, mirada calculadora, viste de rojo siempre. Jugadora profesional de poker.",
+    "age": 35,
+    "image": "Resources/characters/nadia.png",
+    "voice_provider": "Edge TTS",
+    "voice_id": "es-MX-DaliaNeural",
+    "personality": "muy inteligente, peligrosa, le gusta jugar y apostar todo el tiempo",
+    "initial_location": "Bodegas",
+    "initial_state": "Neutral",
+    "trust": 0,
+    "anger": 0,
+    "fear": 0,
+    "stress": 0,
+    "is_culprit": false
+}

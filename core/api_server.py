@@ -103,6 +103,13 @@ class APIServer:
                 mount_path = f"/v1/modules/{entry}/assets"
                 print(f"[API] Montando recursos para módulo '{entry}': {mount_path}")
                 self.app.mount(mount_path, StaticFiles(directory=module_web_path), name=f"module_asset_{entry}")
+                
+            # --- NUEVO: Montaje de Output del Módulo ---
+            module_output_path = os.path.join(modules_dir, entry, "output")
+            if os.path.isdir(module_output_path):
+                out_mount = f"/v1/modules/{entry}/output"
+                print(f"[API] Montando Output para módulo '{entry}': {out_mount}")
+                self.app.mount(out_mount, StaticFiles(directory=module_output_path), name=f"module_output_{entry}")
 
     # =========================================================
     # ROUTES
@@ -213,66 +220,133 @@ class APIServer:
                 return {"status": "error", "message": str(e)}
 
         @self.app.get("/v1/gallery")
-        async def list_gallery(module_id: str = None):
-            """Retorna la lista de archivos o items contextuales para el módulo activo."""
+        async def list_gallery(module_id: str = None, path: str = ""):
+            """Retorna la lista de archivos o carpetas contextuales."""
             from pathlib import Path
             
-            # Caso 1: Si el módulo tiene su propia galería (ej: Contactos, Proyectos)
+            # Caso 1: Si el módulo tiene su propia galería lógica
             if module_id:
                 mod = self.module_service.get_module(module_id)
                 if mod and hasattr(mod, "handle_get_gallery"):
-                    # Llamar al handler del módulo para obtener sus items (Contactos, Proyectos, etc)
-                    # El handler puede ser sincrono o asincrono
+                    print(f"[API] Forzando galería exclusiva para módulo: {module_id}")
                     import asyncio
                     try:
+                        kwargs = {"path": path} if path else {}
                         if asyncio.iscoroutinefunction(mod.handle_get_gallery):
-                            result = await mod.handle_get_gallery()
+                            return await mod.handle_get_gallery(**kwargs)
                         else:
-                            result = mod.handle_get_gallery()
-                        return result
+                            return mod.handle_get_gallery(**kwargs)
                     except Exception as e:
-                        print(f"[API] Error en galería modal {module_id}: {e}")
+                        print(f"[API] Error en galería delegada {module_id}: {e}")
+                        return {"status": "error", "message": str(e), "items": []}
+                
+                # Si se pidió un módulo pero no existe o no tiene galería, no saltamos a la raíz.
+                # Devolvemos vacío para mantener la integridad del módulo.
+                print(f"[API] Advertencia: El módulo {module_id} no soporta galería delegada.")
+                return {"items": [], "current_path": path, "message": "Módulo sin galería"}
 
-            # Caso 2: Galería por defecto (Archivos de salida)
+            # Caso 2: Navegación jerárquica física desde 'output'
             output_root = Path("output").resolve()
-            if not output_root.exists():
-                return {"files": []}
             
-            files = []
-            valid_exts = {'.png', '.jpg', '.jpeg', '.gif', '.wav', '.mp3', '.txt', '.pdf'}
-            subfolders = ["imagen", "texto", "audio", "video"]
-            
-            def create_item(path: Path, url_base: str):
-                ext = path.suffix.lower()
-                f_type = "image" if ext in {'.png', '.jpg', '.jpeg', '.gif'} else ("audio" if ext in {'.wav', '.mp3'} else "file")
-                return {
-                    "name": path.name,
-                    "url": f"{url_base}/{path.name}",
-                    "type": f_type,
-                    "size": path.stat().st_size,
-                    "date": path.stat().st_mtime
-                }
+            # Limpiar y validar el path para evitar Path Traversal
+            safe_path = Path(path.strip("/\\")).resolve()
+            if not str(safe_path).startswith(str(output_root)) and path:
+                target_dir = (output_root / path.strip("/\\")).resolve()
+            else:
+                target_dir = output_root if not path else safe_path
 
+            # Asegurar que no nos salimos de output
+            if not str(target_dir).startswith(str(output_root)):
+                target_dir = output_root
+
+            if not target_dir.exists():
+                return {"items": [], "current_path": path}
+            
+            items = []
+            valid_exts = {'.png', '.jpg', '.jpeg', '.gif', '.wav', '.mp3', '.mp4', '.txt', '.pdf', '.json', '.glb', '.obj'}
+            
             try:
-                # Escanear raíz
-                if output_root.exists():
-                    for item in output_root.iterdir():
-                        if item.is_file() and item.suffix.lower() in valid_exts:
-                            files.append(create_item(item, "/output"))
+                for item in target_dir.iterdir():
+                    rel_path = item.relative_to(output_root).as_posix()
+                    
+                    if item.is_dir():
+                        items.append({
+                            "name": item.name,
+                            "type": "folder",
+                            "path": rel_path,
+                            "icon": "📁"
+                        })
+                    elif item.is_file() and item.suffix.lower() in valid_exts:
+                        ext = item.suffix.lower()
+                        # Categoría de media
+                        f_type = "file"
+                        if ext in {'.png', '.jpg', '.jpeg', '.gif'}: f_type = "image"
+                        elif ext in {'.wav', '.mp3'}: f_type = "audio"
+                        elif ext in {'.mp4', '.avi', '.mov'}: f_type = "video"
+                        elif ext in {'.glb', '.obj'}: f_type = "3d"
+                        
+                        items.append({
+                            "name": item.name,
+                            "type": f_type,
+                            "url": f"/output/{rel_path}",
+                            "path": rel_path,
+                            "size": item.stat().st_size,
+                            "date": item.stat().st_mtime
+                        })
                 
-                # Escanear subcarpetas
-                for sub in subfolders:
-                    sub_path = output_root / sub
-                    if sub_path.exists() and sub_path.is_dir():
-                        for item in sub_path.iterdir():
-                            if item.is_file() and item.suffix.lower() in valid_exts:
-                                files.append(create_item(item, f"/output/{sub}"))
+                # Ordenar: Carpetas primero, luego archivos por fecha
+                items.sort(key=lambda x: (x['type'] != 'folder', -x.get('date', 0)))
                 
-                files.sort(key=lambda x: x.get("date", 0), reverse=True)
-                return {"files": files}
+                return {
+                    "items": items,
+                    "current_path": path,
+                    "can_go_back": path != ""
+                }
             except Exception as e:
-                print(f"[API] Error listando galería: {e}")
-                return {"files": [], "error": str(e)}
+                print(f"[API] Error listando galería en {target_dir}: {e}")
+                return {"items": [], "error": str(e)}
+
+        @self.app.get("/v1/modules/{module_id}/workflows")
+        async def list_workflows(module_id: str):
+            """Retorna la lista de workflows disponibles para un módulo."""
+            if module_id != "media_generator":
+                return {"workflows": []}
+            
+            from pathlib import Path
+            base_dir = Path("modules/media_generator/workflows").resolve()
+            if not base_dir.exists(): return {"workflows": {}}
+            
+            workflows = {}
+            
+            def scan_dir(path: Path):
+                """Escanea una carpeta y retorna archivos JSON o subcarpetas con JSON."""
+                results = {}
+                for item in path.iterdir():
+                    if item.is_dir():
+                        # Buscar archivos JSON recursivamente (max 1 nivel más)
+                        files = [f.name for f in item.rglob("*.json")]
+                        if files:
+                            # Simplificar nombre para el combo
+                            results[item.name] = [f.name for f in item.iterdir() if f.is_file() and f.suffix == ".json"]
+                            # Si es una carpeta de categorías (como video/simple), bajamos un nivel
+                            for sub in item.iterdir():
+                                if sub.is_dir():
+                                    sub_files = [f.name for f in sub.iterdir() if f.suffix == ".json"]
+                                    if sub_files: results[f"{item.name}/{sub.name}"] = sub_files
+                    elif item.is_file() and item.suffix == ".json":
+                        if "root" not in results: results["root"] = []
+                        results["root"].append(item.name)
+                return results
+
+            for sub in ["simple", "compuesta", "audio", "video", "3d"]:
+                sub_path = base_dir / sub
+                if not sub_path.exists(): continue
+                
+                # Mapear 'simple' a 'imagen' para el frontend
+                key = "imagen" if sub == "simple" else sub
+                workflows[key] = scan_dir(sub_path)
+            
+            return {"workflows": workflows}
 
         @self.app.get("/v1/style")
         def get_style():

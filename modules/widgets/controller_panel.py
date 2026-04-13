@@ -241,12 +241,24 @@ class ControllerPanel(tk.Frame):
             return ctrl.get()
         return default
 
-    def add_label(self, text, color=None):
-        """Añade una etiqueta de información o advertencia al panel."""
-        row = len(self.grid_container.winfo_children()) // 2
-        
-        lbl = tk.Label(self.grid_container, text=text, bg=self.bg_color, 
-                       fg=color or (self.style.get_color("text_dim") if self.style else "#aaa"), 
-                       font=("Arial", 9, "italic"), wraplength=200, justify="left")
         lbl.grid(row=row, column=0, columnspan=2, sticky="w", pady=5)
         return lbl
+
+    def set_value(self, key, value):
+        """Establece el valor de un controlador por su clave."""
+        if key in self.controls:
+            ctrl = self.controls[key]
+            if isinstance(ctrl, tk.Text):
+                ctrl.delete("1.0", tk.END)
+                ctrl.insert("1.0", str(value))
+            elif isinstance(ctrl, tk.Entry):
+                ctrl.delete(0, tk.END)
+                ctrl.insert(0, str(value))
+            elif isinstance(ctrl, ttk.Combobox):
+                # Para Combobox, intentamos setear el valor directamente
+                ctrl.set(str(value))
+            elif hasattr(ctrl, 'set'):
+                # Para StringVars (File Pickers) y otros tipos con .set()
+                ctrl.set(str(value))
+            return True
+        return False

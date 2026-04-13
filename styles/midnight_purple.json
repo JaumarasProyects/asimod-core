@@ -1,0 +1,16 @@
+{
+  "name": "Midnight Purple",
+  "colors": {
+    "bg_main": "#1a1a2e",
+    "bg_dark": "#16213e",
+    "bg_sidebar": "#0f3460",
+    "bg_header": "#1a1a2e",
+    "bg_input": "#16213e",
+    "accent": "#e94560",
+    "accent_hover": "#c0354b",
+    "text_main": "#ffffff",
+    "text_dim": "#a2a2d0",
+    "btn_bg": "#0f3460",
+    "btn_fg": "#ffffff"
+  }
+}

@@ -1,0 +1,18 @@
+{
+    "id": "char_lili",
+    "name": "Lili",
+    "role": "Seductora",
+    "public_profile": "Mujer de 29 años, rubia con ojos seductores. Siempre vestida de forma provocativa.",
+    "age": 29,
+    "image": "Resources/characters/lili.png",
+    "voice_provider": "Edge TTS",
+    "voice_id": "es-ES-ElviraNeural",
+    "personality": "estrovertida, muy habladora, cotilla, muy seductora",
+    "initial_location": "Despacho",
+    "initial_state": "Hostile",
+    "trust": 50,
+    "anger": 0,
+    "fear": 0,
+    "stress": 20,
+    "is_culprit": false
+}

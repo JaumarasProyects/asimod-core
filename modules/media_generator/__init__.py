@@ -31,10 +31,9 @@ class MediaGeneratorModule(StandardModule):
         self.menu_items = ["Texto", "Imagen", "Video", "Audio", "3D"]
         self.current_mode = "Texto"
         
-        # Ruta de Output Configurable
-        default_out = os.path.abspath(os.path.join(os.path.dirname(__file__), "output"))
-        self.output_root = self.config_service.get("comfyui_output_path", default_out)
-        self.gallery_path = self.output_root # Ruta actual en la galería
+        # Ruta de Output en el Módulo (Forzamos la local para evitar confusiones con la raíz)
+        self.output_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "output"))
+        self.gallery_path = self.output_root 
         
         # Asegurar carpetas base
         for sub in ["texto", "imagen", "audio", "video", "3d"]:
@@ -254,14 +253,24 @@ class MediaGeneratorModule(StandardModule):
         """Hook específico para peticiones desde el Dashboard Web (Awaitable)."""
         print(f"[MediaGenerator][Web] Generando {mode} para web: {prompt}")
         
-        # Sincronizar parámetros si vienen
+        # Sincronizar parámetros si vienen (de forma segura con el hilo principal)
         if params and self.ctrl_panel:
-            for k, v in params.items():
-                self.ctrl_panel.set_value(k, v)
+            def sync_ui():
+                for k, v in params.items():
+                    # Resolución de rutas relativas de la galería web
+                    if isinstance(v, str) and not os.path.isabs(v) and ("input_" in k or k == "input_image"):
+                        abs_v = os.path.join(self.output_root, v)
+                        if os.path.exists(abs_v):
+                            v = abs_v
+                    self.ctrl_panel.set_value(k, v)
+            if hasattr(self, "workspace") and self.workspace:
+                self.workspace.after(0, sync_ui)
 
         # Ejecutar la lógica de generación y esperar el resultado
         try:
-            result = await self._perform_generation(prompt, mode)
+            # Ahora inyectamos los parámetros directamente para no depender del hilo de la UI
+            result = await self._perform_generation(prompt, mode, web_params=params)
+            print(f"[MediaGenerator][Web] Resultado obtenido: {result}")
             
             # Si el resultado es una ruta de archivo, lo convertimos a URL estática
             if isinstance(result, str) and os.path.exists(result):
@@ -281,7 +290,7 @@ class MediaGeneratorModule(StandardModule):
                 return {
                     "status": "success", 
                     "type": "file", 
-                    "url": f"/output/{mode.lower()}/{filename}",
+                    "url": f"/v1/modules/{self.id}/output/{mode.lower()}/{filename}",
                     "filename": filename
                 }
             else:
@@ -304,70 +313,171 @@ class MediaGeneratorModule(StandardModule):
             
         threading.Thread(target=run, daemon=True).start()
 
-    async def _perform_generation(self, prompt, mode):
+    def handle_get_gallery(self, path=""):
+        """Retorna la lista de archivos de la galería local expuestos vía API."""
+        print(f"[MediaGenerator][Web] Galería solicitada para path: '{path}'")
+        from pathlib import Path
+        output_root = Path(self.output_root).resolve()
+        
+        # Resolver el path solicitado (ej: 'imagen')
+        target_dir = output_root / path.strip("/\\")
+        
+        # Búsqueda insensible a mayúsculas si no existe la carpeta exacta
+        if not target_dir.exists():
+            clean_path = path.strip("/\\").lower()
+            for entry in output_root.iterdir():
+                if entry.is_dir() and entry.name.lower() == clean_path:
+                    target_dir = entry
+                    break
+        
+        # Resolver ruta final absoluta
+        target_dir = target_dir.resolve()
+        
+        # Seguridad: No permitir salir de output_root
+        if not str(target_dir).startswith(str(output_root)):
+            target_dir = output_root
+            
+        if not target_dir.exists():
+            target_dir = output_root # Fallback a raíz si no existe el path
+            path = ""
+            
+        items = []
+        # Añadir opción de subir nivel si no estamos en la raíz
+        if path:
+            p = Path(path)
+            parent_path = str(p.parent) if p.parent != p else ""
+            if parent_path == ".": parent_path = ""
+            items.append({
+                "name": ".. (Volver)",
+                "type": "folder",
+                "path": parent_path,
+                "url": None
+            })
+
+        valid_exts = {'.png', '.jpg', '.jpeg', '.gif', '.webp', '.wav', '.mp3', '.ogg', '.mp4', '.avi', '.mov', '.txt', '.pdf', '.json', '.glb', '.obj'}
+        
+        try:
+            # Listar subcarpetas primero, luego archivos
+            entries = sorted(target_dir.iterdir(), key=lambda x: (not x.is_dir(), x.name.lower()))
+            
+            for item in entries:
+                rel_path = item.relative_to(output_root).as_posix()
+                
+                if item.is_dir():
+                    items.append({
+                        "name": item.name,
+                        "type": "folder", # Usar 'folder' para compatibilidad con app.js
+                        "path": rel_path,
+                        "url": None
+                    })
+                elif item.suffix.lower() in valid_exts:
+                    ext = item.suffix.lower()
+                    # Mapear el tipo de archivo para el visor web
+                    m_type = "image" if ext in ['.png', '.jpg', '.jpeg', '.gif', '.webp'] else \
+                             "video" if ext in ['.mp4', '.avi', '.mov', '.webm'] else \
+                             "audio" if ext in ['.wav', '.mp3', '.ogg', '.m4a'] else \
+                             "3d" if ext in ['.glb', '.obj'] else "file"
+                             
+                    file_url = f"/v1/modules/{self.id}/output/{rel_path}"
+                    items.append({
+                        "name": item.name,
+                        "type": m_type,
+                        "path": rel_path,
+                        "url": file_url,
+                        "ext": ext[1:]
+                    })
+        except Exception as e:
+            print(f"[MediaGenerator] Error listando galería: {e}")
+            
+        return {"items": items, "current_path": path}
+
+    def _get_val(self, key, web_params=None, default=None):
+        """Ayudante para obtener parámetros de forma segura (Thread-safe) priorizando la web."""
+        # 1. Prioridad: Parámetros directos de la petición Web
+        if web_params:
+            if key in web_params: return web_params[key]
+            # También buscar en el sub-diccionario 'params' si existe
+            inner = web_params.get("params", {})
+            if isinstance(inner, dict) and key in inner: return inner[key]
+
+        # 2. Ultimo recurso: Leer del panel local (Tkinter - riesgo de hilo pero necesario si es manual)
+        if self.ctrl_panel:
+            return self.ctrl_panel.get_value(key, default)
+            
+        return default
+
+    async def _perform_generation(self, prompt, mode, web_params=None):
         """Lógica centralizada y awaitable de generación."""
+        print(f"[MediaGenerator] Generando {mode}... (Web Injected: {web_params is not None})")
+        
         if mode == "Imagen":
-            # Usar valores del panel si existen, si no, usar parámetros por defecto o de la web
-            engine_name = self.ctrl_panel.get_value("engine") if (hasattr(self, 'ctrl_panel') and self.ctrl_panel) else "DALL-E 3"
+            engine_name = self._get_val("engine", web_params, default="DALL-E 3")
             adapter = self.image_service.get_adapter(engine_name)
             if not adapter: raise Exception(f"Adaptador {engine_name} no encontrado")
             
-            res = self.ctrl_panel.get_value("res") if (hasattr(self, 'ctrl_panel') and self.ctrl_panel) else "1024x1024"
-            
-            # Obtener ancho y alto del nuevo control de resolución
-            preset = self.ctrl_panel.get_value("resolution")
-            w, h = 1024, 1024 # Default
+            res = self._get_val("res", web_params, default="1024x1024")
+            preset = self._get_val("resolution", web_params)
+            w, h = 1024, 1024
             
             if preset == "Personalizado":
-                w = self.ctrl_panel.get_value("resolution_w")
-                h = self.ctrl_panel.get_value("resolution_h")
+                w = self._get_val("resolution_w", web_params)
+                h = self._get_val("resolution_h", web_params)
             elif preset:
-                # Extraer de strings como "Cuadrada Grande (1024x1024)"
                 import re
-                match = re.search(r"\((\d+)x(\d+)\)", preset)
-                if match:
-                    w, h = match.groups()
+                match = re.search(r"\((\d+)x(\d+)\)", str(preset))
+                if match: w, h = match.groups()
 
             # Cargar workflow si es ComfyUI
             workflow_data = None
-            if engine_name == "ComfyUI" and self.ctrl_panel:
-                w_file = self.ctrl_panel.get_value("workflow")
+            if engine_name == "ComfyUI":
+                w_file = self._get_val("workflow", web_params)
                 if w_file:
-                    # Re-calcular ruta del archivo
-                    w_type = self.ctrl_panel.get_value("type")
-                    w_subtype = self.ctrl_panel.get_value("subtype")
+                    w_type = self._get_val("type", web_params, default="Simple")
+                    w_subtype = self._get_val("subtype", web_params)
                     
                     base_w = os.path.join(os.path.dirname(__file__), "workflows", w_type.lower())
+                    if not os.path.exists(base_w):
+                        base_w = os.path.join(os.path.dirname(__file__), "workflows", w_type.capitalize())
+                    
                     if w_subtype:
                         base_w = os.path.join(base_w, w_subtype.lower())
                     
                     full_path = os.path.join(base_w, w_file)
+                    print(f"[MediaGenerator] Workflow: {full_path}")
                     if os.path.exists(full_path):
                         try:
                             with open(full_path, "r", encoding="utf-8") as f:
                                 workflow_data = json.load(f)
                         except Exception as e:
-                            print(f"[MediaGenerator] Error cargando workflow JSON: {e}")
+                            print(f"[MediaGenerator] Error workflow JSON: {e}")
+                    else:
+                        print(f"[MediaGenerator] ERROR: Workflow NO encontrado en {full_path}")
 
-            # Imagen(es) de entrada para Img2Img
+            # Imagen(es) de entrada
             input_images = []
-            img_count = self.ctrl_panel.get_value("img_count") or "1"
+            img_count = self._get_val("img_count", web_params) or "1"
             try:
                 for i in range(1, int(img_count) + 1):
-                    path = self.ctrl_panel.get_value(f"input_image_{i}")
-                    if path and path != "Ninguno":
-                        input_images.append(path)
+                    p_val = self._get_val(f"input_image_{i}", web_params)
+                    if not p_val: p_val = self._get_val("input_image", web_params) if i==1 else None
+                    
+                    if p_val and p_val != "Ninguno":
+                        # Resolver ruta si es relativa (importante para web)
+                        if not os.path.isabs(p_val):
+                            p_val = os.path.join(self.output_root, p_val)
+                        if os.path.exists(p_val):
+                            input_images.append(p_val)
             except: pass
 
-            neg_prompt = self.ctrl_panel.get_value("neg_prompt") if (hasattr(self, 'ctrl_panel') and self.ctrl_panel) else ""
+            neg_prompt = self._get_val("neg_prompt", web_params, default="")
             return await adapter.generate_image(prompt, resolution=res, workflow_json=workflow_data, width=w, height=h, input_images=input_images, negative_prompt=neg_prompt)
         
         elif mode == "Audio":
-            tipo = self.ctrl_panel.get_value("audio_type")
-            prov = self.ctrl_panel.get_value("audio_provider")
+            tipo = self._get_val("audio_type", web_params)
+            prov = self._get_val("audio_provider", web_params)
             
             if prov == "ComfyUI":
-                w_file = self.ctrl_panel.get_value("audio_workflow")
+                w_file = self._get_val("audio_workflow", web_params)
                 folder_map = {"Voces": "voices", "Música": "music", "Efectos": "sounds"}
                 sub = folder_map.get(tipo, "voices")
                 
@@ -380,48 +490,30 @@ class MediaGeneratorModule(StandardModule):
                     except: pass
                 
                 adapter = self.image_service.get_adapter("ComfyUI")
-                
-                # Capturar parámetros extra para música
                 extra_params = {}
                 if tipo == "Música":
-                    # Sincronizar duration y seconds
-                    dur = self.ctrl_panel.get_value("audio_duration")
-                    extra_params["bpm"] = self.ctrl_panel.get_value("audio_bpm")
-                    extra_params["keyscale"] = self.ctrl_panel.get_value("audio_key")
+                    dur = self._get_val("audio_duration", web_params)
+                    extra_params["bpm"] = self._get_val("audio_bpm", web_params)
+                    extra_params["keyscale"] = self._get_val("audio_key", web_params)
                     extra_params["duration"] = dur
-                    extra_params["seconds"] = dur # Algunos workflows usan 'seconds' en lugar de 'duration'
-                    extra_params["lyrics"] = self.ctrl_panel.get_value("audio_lyrics")
+                    extra_params["seconds"] = dur
+                    extra_params["lyrics"] = self._get_val("audio_lyrics", web_params)
                 
                 return await adapter.generate_image(prompt, workflow_json=workflow_data, **extra_params)
                 
             elif "ASIMOD" in prov:
-                # Usar VoiceService del núcleo
-                voice_id = self.ctrl_panel.get_value("audio_voice")
+                voice_id = self._get_val("audio_voice", web_params)
                 prov_key = "Edge TTS" if "Edge" in prov else "Local TTS"
-                
-                print(f"[MediaGenerator] Generando voz core con {prov_key} (ID: {voice_id})")
-                return await self.chat_service.voice_service.generate_audio_only(
-                    prompt, 
-                    voice_id=voice_id, 
-                    voice_provider=prov_key
-                )
-            elif prov == "ElevenLabs":
-                # Placeholder para ElevenLabs (requiere adaptador futuro)
-                return "Error: Adaptador ElevenLabs no configurado. Pronto disponible."
-                
-            elif prov == "Suno":
-                # Placeholder para Suno (requiere adaptador futuro)
-                return "Error: Adaptador Suno no configurado. Pronto disponible."
-                
+                return await self.chat_service.voice_service.generate_audio_only(prompt, voice_id=voice_id, voice_provider=prov_key)
+
         elif mode == "3D":
-             g_type = self.ctrl_panel.get_value("3d_type")
-             prov = self.ctrl_panel.get_value("3d_provider")
+             g_type = self._get_val("3d_type", web_params)
+             prov = self._get_val("3d_provider", web_params)
              
              if prov == "ComfyUI":
-                 w_file = self.ctrl_panel.get_value("3d_workflow")
+                 w_file = self._get_val("3d_workflow", web_params)
                  folder_map = {"Texto a 3D": "text_to_3d", "Imagen a 3D": "img_to_3d"}
                  sub = folder_map.get(g_type, "text_to_3d")
-                 
                  full_path = os.path.join(os.path.dirname(__file__), "workflows", "3d", sub, w_file)
                  workflow_data = None
                  if os.path.exists(full_path):
@@ -431,13 +523,12 @@ class MediaGeneratorModule(StandardModule):
                      except: pass
                  
                  adapter = self.image_service.get_adapter("ComfyUI")
-                 
-                 # Inputs
                  input_images = []
                  if g_type == "Imagen a 3D":
-                     img_path = self.ctrl_panel.get_value("3d_input_image")
+                     img_path = self._get_val("3d_input_image", web_params)
                      if img_path and img_path != "Ninguno":
-                         input_images.append(img_path)
+                         if not os.path.isabs(img_path): img_path = os.path.join(self.output_root, img_path)
+                         if os.path.exists(img_path): input_images.append(img_path)
                  
                  return await adapter.generate_image(prompt, workflow_json=workflow_data, input_images=input_images)
              else:
@@ -891,7 +982,9 @@ class MediaGeneratorModule(StandardModule):
                 self.workspace.after(0, update_ui)
             
             except Exception as e:
-                print(f"[MediaGenerator] Error en generación de letras: {e}")
+                import traceback
+                traceback.print_exc()
+                print(f"[MediaGenerator][Web] Error en generación: {e}")
                 def show_error():
                     curr_txt = self.ctrl_panel.controls.get("audio_lyrics")
                     if curr_txt and curr_txt.winfo_exists():

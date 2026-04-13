@@ -1,3 +1,20 @@
+# Media y Salidas
+audio/
+output/
+conversations/
+
+# Temporales y Grabaciones
+temp_stt_*.wav
+temp_recording.wav
+output.log
+nul
+
+# Base de datos y Configuración Local
+app_data.db
+settings.json
+scratch/
+
+# Entornos y Cache
 __pycache__/
 *.py[cod]
 *$py.class
@@ -10,13 +27,9 @@ env.bak/
 venv.bak/
 .vscode/
 .idea/
+.pytest_cache/
 *.log
-audio/
-output/
-temp_stt_*.wav
-temp_recording.wav
-# settings.json contiene API Keys, se recomienda no trackearlo
-settings.json
+
 # Túneles y ejecutables
 core/tunnels/cloudflared.yml
 core/tunnels/temp_cf_*.yml

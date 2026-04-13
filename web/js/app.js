@@ -22,6 +22,11 @@ class AsimodApp {
         this.galleryToggle = document.getElementById('galleryToggle');
         this.backdrop = document.getElementById('backdrop');
         this.chatSide = document.getElementById('chatSide');
+        this.sttBox = document.getElementById('sttBox');
+        
+        // Estado de selección para referencias (Media Generator)
+        this.lastSelectedGalleryPath = null;
+        this.lastSelectedGalleryType = null;
         
         // --- Sidebar Integrated Technical Panel ---
         this.techPanel = document.getElementById('techPanelContainer');
@@ -58,10 +63,10 @@ class AsimodApp {
         this.removeImg = document.getElementById('removeImg');
         this.mobileChatBtn = document.getElementById('mobileChatTrigger');
         this.closeChatBtn = document.getElementById('closeChat');
-        this.gallerySide = document.getElementById('gallerySide');
-        this.galleryList = document.getElementById('galleryList');
         this.galleryToggle = document.getElementById('galleryToggle');
+        this.currentGalleryPath = ''; // Track folder navigation
         this.currentImageBase64 = null;
+        this.currentAudio = null;
         this.currentAudio = null; // Rastrear audio en reproducción
 
         // Si estamos en móvil, el chat y la librería empiezan ocultos por defecto
@@ -234,8 +239,15 @@ class AsimodApp {
         if (this.sidebar) this.sidebar.classList.remove('open');
         this.closeBackdrop();
         
-        // Cargar galería contextual para este módulo
-        this.loadGallery();
+        const isMG = id === 'media_generator';
+        if (this.gallerySide) {
+            // Ocultamos la galería global si el módulo tiene su propia galería interna (como MG)
+            this.gallerySide.style.display = isMG ? 'none' : '';
+            if (this.galleryToggle) this.galleryToggle.style.display = isMG ? 'none' : '';
+        }
+
+        // Cargar galería contextual (solo si no es MG, que la maneja internamente)
+        if (!isMG) this.loadGallery();
 
         // Asegurar que el workspace sea visible
         this.renderWorkspace(mod);
@@ -243,26 +255,56 @@ class AsimodApp {
 
     async renderWorkspace(mod) {
         if (!this.workspace) return;
+
+        // --- ESPECIAL: Media Generator Dashboard (Desktop Parity) ---
+        if (mod.id === 'media_generator') {
+            this.workspace.innerHTML = `
+                <div class="mg-container">
+                    <div class="mg-tabs" id="mgTabs">
+                        <!-- Pestañas cargadas por init() -->
+                    </div>
+                    <!-- Botón toggle para móvil -->
+                    <button class="mg-gallery-toggle" id="mgLocalGalleryToggle" title="Abrir Galería">📁</button>
+                    <div class="mg-body">
+                        <div class="mg-gallery" id="mgLocalGalleryDrawer">
+                            <div class="mg-gallery-list" id="mgLocalGallery">
+                                <div style="padding:20px; color:var(--text-dim); text-align:center;">Cargando...</div>
+                            </div>
+                        </div>
+                        <div class="mg-viewer" id="mgViewerContainer">
+                            <div style="text-align:center; color:var(--text-dim);">
+                                <div style="font-size:4rem; margin-bottom:20px; opacity:0.3;">🖼️</div>
+                                <p>Selecciona un archivo o genera uno nuevo</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mg-footer">
+                        <div class="mg-params-grid" id="mgParams"></div>
+                        <div class="mg-prompt-side">
+                            <textarea id="mgPrompt" placeholder="Describe lo que quieres crear..."></textarea>
+                            <button id="mgBtnGenerate" class="mg-btn-generate">
+                                <span class="icon">✨</span> GENERAR CONTENIDO
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            await this.initMediaGeneratorPanel();
+            return;
+        }
         
-        // --- NUEVO: Carga Modular Dinámica ---
+        // --- Otros módulos: Carga Modular Dinámica ---
         if (mod.has_web_ui) {
             try {
-                // Añadimos un parámetro de tiempo para evitar el caché del navegador
                 const assetPath = `/v1/modules/${mod.id}/assets/index.html?t=${Date.now()}`;
-                console.log(`[ASIMOD] Cargando interfaz modular: ${assetPath}`);
-                
                 const resp = await fetch(assetPath);
                 if (!resp.ok) throw new Error("Fallo al cargar visualizador");
-                
                 const htmlText = await resp.text();
                 this.workspace.innerHTML = htmlText;
-                
-                // Ejecutar scripts del módulo
                 this.scanAndExecuteScripts(this.workspace);
                 return;
             } catch (e) {
                 console.error(`[ASIMOD] Error cargando UI de ${mod.id}:`, e);
-                // Fallback al placeholder si falla
             }
         }
 
@@ -687,50 +729,81 @@ class AsimodApp {
         console.log(`[ASIMOD] Chat ${isHidden ? 'oculto' : 'visible'}`);
     }
 
-    async loadGallery() {
+    async loadGallery(path = null) {
         if (!this.galleryList) return;
+        
+        // Reset path if we change module
+        if (path === null) {
+            // Smart Navigation: jump to module subfolder if no path is specified
+            const defaultMap = {
+                'media_generator': 'imagen',
+                'communications': 'audio'
+            };
+            this.currentGalleryPath = defaultMap[this.activeModule?.id] || '';
+        } else {
+            this.currentGalleryPath = path;
+        }
+
         try {
-            const moduleId = this.activeModule ? this.activeModule.id : '';
-            const resp = await fetch(`/v1/gallery?module_id=${moduleId}`);
+            const moduleId = moduleIdParam || (this.activeModule ? this.activeModule.id : '');
+            console.log(`[ASIMOD] Solicitando galería: mod=${moduleId}, path=${this.currentGalleryPath}`);
+            const url = `/v1/gallery?module_id=${moduleId}&path=${encodeURIComponent(this.currentGalleryPath)}`;
+            const resp = await fetch(url);
             if (!resp.ok) return;
             const data = await resp.json();
             
             this.galleryList.innerHTML = '';
-            // Combinar files o items según lo que envíe el API
-            const items = data.files || data.items || [];
+            const items = data.items || [];
             
-            if (items.length === 0) {
-                this.galleryList.innerHTML = '<div style="padding:20px; color:var(--text-dim); text-align:center; font-size:0.8rem;">VACTÍO</div>';
+            // 1. Botón "Atrás" si no estamos en la raíz
+            if (data.can_go_back) {
+                const backBtn = document.createElement('div');
+                backBtn.className = 'gallery-nav-back';
+                backBtn.innerHTML = `<span>⬅</span> ATRÁS / PARENT`;
+                backBtn.onclick = () => {
+                    const parts = this.currentGalleryPath.split('/');
+                    parts.pop();
+                    this.loadGallery(parts.join('/'));
+                };
+                this.galleryList.appendChild(backBtn);
+            }
+
+            if (items.length === 0 && !data.can_go_back) {
+                this.galleryList.innerHTML = '<div style="padding:40px; color:var(--text-dim); text-align:center; font-size:0.8rem; opacity:0.5;">VACÍO</div>';
                 return;
             }
 
+            // 2. Renderizar Carpetas y Archivos
             items.forEach(item => {
                 const el = document.createElement('div');
-                el.className = 'gallery-item';
+                el.className = `gallery-item ${item.type === 'folder' ? 'folder' : ''}`;
                 
-                const name = item.name || item.title || "Sin nombre";
-                const sub = item.subtitle || (item.size ? `${(item.size/1024).toFixed(1)} KB` : "");
-                const type = item.type || "file";
-                const icon = item.icon || (type === 'image' ? '🖼️' : (type === 'audio' ? '🎵' : '📄'));
+                const name = item.name;
+                const type = item.type;
+                const icon = item.icon || (type === 'image' ? '🖼️' : (type === 'audio' ? '🎵' : (type === 'video' ? '🎬' : (type === '3d' ? '🧊' : '📄'))));
                 
                 if (type === 'image' && item.url) {
                     el.innerHTML = `
                         <img src="${item.url}" class="gallery-thumb" loading="lazy">
                         <div class="gallery-meta">${name}</div>
                     `;
+                } else if (type === 'folder') {
+                    el.innerHTML = `
+                        <div class="gallery-thumb-icon">📁</div>
+                        <div class="gallery-meta" style="color:var(--accent); font-weight:700;">${name}</div>
+                    `;
                 } else {
                     el.innerHTML = `
                         <div class="gallery-thumb-icon">${icon}</div>
                         <div class="gallery-meta">${name}</div>
-                        <div style="font-size:0.6rem; color:var(--text-dim);">${sub}</div>
                     `;
                 }
 
                 el.onclick = () => {
-                    if (item.callback_action) {
-                        this.executeModuleAction(item.callback_action, item.callback_params);
-                    } else if (item.url) {
-                        window.open(item.url, '_blank');
+                    if (type === 'folder') {
+                        this.loadGallery(item.path);
+                    } else {
+                        this.previewMedia(item);
                     }
                 };
                 this.galleryList.appendChild(el);
@@ -740,6 +813,356 @@ class AsimodApp {
         }
     }
 
+    previewMedia(item) {
+        if (!this.workspace) return;
+        
+        console.log(`[ASIMOD] Visualizando: ${item.name} (${item.type})`);
+        
+        // Guardar como selección actual para Media Generator
+        this.lastSelectedGalleryPath = item.path;
+        this.lastSelectedGalleryType = item.type;
+        
+        // Cerrar galería local si estamos en móvil (Media Generator)
+        const mgDrawer = document.getElementById('mgLocalGalleryDrawer');
+        if (mgDrawer && window.innerWidth <= 768) {
+            mgDrawer.classList.remove('open');
+        }
+
+        // Efecto visual en la galería
+        document.querySelectorAll('.gallery-item').forEach(el => el.classList.remove('selected'));
+        // (Sería ideal marcar el elemento clicado, pero previewMedia recibe el objeto data)
+        
+        let html = `
+            <div class="media-viewer-premium">
+                <h3 style="margin-bottom:20px; color:var(--text-dim); font-size:0.8rem;">VISTA PREVIA: ${item.name}</h3>
+        `;
+
+        if (item.type === 'image') {
+            html += `<img src="${item.url}" alt="${item.name}">`;
+        } else if (item.type === 'video') {
+            html += `<video src="${item.url}" controls autoplay loop></video>`;
+        } else if (item.type === 'audio') {
+            html += `
+                <div class="audio-player-premium">
+                    <span style="font-size:2rem;">🔊</span>
+                    <div style="flex:1; text-align:left;">
+                        <div style="font-weight:700; margin-bottom:5px;">Archivo de Audio</div>
+                        <div style="font-size:0.7rem; color:var(--text-dim);">${item.name}</div>
+                    </div>
+                </div>
+                <audio id="activePlayer" src="${item.url}" controls autoplay style="width:100%; max-width:500px; margin-top:20px;"></audio>
+            `;
+        } else if (item.type === '3d') {
+            html += `
+                <div class="card" style="padding:100px; text-align:center;">
+                    <div style="font-size:4rem; margin-bottom:20px;">🧊</div>
+                    <h3>Modelo 3D Detectado</h3>
+                    <p style="color:var(--text-dim);">La visualización 3D en web está en desarrollo.</p>
+                </div>
+            `;
+        } else {
+            html += `
+                <div class="card" style="padding:50px; background:var(--bg-input); border-radius:15px; text-align:left;">
+                    <pre style="white-space:pre-wrap; font-size:0.8rem; color:var(--accent);">${item.name}</pre>
+                </div>
+            `;
+        }
+
+        // Si el módulo es Media Generator, queremos usar su contenedor específico
+        if (this.activeModule?.id === 'media_generator') {
+            const viewer = document.getElementById('mgViewerContainer');
+            if (viewer) viewer.innerHTML = html;
+        } else {
+                        this.workspace.innerHTML = html;
+        }
+    }
+
+    // --- Media Generator Panel Logic ---
+    async initMediaGeneratorPanel() {
+        const mgTabs = document.getElementById('mgTabs');
+        const mgParams = document.getElementById('mgParams');
+        const mgLocalGallery = document.getElementById('mgLocalGallery');
+        const mgLocalGalleryDrawer = document.getElementById('mgLocalGalleryDrawer');
+        const mgLocalGalleryToggle = document.getElementById('mgLocalGalleryToggle');
+        const mgPrompt = document.getElementById('mgPrompt');
+        const mgBtnGen = document.getElementById('mgBtnGenerate');
+        if (!mgTabs || !mgParams) return;
+
+        // Manejo de drawer móvil
+        if (mgLocalGalleryToggle && mgLocalGalleryDrawer) {
+            mgLocalGalleryToggle.onclick = (e) => {
+                e.stopPropagation();
+                mgLocalGalleryDrawer.classList.toggle('open');
+            };
+            // Cerrar al hacer clic fuera en móvil
+            document.addEventListener('click', (e) => {
+                if (window.innerWidth <= 768 && mgLocalGalleryDrawer.classList.contains('open')) {
+                    if (!mgLocalGalleryDrawer.contains(e.target) && e.target !== mgLocalGalleryToggle) {
+                        mgLocalGalleryDrawer.classList.remove('open');
+                    }
+                }
+            });
+        }
+
+        try {
+            const resp = await fetch(`/v1/modules/media_generator/workflows`);
+            const data = await resp.json();
+            const workflows = data.workflows || {};
+
+            let currentMode = 'imagen'; // imagen, audio, video, 3d, composta, texto
+            let currentSub = 'simple';
+            let currentImgCount = 1;
+            
+            // Redirigir la galería global a la local temporalmente
+            const oldGalleryList = this.galleryList;
+            this.galleryList = mgLocalGallery;
+            
+            const tabs = ["Texto", "Imagen", "Audio", "Video", "3D"];
+            
+            const renderTabs = () => {
+                mgTabs.innerHTML = tabs.map(t => {
+                    const id = t.toLowerCase() === 'imagen' ? 'imagen' : t.toLowerCase();
+                    return `<button class="mg-tab-btn ${currentMode === id ? 'active' : ''}" data-mode="${id}">${t}</button>`;
+                }).join('');
+                
+                mgTabs.querySelectorAll('.mg-tab-btn').forEach(btn => {
+                    btn.onclick = () => {
+                        currentMode = btn.getAttribute('data-mode');
+                        renderTabs();
+                        renderControls();
+                        this.loadGallery(currentMode === 'imagen' ? 'imagen' : (currentMode === 'texto' ? 'texto' : currentMode));
+                    };
+                });
+            };
+
+            const renderControls = () => {
+                const subOptions = workflows[currentMode] || {};
+                const isGrouped = subOptions && !Array.isArray(subOptions) && Object.keys(subOptions).length > 0;
+                const subKeys = isGrouped ? Object.keys(subOptions) : [];
+
+                if (isGrouped && !subKeys.includes(currentSub)) {
+                    currentSub = subKeys[0];
+                }
+
+                const currentFiles = (isGrouped ? subOptions[currentSub] : subOptions) || [];
+
+                mgParams.innerHTML = `
+                    <div class="gen-field">
+                        <label>Subtipo / Categoría</label>
+                        ${isGrouped ? `
+                            <select id="mgSub">
+                                ${subKeys.map(k => `<option value="${k}" ${k === currentSub ? 'selected' : ''}>${k.toUpperCase()}</option>`).join('')}
+                            </select>
+                        ` : `
+                            <div style="padding:10px; opacity:0.5; font-size:0.8rem;">Estándar</div>
+                        `}
+                    </div>
+
+                    ${currentMode !== 'texto' ? `
+                    <div class="gen-field">
+                        <label>Workflow / Modelo</label>
+                        <select id="mgWorkflow">
+                            ${currentFiles.map(w => `<option value="${w}">${w}</option>`).join('')}
+                        </select>
+                    </div>
+
+                    <div class="gen-field">
+                        <label>Resolución / Formato</label>
+                        <select id="mgRes">
+                            <option value="512x512">512x512</option>
+                            <option value="1024x1024" selected>1024x1024</option>
+                            <option value="1216x832">1216x832 (Landscape)</option>
+                            <option value="832x1216">832x1216 (Portrait)</option>
+                        </select>
+                    </div>
+                    ` : `
+                    <div class="gen-field">
+                        <label>Estilo Literario</label>
+                        <select id="mgStyle">
+                            <option value="Creativo">Creativo</option>
+                            <option value="Técnico">Técnico</option>
+                            <option value="Poético">Poético</option>
+                        </select>
+                    </div>
+                    `}
+
+                    <!-- INPUTS DINÁMICOS PARA REFERENCIAS -->
+                    ${(currentMode === 'imagen' && currentSub === 'img2img') ? `
+                        <div class="gen-field">
+                            <label>Nº Imágenes</label>
+                            <select id="mgImgCount">
+                                <option value="1" ${currentImgCount === 1 ? 'selected' : ''}>1</option>
+                                <option value="2" ${currentImgCount === 2 ? 'selected' : ''}>2</option>
+                                <option value="3" ${currentImgCount === 3 ? 'selected' : ''}>3</option>
+                            </select>
+                        </div>
+                        ${Array.from({length: currentImgCount}).map((_, i) => `
+                            <div class="gen-field">
+                                <label>Imagen ${i+1}</label>
+                                <div class="input-with-btn">
+                                    <input type="text" id="mgInputImage${i+1}" placeholder="Ej: imagen/foto.png">
+                                    <button class="btn-link-gallery" data-target="mgInputImage${i+1}" title="Usar seleccionada de galería">🔗</button>
+                                </div>
+                            </div>
+                        `).join('')}
+                    ` : ''}
+
+                    ${(currentMode === '3d' && currentSub === 'img_to_3d') || (currentMode === 'video' && ['img2video', 'Img+Audio2Video'].includes(currentSub)) ? `
+                        <div class="gen-field">
+                            <label>Imagen Base</label>
+                            <div class="input-with-btn">
+                                <input type="text" id="mgInputImageBase" placeholder="Selecciona de galería...">
+                                <button class="btn-link-gallery" data-target="mgInputImageBase" title="Usar seleccionada">🔗</button>
+                            </div>
+                        </div>
+                    ` : ''}
+
+                    ${currentMode === 'video' && currentSub === 'Img+Audio2Video' ? `
+                        <div class="gen-field">
+                            <label>Audio de Referencia</label>
+                            <div class="input-with-btn">
+                                <input type="text" id="mgInputAudioBase" placeholder="Selecciona un audio...">
+                                <button class="btn-link-gallery" data-target="mgInputAudioBase" title="Usar seleccionado">🔗</button>
+                            </div>
+                        </div>
+                    ` : ''}
+                `;
+
+                // Eventos de botones de enlace
+                mgParams.querySelectorAll('.btn-link-gallery').forEach(btn => {
+                    btn.onclick = () => {
+                        const targetId = btn.getAttribute('data-target');
+                        const targetInput = document.getElementById(targetId);
+                        if (this.lastSelectedGalleryPath) {
+                            targetInput.value = this.lastSelectedGalleryPath;
+                            targetInput.classList.add('highlight-flash');
+                            setTimeout(() => targetInput.classList.remove('highlight-flash'), 500);
+                        } else {
+                            alert("Primero haz clic en una imagen o audio de la galería para seleccionarlo.");
+                        }
+                    };
+                });
+
+                // Eventos de controles
+                const mgSub = document.getElementById('mgSub');
+                if (mgSub) {
+                    mgSub.onchange = (e) => {
+                        currentSub = e.target.value;
+                        renderControls();
+                    };
+                }
+
+                const mgImgCount = document.getElementById('mgImgCount');
+                if (mgImgCount) {
+                    mgImgCount.onchange = (e) => {
+                        currentImgCount = parseInt(e.target.value);
+                        renderControls();
+                    };
+                }
+            };
+
+            mgBtnGen.onclick = async () => {
+                const prompt = mgPrompt.value;
+                if (!prompt) return alert("Escribe un prompt.");
+
+                mgBtnGen.disabled = true;
+                const originalText = mgBtnGen.innerHTML;
+                mgBtnGen.innerHTML = '<span class="loading-spinner"></span> ENVIANDO...';
+
+                const workflowEl = document.getElementById('mgWorkflow');
+                const resEl = document.getElementById('mgRes');
+                
+                // Recoger inputs de referencia
+                const imgFiles = [];
+                for(let i=1; i<=3; i++) {
+                    const val = document.getElementById(`mgInputImage${i}`)?.value;
+                    if(val) imgFiles.push(val);
+                }
+                const imgBase = document.getElementById('mgInputImageBase')?.value;
+                const audBase = document.getElementById('mgInputAudioBase')?.value;
+
+                const params = {
+                    prompt: prompt,
+                    mode: currentMode === 'imagen' ? 'Imagen' : (currentMode.charAt(0).toUpperCase() + currentMode.slice(1)),
+                    params: {
+                        engine: "ComfyUI",
+                        workflow: workflowEl ? workflowEl.value : null,
+                        res: resEl ? resEl.value : "1024x1024",
+                        type: currentMode === 'imagen' ? 'Simple' : currentMode,
+                        subtype: currentSub,
+                        img_count: currentImgCount,
+                        input_image_1: imgFiles[0] || imgBase || null,
+                        input_image_2: imgFiles[1] || null,
+                        input_image_3: imgFiles[2] || null,
+                        input_image: imgBase || imgFiles[0] || null,
+                        input_audio_1: audBase || null,
+                        input_audio: audBase || null,
+                        "3d_input_image": imgBase || null,
+                        video_subtype: currentMode === 'video' ? currentSub : null,
+                        audio_type: currentMode === 'audio' ? currentSub : null
+                    }
+                };
+
+                try {
+                    console.log("[ASIMOD][MG] Enviando petición a:", `/v1/modules/media_generator/action`);
+                    console.log("[ASIMOD][MG] Payload:", params);
+
+                    const resp = await fetch(`/v1/modules/media_generator/action`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ action: 'handle_generate_from_web', params })
+                    });
+                    const resData = await resp.json();
+                    
+                    if (resData.status === 'success') {
+                        if (resData.result?.type === 'file') {
+                            this.previewMedia({
+                                name: resData.result.filename,
+                                url: resData.result.url,
+                                type: currentMode === 'video' ? 'video' : (currentMode === 'audio' ? 'audio' : 'image')
+                            });
+                        } else if (resData.result?.type === 'text') {
+                            // Si es texto, suele ser un error retornado como texto o una respuesta LLM
+                            const content = resData.result.content;
+                            if (content.startsWith("Error:") || content.startsWith("Fallo:")) {
+                                alert("Error del Servidor: " + content);
+                            } else {
+                                this.previewMedia({
+                                    name: "Resultado de Texto",
+                                    type: 'text',
+                                    content: content
+                                });
+                            }
+                        }
+                        this.loadGallery(currentMode === 'imagen' ? 'imagen' : (currentMode === 'texto' ? 'texto' : currentMode));
+                    } else {
+                        alert("Error: " + resData.message);
+                    }
+                } catch (e) {
+                    alert("Error de red.");
+                } finally {
+                    mgBtnGen.disabled = false;
+                    mgBtnGen.innerHTML = originalText;
+                }
+            };
+
+            // Restaurar galería global al salir del módulo
+            const originalActivate = this.activateModule.bind(this);
+            this.activateModule = (id) => {
+                this.galleryList = oldGalleryList;
+                originalActivate(id);
+            };
+
+            // Init
+            renderTabs();
+            renderControls();
+            console.log("[ASIMOD] Inicializando galería de Media Generator...");
+            this.loadGallery('imagen', 'media_generator');
+
+        } catch (e) {
+            mgParams.innerHTML = `<div style="color:red; padding:20px;">Error inicializando panel.</div>`;
+        }
+    }
     async executeModuleAction(action, params) {
         if (!this.activeModule) return;
         try {

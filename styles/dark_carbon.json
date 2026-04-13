@@ -1,0 +1,16 @@
+{
+  "name": "Dark Carbon",
+  "colors": {
+    "bg_main": "#2b2b2b",
+    "bg_dark": "#1e1e1e",
+    "bg_sidebar": "#1a1a1a",
+    "bg_header": "#2b2b2b",
+    "bg_input": "#333333",
+    "accent": "#0078d4",
+    "accent_hover": "#005a9e",
+    "text_main": "#ffffff",
+    "text_dim": "#888888",
+    "btn_bg": "#444444",
+    "btn_fg": "#ffffff"
+  }
+}
