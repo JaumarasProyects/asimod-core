@@ -1,6 +1,6 @@
 # ASIMOD Core: Universal Agentic Orchestrator 🤖🌌
 
-> **[ES] Filosofía del Sistema:** ASIMOD Core es un **sistema agéntico de propósito general**. Su funcionalidad no está cableada en el núcleo; en su lugar, depende íntegramente de los **módulos acoplables** que el usuario desee integrar. Estos módulos son independientes y son los que crean la funcionalidad personalizada y específica que el usuario final necesita, transformando un "cerebro" genérico en una herramienta especializada.
+> **Core Philosophy:** ASIMOD Core is a **general-purpose agentic system**. Its functionality is not hardcoded into the core; instead, it depends entirely on the **pluggable modules** that the user chooses to integrate. These modules are independent and provide the custom, specific functionality that the end-user requires, transforming a generic "brain" into a specialized tool.
 
 ---
 
