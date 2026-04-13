@@ -1,149 +1,118 @@
 # ASIMOD Core 🤖🌌
 
-**ASIMOD Core** (Advanced Sensory Integrated Multimodal Orchestrating Device) is a powerful, lightweight, and modular AI orchestrator designed to serve as the "brain" for digital avatars, robots, and interactive applications.
+**ASIMOD Core** (Advanced Sensory Integrated Multimodal Orchestrating Device) is a comprehensive, modular AI ecosystem designed to serve as the unified brain for digital life, autonomous agents, and interactive avatars.
 
-Built with a **Ports & Adapters Architecture**, it allows seamless integration with multiple LLM providers, Vision systems, and Voice engines, exposing everything through a high-performance REST API.
-
----
-
-## 🚀 Key Features
-
-- **Multimodal Vision:** Capable of "seeing" through webcams, screen captures, and local files.
-- **Emotional Intelligence:** Automatic emoji extraction and text cleaning for realistic avatar animations.
-- **High Performance:** Fully asynchronous and non-blocking architecture (Multi-threading).
-- **Universal API:** Ready to connect with **Unity, Unreal Engine, Android (APK), or Web Frontends**.
-- **Provider Agnostic:** Supports OpenAI, Gemini, Ollama, Groq, Perplexity, and more.
+Built on a robust **Ports & Adapters Architecture**, it seamlessly orchestrates Large Language Models (LLMs), Computer Vision, Speech-to-Text (STT), and Text-to-Speech (TTS) engines into a single, cohesive intelligence layer.
 
 ---
 
-## 🎤 Voice Playback Modes
+## 🏗️ System Architecture
 
-ASIMOD Core supports two voice playback modes:
-- **Interrupt Mode:** Immediately stops any playing audio and starts new playback.
-- **Wait Mode:** Queues new audio requests and plays them sequentially.
+ASIMOD follows a hexagonal architecture, ensuring that core logic remains isolated from external services and user interfaces.
 
-Configure via `settings.json` or use the desktop UI:
-```json
-{
-  "voice_playback_mode": "interrupt"
-}
+```mermaid
+graph TD
+    User([User]) <--> UI[Frontend: Standalone / Web]
+    UI <--> API[FastAPI Orchestrator]
+    
+    subgraph Core ["ASIMOD CORE (The Brain)"]
+        API <--> Service[Chat & Agent Service]
+        Service <--> Memory[(Persistent Memory)]
+        Service <--> Modules[[Modular Extensions]]
+    end
+    
+    subgraph Adapters ["Sensory & Logic Adapters"]
+        Modules <--> Tools[Tools: Browser, Terminal, etc.]
+        Service <--> LLM[LLMs: OpenAI, Gemini, Ollama]
+        Service <--> Vision[Vision: Cam, Screen, OCR]
+        Service <--> Voice[Voice: Edge TTS, ElevenLabs]
+    end
 ```
 
-### Visualizer System
-A modular waveform visualizer can display audio playback:
-- **Port/Adapter Architecture:** `core/ports/visualizer_port.py` defines the interface
-- **Adapters:** `core/adapters/waveform_visualizer.py` provides waveform display
-- Enable via `settings.json`: `"visualizer_enabled": true`
+---
+
+## 🚀 Key Capabilities
+
+### 🧠 Multimodal Intelligence
+- **Vision:** See the world through webcams, capture your screen in real-time, or analyze uploaded images.
+- **Audio:** High-performance STT and dual-mode TTS (Interrupt/Wait) for natural conversations.
+- **Agentic Logic:** The "Brain" can autonomously trigger actions within its installed modules based on natural language commands.
+
+### 💾 Persistent Persona Engine
+- **Threaded Memory:** Infinite conversation threads with full CRUD management.
+- **Character Profiles:** Each thread can have a unique personality, history, and voice configuration.
+- **Context Awareness:** Deep memory integration allows the AI to remember long-term interactions and user preferences.
+
+### 🌐 Remote & Local Control
+- **Web Dashboard:** A professional-grade remote interface for monitoring and control from any device.
+- **Standalone GUI:** A native Python application for ultra-low latency local interaction.
+- **Public Access:** Built-in Cloudflare Tunnel support for secure, passwordless remote access via public URLs.
 
 ---
 
-## 🛠️ Configuration
+## 🧩 The Module Ecosystem
 
-The system uses a `settings.json` file for persistence. 
+ASIMOD Core is highly extensible through its module system. Each module can provide both logic (tools) and its own custom UI widgets.
 
-> [!IMPORTANT]
-> The `settings.json` file is ignored by Git to protect your API Keys. You must create or edit it manually in the root folder.
+| Module | Description |
+| :--- | :--- |
+| **🎨 Media Generator** | Advanced AI workflows for generating Images, Videos, and 3D Assets. |
+| **🩺 Health** | Biometric tracking and real-time status monitoring. |
+| **📋 Projects** | Integrated task management and coordination hub. |
+| **💬 Communications** | Centralized contact management and messaging bridge. |
+| **🛠️ Utilities** | Essential tools: Notes, Terminal access, and System control. |
 
-### Adding API Keys
-Open `settings.json` and fill in your credentials for the providers you wish to use:
+---
+
+## 🖥️ Getting Started
+
+### 1. Configuration
+The system uses a `settings.json` file. Ensure you provide your API keys there:
 ```json
 {
-  "openai_key": "your-key-here",
-  "gemini_key": "your-key-here",
-  "groq_key": "your-key-here",
+  "openai_key": "your-key",
+  "gemini_key": "your-key",
   "ollama_url": "http://localhost:11434"
 }
 ```
+
+### 2. Execution Modes
+- **Full Desktop UI:** `python main_standalone.py`
+- **Lightweight Server:** `python main_headless.py`
+- **Web Dashboard (Local Network):** Run `start_web_remote.bat`
+- **Public URL Access:** Run `start_remote_public.bat`
 
 ---
 
 ## 🔌 API Documentation
 
-ASIMOD Core exposes a REST API (FastAPI) on port `8000` (configurable), allowing external applications to control the brain and receive processed data.
+ASIMOD exposes a rich REST API on port `8000`.
 
-### 1. Conversation Engine
-**`POST /v1/chat`**
-Send a message to the AI.
-- **Payload:**
-  ```json
-  {
-    "text": "Hello, how are you?",
-    "model": "gpt-4o" 
-  }
-  ```
-- **Response:**
-  ```json
-  {
-    "response": "Hello! I'm feeling great today! 😊",
-    "clean_text": "Hello! I'm feeling great today!",
-    "emojis": ["😊"],
-    "status": "success"
-  }
-  ```
-  *Use `clean_text` for your TTS engine and `emojis` to trigger avatar animations.*
+### Sensory & Chat
+- `POST /v1/chat`: Send a multimodal message (Text + Vision).
+- `POST /v1/audio/speak`: Trigger arbitrary TTS generation.
+- `POST /v1/stt/mode`: Switch between generic chat, commands, and agent modes.
 
-### 2. Remote Configuration
-**`POST /v1/config`**
-Dynamically switch providers, models, or voices.
-- **Payload:** `{"last_provider": "Ollama", "voice_id": "8"}`
+### Memory & Threads
+- `GET /v1/memories`: List all conversation threads.
+- `POST /v1/memories`: Create or switch to a thread.
+- `PATCH /v1/memories/profile`: Update the active character's identity.
 
-### 3. System Status
-**`GET /v1/status`**
-Returns current configuration, active providers, and audio save paths.
-
-### 4. Utilities
-- **`GET /v1/providers`**: List all available LLM engines.
-- **`GET /v1/models`**: List models for the current provider.
-- **`GET /v1/voices`**: List available TTS voices.
-- **`POST /v1/audio/stop`**: Stop current PC audio playback.
-- **`POST /v1/audio/pause/resume`**: Control local microphone capture.
-- **`GET /v1/audio/status`**: Get current playback status.
-- **`GET /v1/audio/playback_mode`**: Get current playback mode (interrupt/wait).
-- **`POST /v1/audio/playback_mode`**: Set playback mode.
+### Modules & Media
+- `GET /v1/modules`: List active modules and their UI states.
+- `POST /v1/modules/{id}/action`: Execute a modular tool (e.g., "Generate Image").
+- `GET /v1/gallery`: Browse and manage generated files in the `output` folder.
 
 ---
 
----
+## 🔒 Official Adapters (SDKs)
 
-## 🔌 Official Adapters
-
-We provide ready-to-use integration scripts for the most popular engines and languages.
-
-### 🎮 Unity Engine (C#)
-- **Folder:** `engine_adapters/UnityIntegration/`
-- **File:** `AsimodClient.cs`
-- **Usage:** Attach the `AsimodClient` MonoBehaviour to any GameObject. 
-- **Features:** Asynchronous `UnityWebRequest` with callbacks for `clean_text` and `emojis`.
-
-### 🎮 Unreal Engine (C++)
-- **Folder:** `engine_adapters/UnrealIntegration/`
-- **Files:** `AsimodClient.cpp/h`
-- **Usage:** Add the `UAsimodClient` Actor Component to your character or controller.
-- **Features:** Fully exposed to **Blueprints** via Delegates (`OnChatReceived`).
-
-### 🐍 Python Client
-- **Folder:** `engine_adapters/PythonIntegration/`
-- **File:** `asimod_client.py`
-- **Usage:** `from asimod_client import AsimodClient`.
-- **Features:** Simple synchronous wrapper using the `requests` library.
-
-### 🎮 Godot Engine (GDScript)
-- **Folder:** `engine_adapters/GodotIntegration/`
-- **File:** `AsimodClient.gd`
-- **Usage:** Add to your **Autoloads (Singleton)** or attach to a Node.
-- **Features:** Uses `HTTPRequest` and signals (`chat_received`) for non-blocking logic.
+Ready-to-use clients for integrating ASIMOD into your favorite engine:
+- **Unity (C#)**: `engine_adapters/UnityIntegration/`
+- **Unreal (C++)**: `engine_adapters/UnrealIntegration/`
+- **Godot (GDScript)**: `engine_adapters/GodotIntegration/`
+- **Python**: `engine_adapters/PythonIntegration/`
 
 ---
 
-## 🖥️ Execution Modes
-
-- **Desktop (GUI):** `python main_standalone.py` - Full chat interface with Vision controls.
-- **Server (Headless):** `python main_headless.py` - Lightweight API-only mode for background usage.
-
----
-
-## 🔒 License & Security
-- **Privacy:** `settings.json` and `output/vision/` are automatically ignored by Git. 
-- **License:** Private use.
-
-Developed with ❤️ for the ASIMOD Ecosystem.
+Developed with ❤️ for the **ASIMOD Ecosystem**.
