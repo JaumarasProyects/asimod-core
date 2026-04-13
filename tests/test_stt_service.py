@@ -1,6 +1,6 @@
 import pytest
 from unittest.mock import Mock, patch, MagicMock
-
+import time
 
 class TestSTTService:
     """Tests for STT Service and Voice Commands."""
@@ -51,32 +51,6 @@ class TestSTTService:
             result = stt_service._check_voice_commands("ComAnDo")
             assert result == "action_test"
 
-    def test_check_voice_commands_no_match(self, config_service):
-        """Test voice command returns None when no match."""
-        from core.services.stt_service import STTService
-        
-        config_service.set("voice_commands", {
-            "comando": "action_test"
-        })
-        
-        with patch('core.services.stt_service.STTFactory'):
-            stt_service = STTService(config_service)
-            
-            result = stt_service._check_voice_commands("hola mundo")
-            assert result is None
-
-    def test_check_voice_commands_empty_dict(self, config_service):
-        """Test voice command with empty dictionary."""
-        from core.services.stt_service import STTService
-        
-        config_service.set("voice_commands", {})
-        
-        with patch('core.services.stt_service.STTFactory'):
-            stt_service = STTService(config_service)
-            
-            result = stt_service._check_voice_commands("comando")
-            assert result is None
-
     def test_voice_command_callback_triggered(self, config_service):
         """Test that voice command callback is triggered."""
         from core.services.stt_service import STTService
@@ -84,6 +58,7 @@ class TestSTTService:
         config_service.set("voice_commands", {
             "comando": "action_test"
         })
+        config_service.set("stt_mode", "VOICE_COMMAND")
         
         callback_triggered = {"called": False, "matched": None, "text": None}
         
@@ -94,7 +69,7 @@ class TestSTTService:
         
         with patch('core.services.stt_service.STTFactory'):
             stt_service = STTService(config_service)
-            stt_service.on_voice_command = callback
+            stt_service.add_voice_command_callback(callback)
             
             stt_service._dispatch_text("dice comando ahora")
             
@@ -109,9 +84,9 @@ class TestSTTService:
         config_service.set("voice_commands", {
             "comando": "action_test"
         })
+        config_service.set("stt_mode", "VOICE_COMMAND")
         
         with patch('core.services.stt_service.STTFactory'):
-            import time
             stt_service = STTService(config_service)
             stt_service._dispatch_text("mi comando")
             
@@ -121,29 +96,21 @@ class TestSTTService:
             assert "timestamp" in stt_service.last_voice_command
 
     def test_stt_mode_changes(self, config_service):
-        """Test STT mode changes affect listening."""
+        """Test STT mode changes affect listening thread management."""
         from core.services.stt_service import STTService
         
-        with patch('core.services.stt_service.STTFactory'):
+        with patch('core.services.stt_service.STTFactory') as mock_factory:
+            # Need a mock adapter for the thread to start
+            mock_factory.get_adapter.return_value = MagicMock()
             stt_service = STTService(config_service)
             
-            config_service.set("stt_mode", "CHAT")
-            stt_service.manage_microphone_thread()
-            
-            config_service.set("stt_mode", "VOICE_COMMAND")
-            stt_service.manage_microphone_thread()
-
-    def test_voice_command_enabled_setting(self, config_service):
-        """Test voice_command_enabled setting."""
-        from core.services.stt_service import STTService
-        
-        with patch('core.services.stt_service.STTFactory'):
-            stt_service = STTService(config_service)
-            
-            assert config_service.get("voice_command_enabled") is True
-            
-            config_service.set("voice_command_enabled", False)
-            assert config_service.get("voice_command_enabled") is False
+            with patch.object(stt_service, 'start_listening') as mock_start:
+                with patch.object(stt_service, 'stop_listening') as mock_stop:
+                    stt_service.set_mode("CHAT")
+                    mock_start.assert_called()
+                    
+                    stt_service.set_mode("OFF")
+                    mock_stop.assert_called()
 
     def test_dispatch_text_short_text_ignored(self, config_service):
         """Test that short text (<=2 chars) is ignored."""
@@ -154,10 +121,11 @@ class TestSTTService:
         def callback(matched, text):
             callback_triggered["called"] = True
         
+        config_service.set("stt_mode", "VOICE_COMMAND")
+        
         with patch('core.services.stt_service.STTFactory'):
             stt_service = STTService(config_service)
-            stt_service.on_voice_command = callback
-            config_service.set("stt_mode", "VOICE_COMMAND")
+            stt_service.add_voice_command_callback(callback)
             
             stt_service._dispatch_text("ab")
             

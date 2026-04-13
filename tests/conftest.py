@@ -47,15 +47,16 @@ def mock_llm_adapter():
             self.call_count = 0
             self.last_messages = None
             self.should_fail = False
+            self.name = "MockLLM"
             
-        def complete(self, messages, max_tokens, temperature, stop=None):
+        async def generate_chat(self, history, system_prompt, model, images=None, max_tokens=None, temperature=None):
             self.call_count += 1
-            self.last_messages = messages
+            self.last_messages = history
             if self.should_fail:
                 raise Exception("Mock failure")
             return "This is a mock response from the LLM"
         
-        def get_available_models(self):
+        async def list_models(self):
             return ["mock-model-1", "mock-model-2"]
     
     return MockLLMAdapter()
@@ -68,6 +69,7 @@ def mock_stt_adapter():
         def __init__(self):
             self.transcribe_count = 0
             self.transcribe_texts = []
+            self.name = "MockSTT"
             
         def transcribe(self, audio_path):
             self.transcribe_count += 1
@@ -82,18 +84,21 @@ def mock_voice_adapter():
     """Creates a mock voice adapter for testing."""
     class MockVoiceAdapter:
         def __init__(self):
-            self.speak_count = 0
+            self.generate_count = 0
             self.last_text = None
+            self.name = "MockVoice"
             
-        def speak(self, text, voice_id=None, provider=None):
-            self.speak_count += 1
+        async def generate(self, text, output_path, voice_id=None):
+            self.generate_count += 1
             self.last_text = text
             return True
         
-        def get_available_voices(self, provider):
-            return ["voice-1", "voice-2"]
-        
-        def get_available_providers(self):
-            return ["mock-provider"]
+        def list_voices(self):
+            return [{"id": "voice-1", "name": "Voice 1"}, {"id": "voice-2", "name": "Voice 2"}]
     
     return MockVoiceAdapter()
+
+
+@pytest.fixture
+def anyio_backend():
+    return 'asyncio'
