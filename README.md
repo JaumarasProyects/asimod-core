@@ -1,96 +1,111 @@
 # ASIMOD Core: Universal Agentic Orchestrator 🤖🌌
 
-> **Core Philosophy:** ASIMOD Core is a **general-purpose agentic system**. Its functionality is not hardcoded into the core; instead, it depends entirely on the **pluggable modules** that the user chooses to integrate. These modules are independent and provide the custom, specific functionality that the end-user requires, transforming a generic "brain" into a specialized tool.
+**ASIMOD Core** (Advanced Sensory Integrated Multimodal Orchestrating Device) is a comprehensive framework for building autonomous, multimodal agents. It acts as a universal "brain" that can be specialized through modular plugins, connecting high-level reasoning with real-world sensors and communication channels.
 
 ---
 
-## 🧠 The Concept: Brain vs. Soul
+## 🏗️ System Architecture: Ports & Adapters
 
-ASIMOD (Advanced Sensory Integrated Multimodal Orchestrating Device) is designed as a **Universal Orchestrator**. 
+ASIMOD is built on a Hexagonal Architecture (Ports & Adapters), ensuring that the core reasoning logic is completely decoupled from sensory implementations and external frontends.
 
-- **The Core (The Brain):** Provides the fundamental infrastructure for multimodal interaction (Vision, Audio, Memory, API). It is an "empty" orchestrator that knows how to communicate but doesn't have a specific purpose.
-- **The Modules (The Soul):** Independent plugins that define the system's actual utility. Whether it's managing health, generating media, or controlling a robotic arm, the functionality lives in the modules.
+```mermaid
+graph TD
+    User([User]) <--> Gateways[Gateways: Web, WhatsApp, Telegram, Standalone]
+    Gateways <--> Core[ASIMOD Core Orchestrator]
+    
+    subgraph Reasoning ["The AI Brain"]
+        Core <--> Engine[Agentic Reasoning Engine]
+        Engine <--> LLM[Adapters: OpenAI, Gemini, Ollama, GGUF]
+    end
+    
+    subgraph Sensory ["Sensory Perception"]
+        Core <--> Vision[Vision: Cam, Screen, OCR]
+        Core <--> Audio[Audio: STT, TTS, Destreaming]
+    end
+    
+    subgraph Ecosystem ["Modular Utility"]
+        Core <--> Modules[[Independent Modules: Media, Health, Projects]]
+    end
+```
 
 ---
 
-## 🧩 The Module Ecosystem (Developer's Guide)
+## 🔌 The Integration Ecosystem
 
-Modules in ASIMOD are fully decoupled. You can add, remove, or swap modules without touching the core code. 
+ASIMOD supports a wide array of providers right out of the box, allowing you to mix and match local and cloud-based services.
 
-### 🏗️ Integration Mechanics: How they connect
-The program performs a dynamic scan of the `modules/` directory at startup. If it find a folder with a valid class inheriting from `BaseModule`, it becomes part of the system's ecosystem immediately.
+### 🧠 Language Models (LLM)
+- **Cloud:** OpenAI (GPT-4o), Google Gemini, Anthropic Claude.
+- **Local:** Ollama, GGUF (Direct load via llama.cpp), LLM Studio, OpenCode.
 
-- **Logic Integration:** The core imports your class and registers its methods.
-- **UI Integration (Local):** The core calls `get_widget()` to display your custom interface in the Standalone GUI.
-- **UI Integration (Remote):** If your module has a `web/` folder, the API server automatically mounts it at `/v1/modules/{module_id}/assets/` for the Dashboard.
-- **Resource Integration:** Any folder named `output/` inside your module will also be served as static assets.
+### 👂 Sensory Inputs (STT & Vision)
+- **Speech-to-Text:** Whisper (OpenAI), Faster-Whisper (Local), Google Cloud STT.
+- **Computer Vision:** Real-time Camera capture, Screen analysis, and local file processing.
 
-### 🤖 Creating Your First Module
-1. **Create the Folder:** Go to the `modules/` directory and create a new folder (e.g., `my_custom_tool/`).
-2. **Create the Entry Point:** Create an `__init__.py` inside that folder.
-3. **Inherit from `BaseModule`:** Define your class and provide it with a unique ID and Name.
+### 🗣️ Voice Output (TTS)
+- **Edge TTS:** High-fidelity, multilingual neural voices.
+- **Local TTS:** Offline synthesis options.
+- **Destreaming Logic:** Intelligent chunking of LLM responses for low-latency audio playback.
 
-### 🎤 Commands & Agentic Intelligence
-This is the most critical part of a module. By defining commands, you provide the Agent with its "Soul":
+---
 
-- **Voice Commands:** Traditional trigger phrases (e.g., "activate lights").
-- **Agentic Orders:** The Core reads your command list and injects it into the LLM's prompt. The Agent "discovers" that your module exists and understands what actions it can perform on your behalf.
+## 🌐 Connectivity & Gateways
 
-### 💻 Minimal Boilerplate Module
+ASIMOD isn't restricted to a single window. It can be accessed through multiple channels simultaneously:
+
+- **Web Dashboard:** A professional FastAPI-powered remote interface.
+- **Messaging:** Direct integration with **WhatsApp** and **Telegram** bot adapters.
+- **Secure Remote Access:** Built-in **Cloudflare Tunnel** support for exposing the dashboard to a public URL without port forwarding.
+- **Standalone GUI:** Ultra-low latency native Python interface (Tkinter).
+
+---
+
+## 🧩 The Module Framework
+
+The power of ASIMOD comes from its **Module Independence**. You can create specialized tools that the Agent discovers and uses dynamically.
+
+### Core Modular Features:
+- **Dynamic Discovery:** The core automatically scans the `modules/` folder and injects module capabilities into the Agent's prompt.
+- **Frontends Mounting:** Add a `web/` folder to your module, and it will be served automatically on the dashboard.
+- **Lifecycle Management:** Dedicated `on_activate` and `on_deactivate` hooks for complex state management.
+
+### Minimal Developer Boilerplate:
 ```python
-import tkinter as tk
 from core.base_module import BaseModule
 
-class MyToolModule(BaseModule):
+class MyTool(BaseModule):
     def __init__(self, chat_service, config, style, data_service=None):
         super().__init__(chat_service, config, style, data_service)
         self.name = "My Smart Tool"
         self.id = "smart_tool"
         self.icon = "🔧"
 
-    def get_widget(self, parent):
-        # Your custom Tkinter UI
-        frame = tk.Frame(parent, bg=self.style.get_color("bg_main"))
-        tk.Label(frame, text="Smart Control Panel", fg="white", bg="black").pack()
-        return frame
-
     def get_voice_commands(self):
-        # These are SHARED with the Agent reasoning engine
-        return {
-            "turn on engine": "start_logic",
-            "set frequency": "adjust_freq"
-        }
+        # Maps user intent to logic slugs (shared with the Agent)
+        return {"activate engine": "run_logic"}
 
     def on_voice_command(self, action_slug, text):
-        # Implementation of your modular logic
-        if action_slug == "start_logic":
-            print("Modular logic executed!")
+        if action_slug == "run_logic":
+            # Your custom logic here
+            print("Action executed!")
 ```
 
 ---
 
-## 🚀 Key Systems
+## 🎨 Personalization & UX
 
-### 🧠 Agentic Reasoning (The "Brain")
-Unlike static bots, ASIMOD uses an **Agentic Mode** to:
-- Analyze user intent via LLM.
-- Search for the appropriate module in the loaded ecosystem.
-- Trigger module-specific actions via JSON-structured reasoning based on the `get_voice_commands` metadata.
-
-### 👁️ Sensory Integration (The "Inputs")
-The Core provides these sensors to the Agent:
-- **Vision:** Real-time analysis of webcam, screen, or files.
-- **Audio:** High-fidelity STT and dual-mode TTS (Interrupt/Wait).
-- **Memory:** Threaded, persistent context that grows with the user.
+- **Theme System:** Fully customizable aesthetics (Tokens, Fonts, Colors). Includes presets like `Midnight Purple` and `Dark Carbon`.
+- **Command Dictionary:** A robust set of pre-mapped voice triggers for games, investigations, and system control.
+- **Persistent Memory:** Infinite conversation threads with unique portraits, personalities, and histories.
 
 ---
 
-## 🖥️ Execution & Control
+## 🖥️ Execution Modes
 
-ASIMOD offers multiple ways to interact with its agentic core:
-- **Standalone GUI:** Local Python application (Tkinter).
-- **Web Dashboard:** Remote management via FastAPI.
-- **Public Tunnels:** Secure remote access via Cloudflare.
+- **Local UI:** `python main_standalone.py`
+- **Headless Server:** `python main_headless.py`
+- **Remote Hub:** `start_web_remote.bat`
+- **Public URL:** `start_remote_public.bat`
 
 ---
 
