@@ -92,6 +92,62 @@ class MyTool(BaseModule):
 
 ---
 
+## 🎤 The Voice & Agentic Command System
+
+ASIMOD Core features a unique **Dual-Layer Command Architecture** that bridges the gap between simple speech recognition and complex natural language reasoning.
+
+### 🔄 One Dictionary, Two Execution Paths
+In every module, you define a dictionary of commands via `get_voice_commands()`. These commands serve two distinct purposes:
+
+1.  **Path A: Direct Local Matching (Speed)**
+    - When the system is in **CHAT** or **COMMAND** mode, it performs high-speed literal matching.
+    - If you say the exact phrase (e.g., *"turn on engine"*), the core executes the action `start_logic` instantly, bypassing the LLM to save time and API costs.
+
+2.  **Path B: Agentic Semantic Reasoning (Flexibility)**
+    - When **AGENT** mode is active, the system doesn't just look for exact matches.
+    - The `ModuleService` collects all command dictionaries and injects them into the LLM's system prompt as "Available Tools".
+    - The LLM analyzes the **intent** of your request. You could say *"I'm ready to take off, start the thrusters"* and the LLM will reason that this matches the intent of the `start_logic` command.
+
+### 🧩 The Agentic Flow Logic
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant STT as STT Service
+    participant Core as ASIMOD Orchestrator
+    participant LLM as Agent Engine (LLM)
+    participant Mod as Active Module
+
+    User->>STT: "Could you check my vitals?"
+    STT->>Core: Transcription: "Could you check my vitals?"
+    Core->>Core: Discover available tools from Modules
+    Core->>LLM: Prompt: [User Request] + [Vitals Command Context]
+    LLM->>LLM: Reasoning: User wants health data
+    LLM-->>Core: JSON Response: {"action": "check_vitals", "thought": "..."}
+    Core->>Mod: handle_voice_command("check_vitals")
+    Mod-->>User: [Execution Result + TTS]
+```
+
+### 🧠 Agent Reasoning Example
+When in Agent mode, the LLM generates a structured JSON response to map your intent to the modular architecture:
+
+```json
+{
+  "thought": "The user is concerned about their health status. I should use the vitals tool available in the Health module.",
+  "response": "Of course, I'm checking your heart rate and oxygen levels now.",
+  "action": "check_vitals",
+  "params": null
+}
+```
+
+### 💡 Developer Guidelines for "Agent-Ready" Commands
+To ensure your modules work flawlessly with the Agentic Engine, follow these best practices:
+- **Descriptive Triggers**: Use triggers that clearly describe the intent (e.g., use `"generate detailed portrait"` instead of just `"generate"`).
+- **Contextual Awareness**: The Agent can see the names of all available modules. Use this to your advantage by giving your modules and commands semantic names.
+- **Action Slugs**: Keep Action Slugs consistent. If multiple modules have similar actions, the Agent will use the `active_module` context to disambiguate.
+
+---
+
 ## 🎨 Personalization & UX
 
 - **Theme System:** Fully customizable aesthetics (Tokens, Fonts, Colors). Includes presets like `Midnight Purple` and `Dark Carbon`.
