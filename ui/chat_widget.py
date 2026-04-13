@@ -1,33 +1,40 @@
 import tkinter as tk
 import os
 import threading
+import winsound
+import asyncio
 from tkinter import ttk, scrolledtext, filedialog
 from core.ports.chat_port import ChatPort
 from ui.settings_view import SettingsView
+from ui.api_keys_view import APIKeysView
 from core.services.stt_service import STTService
 from core.services.vision_service import VisionService
-from core.adapters.waveform_visualizer import WaveformVisualizer
+from core.services.visualizer_service import VisualizerService
 
 class ChatWidget(tk.Frame):
     """
     Widget de Chat avanzado con controles de IA, Voz (TTS) y Reconocimiento (STT).
     """
-    def __init__(self, parent, chat_engine: ChatPort, config_service):
-        super().__init__(parent, bg="#2b2b2b")
+    def __init__(self, parent, chat_engine: ChatPort, config_service, style_service, on_collapse_cmd=None):
+        self.style = style_service
+        self.on_collapse_cmd = on_collapse_cmd
+        super().__init__(parent, bg=self.style.get_color("bg_main"))
         self.chat_engine = chat_engine
         self.config = config_service
         self.vision_service = VisionService()
         self.current_images = []
         self._ui_labels = {}
         self.visualizer = None
-        self.toolbar_visible = True
+        self.toolbar_visible = False
+        self.is_sending = False # Estado de envío actual
         
         # Vincular STT Service del engine con la UI
         self.stt_service = self.chat_engine.stt_service
         self.chat_engine.on_stt_finished_cb = self._on_stt_finished
+        self.stt_service.add_voice_command_callback(self._on_voice_command)
         
         # Contenedor principal para las vistas
-        self.container = tk.Frame(self, bg="#2b2b2b")
+        self.container = tk.Frame(self, bg=self.style.get_color("bg_main"))
         self.container.pack(fill=tk.BOTH, expand=True)
 
         self._setup_visualizer()
@@ -36,10 +43,13 @@ class ChatWidget(tk.Frame):
         self._update_ui_texts()
         
     def _setup_visualizer(self):
-        """Configura el visualizador si está habilitado"""
+        """Configura el visualizador si está habilitado mediante carga dinámica"""
         if self.config.get("visualizer_enabled", False):
-            self.visualizer = WaveformVisualizer(self, width=600, height=60)
-            if self.chat_engine.voice_service:
+            v_service = VisualizerService(self.config)
+            v_type = self.config.get("visualizer_type", "waveform")
+            self.visualizer = v_service.get_instance(v_type, self, width=600, height=60)
+            
+            if self.visualizer and self.chat_engine.voice_service:
                 self.chat_engine.voice_service.on_audio_start = self.visualizer.on_audio_start
                 self.chat_engine.voice_service.on_audio_end = self.visualizer.on_audio_end
 
@@ -105,22 +115,33 @@ class ChatWidget(tk.Frame):
         
         # --- BARRA DE HERRAMIENTAS (Cuádruple Línea) ---
         # Header superior (no se oculta)
-        self.top_bar = tk.Frame(self.chat_frame, bg="#2b2b2b", pady=5)
+        self.top_bar = tk.Frame(self.chat_frame, bg=self.style.get_color("bg_header"), pady=5)
         self.top_bar.pack(fill=tk.X, padx=10)
 
         # Toolbar colapsable (debajo de top_bar)
-        self.toolbar = tk.Frame(self.chat_frame, bg="#2b2b2b", pady=5)
-        self.toolbar.pack(fill=tk.X, padx=10)
-        self.btn_toggle_toolbar = tk.Button(self.top_bar, text="▼", bg="#2b2b2b", fg="#888",
+        self.toolbar = tk.Frame(self.chat_frame, bg=self.style.get_color("bg_main"), pady=5)
+        # self.toolbar.pack(fill=tk.X, padx=10) # Comentado para que inicie minimizado
+        self.btn_toggle_toolbar = tk.Button(self.top_bar, text="▶", bg=self.style.get_color("bg_header"), fg=self.style.get_color("text_dim"),
                                             relief="flat", cursor="hand2", command=self._toggle_toolbar,
                                             font=("Arial", 10))
         self.btn_toggle_toolbar.pack(side=tk.LEFT, padx=(0, 5))
         
-        tk.Label(self.top_bar, text="ASIMOD Core", bg="#2b2b2b", fg="#0078d4", font=("Arial", 10, "bold")).pack(side=tk.LEFT)
+        # Botón para colapsar chat entero (si se provee comando)
+        if self.on_collapse_cmd:
+            self.btn_collapse = tk.Button(self.top_bar, text="➡", bg=self.style.get_color("bg_header"), fg=self.style.get_color("accent"),
+                                         relief="flat", cursor="hand2", command=self.on_collapse_cmd,
+                                         font=("Arial", 10, "bold"))
+            self.btn_collapse.pack(side=tk.LEFT, padx=(0, 5))
+
+        tk.Label(self.top_bar, text="ASIMOD Core", bg=self.style.get_color("bg_header"), fg=self.style.get_color("accent"), font=("Arial", 10, "bold")).pack(side=tk.LEFT)
         api_port = self.config.get("api_port", 8000)
-        tk.Label(self.top_bar, text=f"API: ON ({api_port})", bg="#2b2b2b", fg="#4EC9B0", font=("Arial", 8, "italic")).pack(side=tk.LEFT, padx=10)
+        tk.Label(self.top_bar, text=f"API: ON ({api_port})", bg=self.style.get_color("bg_header"), fg="#4EC9B0", font=("Arial", 8, "italic")).pack(side=tk.LEFT, padx=10)
         
-        self.btn_settings = tk.Button(self.top_bar, text="⚙️", bg="#2b2b2b", fg="#0078d4",
+        self.btn_api_keys = tk.Button(self.top_bar, text="🔑 Keys", bg=self.style.get_color("bg_header"), fg="#ffd700",
+                                      relief="flat", cursor="hand2", command=self.show_api_keys)
+        self.btn_api_keys.pack(side=tk.RIGHT, padx=5)
+        
+        self.btn_settings = tk.Button(self.top_bar, text="⚙️", bg=self.style.get_color("bg_header"), fg=self.style.get_color("accent"),
                                       relief="flat", cursor="hand2", command=self.show_settings)
         self.btn_settings.pack(side=tk.RIGHT)
 
@@ -129,10 +150,10 @@ class ChatWidget(tk.Frame):
             self.visualizer.create(self.chat_frame)
 
         # LÍNEA 0: Gestión de Memoria e Hilos (NUEVA)
-        self.memory_bar = tk.Frame(self.toolbar, bg="#2b2b2b", pady=2)
+        self.memory_bar = tk.Frame(self.toolbar, bg=self.style.get_color("bg_main"), pady=2)
         self.memory_bar.pack(fill=tk.X)
 
-        self._lbl_memory = tk.Label(self.memory_bar, text="Memoria:", bg="#2b2b2b", fg="#0078d4", font=("Arial", 8, "bold"))
+        self._lbl_memory = tk.Label(self.memory_bar, text="Memoria:", bg=self.style.get_color("bg_main"), fg=self.style.get_color("accent"), font=("Arial", 8, "bold"))
         self._lbl_memory.pack(side=tk.LEFT)
         self.combo_memory = ttk.Combobox(self.memory_bar, state="readonly", width=25)
         self.combo_memory.pack(side=tk.LEFT, padx=5)
@@ -143,12 +164,12 @@ class ChatWidget(tk.Frame):
         self.btn_refresh_mem.pack(side=tk.LEFT, padx=2)
 
         # LÍNEA DE PERFIL (Nombre y Personalidad rápida)
-        self.profile_bar = tk.Frame(self.toolbar, bg="#2b2b2b", pady=2)
+        self.profile_bar = tk.Frame(self.toolbar, bg=self.style.get_color("bg_main"), pady=2)
         self.profile_bar.pack(fill=tk.X)
         
-        self._lbl_profile_name = tk.Label(self.profile_bar, text="Nombre:", bg="#2b2b2b", fg="#888", font=("Arial", 8))
+        self._lbl_profile_name = tk.Label(self.profile_bar, text="Nombre:", bg=self.style.get_color("bg_main"), fg=self.style.get_color("text_dim"), font=("Arial", 8))
         self._lbl_profile_name.pack(side=tk.LEFT)
-        self.ent_char_name = tk.Entry(self.profile_bar, bg="#333", fg="white", font=("Arial", 8), width=10, relief="flat")
+        self.ent_char_name = tk.Entry(self.profile_bar, bg=self.style.get_color("bg_input"), fg=self.style.get_color("text_main"), font=("Arial", 8), width=10, relief="flat")
         self.ent_char_name.pack(side=tk.LEFT, padx=5)
         
         self._lbl_profile_pers = tk.Label(self.profile_bar, text="Personalidad:", bg="#2b2b2b", fg="#888", font=("Arial", 8))
@@ -165,15 +186,15 @@ class ChatWidget(tk.Frame):
         self.combo_char_voice = ttk.Combobox(self.profile_bar, state="readonly", font=("Arial", 8), width=15)
         self.combo_char_voice.pack(side=tk.LEFT, padx=2)
 
-        self.btn_save_profile = tk.Button(self.profile_bar, text="💾", bg="#0078d4", fg="white", 
+        self.btn_save_profile = tk.Button(self.profile_bar, text="💾", bg=self.style.get_color("accent"), fg=self.style.get_color("btn_fg"), 
                                            relief="flat", font=("Arial", 7), command=self._save_profile)
         self.btn_save_profile.pack(side=tk.LEFT, padx=2)
 
         # LÍNEA 2: Controles de IA (Motor y Modelo)
-        self.llm_bar = tk.Frame(self.toolbar, bg="#2b2b2b", pady=2)
+        self.llm_bar = tk.Frame(self.toolbar, bg=self.style.get_color("bg_main"), pady=2)
         self.llm_bar.pack(fill=tk.X)
 
-        self._lbl_llm_provider = tk.Label(self.llm_bar, text="Motor AI:", bg="#2b2b2b", fg="#888", font=("Arial", 8))
+        self._lbl_llm_provider = tk.Label(self.llm_bar, text="Motor AI:", bg=self.style.get_color("bg_main"), fg=self.style.get_color("text_dim"), font=("Arial", 8))
         self._lbl_llm_provider.pack(side=tk.LEFT)
         allowed_backends = self.chat_engine.get_providers_list()
         self.combo_provider = ttk.Combobox(self.llm_bar, values=allowed_backends, state="readonly", width=12)
@@ -187,28 +208,28 @@ class ChatWidget(tk.Frame):
         self.combo_model.bind("<<ComboboxSelected>>", self._on_model_change)
 
         # LÍNEA 2.5: Controles de Inferencia (Max Tokens + Temperature)
-        self.inference_bar = tk.Frame(self.toolbar, bg="#2b2b2b", pady=2)
+        self.inference_bar = tk.Frame(self.toolbar, bg=self.style.get_color("bg_main"), pady=2)
         self.inference_bar.pack(fill=tk.X)
 
-        tk.Label(self.inference_bar, text="Max Tokens:", bg="#2b2b2b", fg="#888", font=("Arial", 8)).pack(side=tk.LEFT)
-        self.spin_max_tokens = tk.Spinbox(self.inference_bar, from_=64, to=4096, width=6, bg="#333", fg="white")
+        tk.Label(self.inference_bar, text="Max Tokens:", bg=self.style.get_color("bg_main"), fg=self.style.get_color("text_dim"), font=("Arial", 8)).pack(side=tk.LEFT)
+        self.spin_max_tokens = tk.Spinbox(self.inference_bar, from_=64, to=4096, width=6, bg=self.style.get_color("bg_input"), fg=self.style.get_color("text_main"))
         self.spin_max_tokens.pack(side=tk.LEFT, padx=5)
         self.spin_max_tokens.delete(0, tk.END)
         self.spin_max_tokens.insert(0, self.config.get("max_tokens", 1024))
         self.spin_max_tokens.bind("<<Spinbox>>", self._on_inference_change)
 
-        tk.Label(self.inference_bar, text="Temp:", bg="#2b2b2b", fg="#888", font=("Arial", 8)).pack(side=tk.LEFT, padx=(10, 0))
+        tk.Label(self.inference_bar, text="Temp:", bg=self.style.get_color("bg_main"), fg=self.style.get_color("text_dim"), font=("Arial", 8)).pack(side=tk.LEFT, padx=(10, 0))
         self.slider_temp = tk.Scale(self.inference_bar, from_=0.1, to=2.0, resolution=0.1, orient=tk.HORIZONTAL, 
-                                    bg="#2b2b2b", fg="white", length=100, showvalue=1)
+                                    bg=self.style.get_color("bg_main"), fg=self.style.get_color("text_main"), length=100, showvalue=1)
         self.slider_temp.pack(side=tk.LEFT, padx=5)
         self.slider_temp.set(self.config.get("temperature", 0.7))
         self.slider_temp.bind("<ButtonRelease-1>", self._on_inference_change)
 
         # LÍNEA 3: Controles de Salida de Voz (TTS)
-        self.voice_bar = tk.Frame(self.toolbar, bg="#2b2b2b", pady=2)
+        self.voice_bar = tk.Frame(self.toolbar, bg=self.style.get_color("bg_main"), pady=2)
         self.voice_bar.pack(fill=tk.X)
 
-        self._lbl_voice = tk.Label(self.voice_bar, text="TTS (Salida):", bg="#2b2b2b", fg="#888", font=("Arial", 8))
+        self._lbl_voice = tk.Label(self.voice_bar, text="TTS (Salida):", bg=self.style.get_color("bg_main"), fg=self.style.get_color("text_dim"), font=("Arial", 8))
         self._lbl_voice.pack(side=tk.LEFT)
         voice_providers = ["None", "Edge TTS", "Local TTS"]
         self.combo_voice = ttk.Combobox(self.voice_bar, values=voice_providers, state="readonly", width=10)
@@ -227,33 +248,36 @@ class ChatWidget(tk.Frame):
         self.combo_voice_id.bind("<<ComboboxSelected>>", self._on_voice_id_change)
 
         # LÍNEA 4: Controles de Entrada de Voz (STT)
-        self.stt_bar = tk.Frame(self.toolbar, bg="#2b2b2b", pady=2)
+        self.stt_bar = tk.Frame(self.toolbar, bg=self.style.get_color("bg_main"), pady=2)
         self.stt_bar.pack(fill=tk.X)
 
-        self._lbl_stt = tk.Label(self.stt_bar, text="STT (Entrada):", bg="#2b2b2b", fg="#888", font=("Arial", 8))
+        self._lbl_stt = tk.Label(self.stt_bar, text="STT (Entrada):", bg=self.style.get_color("bg_main"), fg=self.style.get_color("text_dim"), font=("Arial", 8))
         self._lbl_stt.pack(side=tk.LEFT)
         stt_providers = ["None", "Standard (Google)"]
         self.combo_stt_provider = ttk.Combobox(self.stt_bar, values=stt_providers, state="readonly", width=20)
         self.combo_stt_provider.pack(side=tk.LEFT, padx=5)
         self.combo_stt_provider.bind("<<ComboboxSelected>>", self._on_stt_provider_change)
 
-        self._lbl_stt_mode = tk.Label(self.stt_bar, text="Modo:", bg="#2b2b2b", fg="#888", font=("Arial", 8))
-        self._lbl_stt_mode.pack(side=tk.LEFT, padx=(5, 0))
-        stt_modes = ["OFF", "micro", "archive"]
-        self.combo_stt_mode = ttk.Combobox(self.stt_bar, values=stt_modes, state="readonly", width=10)
-        self.combo_stt_mode.pack(side=tk.LEFT, padx=5)
-        self.combo_stt_mode.bind("<<ComboboxSelected>>", self._on_stt_mode_change)
+        # Modo STT (Movido al panel inferior)
+
+        self._lbl_test_mode = tk.Label(self.stt_bar, text="Test:", bg=self.style.get_color("bg_main"), fg=self.style.get_color("text_dim"), font=("Arial", 8))
+        self._lbl_test_mode.pack(side=tk.LEFT, padx=(10, 0))
+        self.var_test_mode = tk.BooleanVar(value=False)
+        self.chk_test_mode = tk.Checkbutton(self.stt_bar, variable=self.var_test_mode, bg=self.style.get_color("bg_main"), 
+                                             selectcolor=self.style.get_color("bg_input"), activebackground=self.style.get_color("bg_main"),
+                                             fg=self.style.get_color("text_dim"), font=("Arial", 8), highlightthickness=0)
+        self.chk_test_mode.pack(side=tk.LEFT, padx=2)
 
         ttk.Separator(self.chat_frame, orient="horizontal").pack(fill=tk.X, padx=10, pady=5)
 
         # --- CONTENEDOR CENTRAL (Para Chat o Wizard) ---
         # Se empaqueta primero para que pueda encogerse
-        self.middle_container = tk.Frame(self.chat_frame, bg="#2b2b2b")
+        self.middle_container = tk.Frame(self.chat_frame, bg=self.style.get_color("bg_main"))
         self.middle_container.pack(fill=tk.BOTH, expand=True)
 
         # --- ÁREA DE ENTRADA (FOOTER - SIEMPRE ABAJO) ---
         # Se empaqueta al final con side=BOTTOM para anclarse abajo
-        self.input_area = tk.Frame(self.chat_frame, bg="#2b2b2b")
+        self.input_area = tk.Frame(self.chat_frame, bg=self.style.get_color("bg_main"))
         self.input_area.pack(side=tk.BOTTOM, padx=10, pady=5, fill=tk.X)
 
         # --- WIZAD DE NUEVO HILO (Hijo de middle_container) ---
@@ -313,24 +337,24 @@ class ChatWidget(tk.Frame):
 
         # --- ÁREA DE TEXTO (Hijo de middle_container) ---
         self.chat_display = scrolledtext.ScrolledText(self.middle_container, state='disabled', 
-                                                      bg="#1e1e1e", fg="white", 
+                                                      bg=self.style.get_color("bg_dark"), fg=self.style.get_color("text_main"), 
                                                       font=("Consolas", 10), wrap=tk.WORD)
         self.chat_display.pack(padx=10, fill=tk.BOTH, expand=True)
 
         # --- ÁREA DE ENTRADA (ya creada arriba en footer) ---
 
         # FILA 1: Campo de texto (Ocupa todo el ancho)
-        self.input_field = tk.Entry(self.input_area, bg="#3c3c3c", fg="white", 
-                                    insertbackground="white", relief="flat", font=("Arial", 10))
+        self.input_field = tk.Entry(self.input_area, bg=self.style.get_color("bg_input"), fg=self.style.get_color("text_main"), 
+                                    insertbackground=self.style.get_color("text_main"), relief="flat", font=("Arial", 10))
         self.input_field.pack(fill=tk.X, ipady=5, pady=(0, 5))
         self.input_field.bind("<Return>", lambda e: self.handle_send())
 
         # FILA 2: Botones y Controles
-        btns_frame = tk.Frame(self.input_area, bg="#2b2b2b")
+        btns_frame = tk.Frame(self.input_area, bg=self.style.get_color("bg_main"))
         btns_frame.pack(fill=tk.X)
 
         # Vision
-        self._lbl_vision = tk.Label(btns_frame, text="👁️ Vision:", bg="#2b2b2b", fg="#888", font=("Arial", 8))
+        self._lbl_vision = tk.Label(btns_frame, text="👁️ Vision:", bg=self.style.get_color("bg_main"), fg=self.style.get_color("text_dim"), font=("Arial", 8))
         self._lbl_vision.pack(side=tk.LEFT)
         self.combo_vision = ttk.Combobox(btns_frame, values=["None", "Cam", "Screen", "Imagen"], state="readonly", width=8)
         self.combo_vision.set("None")
@@ -338,14 +362,23 @@ class ChatWidget(tk.Frame):
         self.combo_vision.bind("<<ComboboxSelected>>", self._on_vision_change)
 
         # Audio
-        self._btn_add_audio = tk.Button(btns_frame, text="➕ Audio", bg="#444", fg="white",
+        self._btn_add_audio = tk.Button(btns_frame, text="➕ Audio", bg=self.style.get_color("btn_bg"), fg=self.style.get_color("btn_fg"),
                                       relief="flat", command=self.handle_add_audio, cursor="hand2")
         self._btn_add_audio.pack(side=tk.LEFT, padx=5)
 
         # Enviar (Derecha)
-        self._btn_send = tk.Button(btns_frame, text=self.t("chat.send_btn"), bg="#0078d4", fg="white",
-                                  relief="flat", command=self.handle_send, cursor="hand2", width=15)
+        self._btn_send = tk.Button(btns_frame, text=self.t("chat.send_btn"), bg=self.style.get_color("accent"), fg=self.style.get_color("btn_fg"),
+                                  relief="flat", command=self.handle_send, cursor="hand2", width=8)
         self._btn_send.pack(side=tk.RIGHT, padx=2)
+
+        # STT Mode (Derecha - movido desde arriba)
+        stt_modes = ["OFF", "CHAT", "COMMAND", "VOICE_COMMAND"]
+        self.combo_stt_mode = ttk.Combobox(btns_frame, values=stt_modes, state="readonly", width=10)
+        self.combo_stt_mode.pack(side=tk.RIGHT, padx=5)
+        self.combo_stt_mode.bind("<<ComboboxSelected>>", self._on_stt_mode_change)
+
+        self._lbl_stt_mode = tk.Label(btns_frame, text="STT:", bg=self.style.get_color("bg_main"), fg=self.style.get_color("text_dim"), font=("Arial", 8))
+        self._lbl_stt_mode.pack(side=tk.RIGHT, padx=(5, 0))
 
         # Stop (Derecha)
         self._btn_stop = tk.Button(btns_frame, text="⏹ Stop", bg="#d43f3a", fg="white",
@@ -353,11 +386,14 @@ class ChatWidget(tk.Frame):
         self._btn_stop.pack(side=tk.RIGHT, padx=2)
 
         # Línea de archivos seleccionados
-        self.lbl_files = tk.Label(self.chat_frame, text="", bg="#2b2b2b", fg="#4EC9B0", font=("Arial", 8, "italic"))
+        self.lbl_files = tk.Label(self.chat_frame, text="", bg=self.style.get_color("bg_main"), fg="#4EC9B0", font=("Arial", 8, "italic"))
         self.lbl_files.pack(fill=tk.X, padx=10)
 
         # 2. VISTA DE CONFIGURACIÓN
-        self.settings_frame = SettingsView(self.container, self.config, self.chat_engine.locale_service, self.show_chat)
+        self.settings_frame = SettingsView(self.container, self.config, self.chat_engine.locale_service, self.show_chat, self.style)
+        
+        # 3. VISTA DE API KEYS
+        self.api_keys_frame = APIKeysView(self.container, self.config, self.show_chat, self.style)
 
     def _load_initial_state(self):
         # Memoria (NUEVA)
@@ -534,11 +570,27 @@ class ChatWidget(tk.Frame):
         provider = self.combo_provider.get()
         self.config.set("last_provider", provider)
         self.chat_engine.switch_provider(provider)
-        models = self.chat_engine.get_available_models()
+        
+        # Cargar modelos de forma asíncrona desactivando el combo temporalmente
+        self.combo_model.config(state="disabled")
+        threading.Thread(target=self._async_load_models, daemon=True).start()
+
+    def _async_load_models(self):
+        try:
+            # Ejecutamos la corrutina en un nuevo bucle de eventos en este hilo
+            models = asyncio.run(self.chat_engine.get_available_models())
+            self.after(0, lambda: self._update_models_combo(models))
+        except Exception as e:
+            print(f"[UI] Error loading models: {e}")
+            self.after(0, lambda: self.combo_model.config(state="readonly"))
+
+    def _update_models_combo(self, models):
+        self.combo_model.config(state="readonly")
         self.combo_model['values'] = models
         last_model = self.config.get("last_model", "")
         if models:
-            if last_model in models: self.combo_model.set(last_model)
+            if last_model in models: 
+                self.combo_model.set(last_model)
             else:
                 self.combo_model.current(0)
                 self.config.set("last_model", self.combo_model.get())
@@ -589,6 +641,25 @@ class ChatWidget(tk.Frame):
             # Enviamos al chat en el hilo principal
             self.after(0, lambda: self._process_stt_input(text))
 
+    def _on_voice_command(self, command_matched, text):
+        """Callback cuando se reconoce un comando de voz."""
+        if command_matched:
+            winsound.MessageBeep(winsound.MB_OK)
+            self.after(0, lambda: self._append_message("SYSTEM", f"Voice command recognized: {text} → {command_matched}", "#FF6B6B"))
+        elif self.var_test_mode.get():
+            text_lower = text.lower()
+            if "comando" in text_lower or "prueba" in text_lower:
+                winsound.MessageBeep(winsound.MB_OK)
+                self.after(0, lambda: self._append_message("TEST MODE", f"Command detected: {text}", "#4ECDC4"))
+        
+        if text:
+            self.after(0, lambda: self._display_recognized_text(text))
+
+    def _display_recognized_text(self, text):
+        """Muestra el texto reconocido en el input field."""
+        self.input_field.delete(0, tk.END)
+        self.input_field.insert(0, text)
+
     def _process_stt_input(self, text):
         self.input_field.delete(0, tk.END)
         self.input_field.insert(0, text)
@@ -602,11 +673,26 @@ class ChatWidget(tk.Frame):
 
     def show_settings(self):
         self.chat_frame.pack_forget()
+        self.api_keys_frame.pack_forget()
         self.settings_frame.pack(fill=tk.BOTH, expand=True)
+
+    def show_api_keys(self):
+        self.chat_frame.pack_forget()
+        self.settings_frame.pack_forget()
+        self.api_keys_frame.pack(fill=tk.BOTH, expand=True)
 
     def show_chat(self):
         self.settings_frame.pack_forget()
+        self.api_keys_frame.pack_forget()
         self.chat_frame.pack(fill=tk.BOTH, expand=True)
+        if self.toolbar_visible:
+            if self.visualizer and self.visualizer._frame:
+                self.toolbar.pack(fill=tk.X, padx=10, before=self.visualizer._frame)
+            elif hasattr(self, 'middle_container'):
+                self.toolbar.pack(fill=tk.X, padx=10, before=self.middle_container)
+            else:
+                self.toolbar.pack(fill=tk.X, padx=10)
+            self.btn_toggle_toolbar.config(text="▼")
         self._on_provider_change(None)
         self._on_voice_change(None)
 
@@ -624,19 +710,6 @@ class ChatWidget(tk.Frame):
                 self.toolbar.pack(fill=tk.X, padx=10)
             self.btn_toggle_toolbar.config(text="▼")
         self.toolbar_visible = not self.toolbar_visible
-
-    def show_chat(self):
-        self.settings_frame.pack_forget()
-        self.chat_frame.pack(fill=tk.BOTH, expand=True)
-        if self.toolbar_visible:
-            if self.visualizer and self.visualizer._frame:
-                self.toolbar.pack(fill=tk.X, padx=10, before=self.visualizer._frame)
-            elif hasattr(self, 'middle_container'):
-                self.toolbar.pack(fill=tk.X, padx=10, before=self.middle_container)
-            else:
-                self.toolbar.pack(fill=tk.X, padx=10)
-        self._on_provider_change(None)
-        self._on_voice_change(None)
 
     def _on_vision_change(self, event):
         mode = self.combo_vision.get()
@@ -661,8 +734,19 @@ class ChatWidget(tk.Frame):
 
     def handle_send(self):
         """Dispara el proceso de envío de forma asíncrona para no bloquear la UI."""
+        # Protección contra envíos concurrentes
+        if self.is_sending or self.chat_engine.busy:
+            print("[UI] Busy: Ignorando intento de envío concurrente.")
+            return
+
         text = self.input_field.get()
         if not text and not self.current_images: return
+
+        # Pausar STT inmediatamente para evitar capturas durante la generación
+        if self.stt_service:
+            self.stt_service.pause_capture()
+
+        self.is_sending = True
         
         display_text = text if text else self.t("chat.vision") + " " + self.t("chat.audio")
         self._append_message(self.t("chat.you"), display_text, "#569cd6")
@@ -690,17 +774,27 @@ class ChatWidget(tk.Frame):
     def _async_send_task(self, text, model, images):
         """Tarea ejecutada en hilo de fondo."""
         try:
-            # Esta llamada es bloqueante pero el hilo principal sigue libre
-            result = self.chat_engine.send_message(text, model=model, images=images)
+            # Ejecutamos la corrutina en un nuevo bucle de eventos en este hilo
+            result = asyncio.run(self.chat_engine.send_message(text, model=model, images=images))
             # Notificar al hilo principal para actualizar UI
             self.after(0, self._handle_response, result)
         except Exception as e:
-            error_msg = {"response": f"Error crítico: {str(e)}", "status": "error"}
+            import traceback
+            traceback.print_exc()
+            error_msg = {"response": f"Error crítico al enviar: {str(e)}", "status": "error"}
             self.after(0, self._handle_response, error_msg)
 
     def _handle_response(self, result):
         """Actualiza la interfaz con la respuesta (Corre en el hilo principal)."""
+        self.is_sending = False
         self._btn_send.config(state=tk.NORMAL, text=self.t("chat.send_btn"))
+        
+        # Si no hay audio activado o planeado, reanudamos el STT manualmente
+        # (Si hay audio, VoiceService lo reanudará cuando termine de sonar)
+        if not self.chat_engine.voice_service.is_playing and \
+           not self.chat_engine.voice_service.is_generating:
+            if self.stt_service:
+                self.stt_service.resume_capture(delay=0.1)
         
         # Mostramos la respuesta original (con emojis/asteriscos) en la UI
         if isinstance(result, dict) and "response" in result:

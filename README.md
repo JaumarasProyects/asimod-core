@@ -110,25 +110,25 @@ Returns current configuration, active providers, and audio save paths.
 We provide ready-to-use integration scripts for the most popular engines and languages.
 
 ### 🎮 Unity Engine (C#)
-- **Folder:** `UnityIntegration/`
+- **Folder:** `engine_adapters/UnityIntegration/`
 - **File:** `AsimodClient.cs`
 - **Usage:** Attach the `AsimodClient` MonoBehaviour to any GameObject. 
 - **Features:** Asynchronous `UnityWebRequest` with callbacks for `clean_text` and `emojis`.
 
 ### 🎮 Unreal Engine (C++)
-- **Folder:** `UnrealIntegration/`
+- **Folder:** `engine_adapters/UnrealIntegration/`
 - **Files:** `AsimodClient.cpp/h`
 - **Usage:** Add the `UAsimodClient` Actor Component to your character or controller.
 - **Features:** Fully exposed to **Blueprints** via Delegates (`OnChatReceived`).
 
 ### 🐍 Python Client
-- **Folder:** `PythonIntegration/`
+- **Folder:** `engine_adapters/PythonIntegration/`
 - **File:** `asimod_client.py`
 - **Usage:** `from asimod_client import AsimodClient`.
 - **Features:** Simple synchronous wrapper using the `requests` library.
 
 ### 🎮 Godot Engine (GDScript)
-- **Folder:** `GodotIntegration/`
+- **Folder:** `engine_adapters/GodotIntegration/`
 - **File:** `AsimodClient.gd`
 - **Usage:** Add to your **Autoloads (Singleton)** or attach to a Node.
 - **Features:** Uses `HTTPRequest` and signals (`chat_received`) for non-blocking logic.

@@ -6,7 +6,7 @@ class VoicePort(ABC):
     Abstracción para cualquier motor de Texto-a-Voz (TTS).
     """
     @abstractmethod
-    def generate(self, text: str, output_path: str, voice_id: str = None) -> bool:
+    async def generate(self, text: str, output_path: str, voice_id: str = None) -> bool:
         """
         Genera un archivo de audio a partir de texto con una voz específica.
         Retorna True si tuvo éxito.

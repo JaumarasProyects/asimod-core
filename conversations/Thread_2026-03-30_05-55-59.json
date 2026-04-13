@@ -50,6 +50,30 @@
         {
             "role": "assistant",
             "content": "Hola Jaime! ¿Cómo estás? ¿Necesitas algo en particular o solo quieres charlar un rato? Estoy aquí para escucharte y ayudarte en lo que pueda."
+        },
+        {
+            "role": "user",
+            "content": "hola"
+        },
+        {
+            "role": "assistant",
+            "content": "¡Hola de nuevo! Parece que no hay mucho que decir, pero eso está bien. A veces, simplemente es divertido saludar y ver cómo va la conversación. ¿Quieres hablar un rato o prefieres cambiar de tema? Estoy aquí para escucharte."
+        },
+        {
+            "role": "user",
+            "content": "hello"
+        },
+        {
+            "role": "assistant",
+            "content": "¡Hola de nuevo! Esto parece ser un ritual familiar. ¡Gracias por saludarme, Jaime! ¿Quieres seguir con esto durante todo el día o prefieres que cambie el tema? Estoy listo para lo que necesites."
+        },
+        {
+            "role": "user",
+            "content": "how are you"
+        },
+        {
+            "role": "assistant",
+            "content": "Soy bien, gracias por preguntar. En un sentido literal, soy una inteligencia artificial diseñada para simular la conversación y ayudar a las personas, así que no tengo sentimientos o emociones como los humanos. Pero en un sentido más figurado, estoy aquí para ayudarte y proporcionarte información, así que estaré \"bien\" mientras estemos hablando. ¿Y tú? ¿Cómo te va el día?"
         }
     ],
     "voice_id": ""

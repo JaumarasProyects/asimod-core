@@ -12,12 +12,17 @@ class STTService:
     - CHAT
     - COMMAND
     - QUESTION
+    - VOICE_COMMAND (reconoce comandos del diccionario)
     """
 
     def __init__(self, config_service, on_chat_transcription=None, on_stt_result=None):
         self.config = config_service
         self.on_chat_transcription = on_chat_transcription
         self.on_stt_result = on_stt_result
+        self.voice_command_callbacks = []  # Lista de funciones a llamar
+        self.last_voice_command = None
+        self.contextual_commands = {}  # Comandos inyectados por módulos activos
+        self.base_module_commands = {} # Comandos globales de activación de módulos
 
         self.adapter = None
         self.is_listening = False
@@ -35,7 +40,7 @@ class STTService:
     def manage_microphone_thread(self):
         mode = str(self.config.get("stt_mode", "OFF")).upper()
 
-        if mode in ("CHAT", "COMMAND", "QUESTION") and self.adapter:
+        if mode in ("CHAT", "COMMAND", "QUESTION", "VOICE_COMMAND") and self.adapter:
             if not self.is_listening:
                 self.start_listening()
         else:
@@ -78,7 +83,7 @@ class STTService:
             return
 
         mode = str(self.config.get("stt_mode", "OFF")).upper()
-        text = text.strip()
+        text = text.strip().lower()
 
         print(f"[STTService] Recognized text in mode {mode}: {text}")
 
@@ -90,9 +95,68 @@ class STTService:
             if self.on_stt_result:
                 self.on_stt_result(text)
 
-            # En QUESTION, opcionalmente volvemos a COMMAND tras capturar una frase
             if mode == "QUESTION":
                 self.config.set("stt_mode", "COMMAND")
+
+        elif mode == "VOICE_COMMAND":
+            command_matched = self._check_voice_commands(text)
+            if command_matched:
+                print(f"[STTService] Voice command recognized: {command_matched}")
+                self.last_voice_command = {"matched": command_matched, "text": text, "timestamp": time.time()}
+            else:
+                print(f"[STTService] No command matched for: {text}")
+            
+            for callback in self.voice_command_callbacks:
+                try:
+                    callback(command_matched, text)
+                except Exception as e:
+                    print(f"[STTService] Error in voice command callback: {e}")
+
+    def _check_voice_commands(self, text: str) -> str:
+        # 1. Comandos permanentes de configuración
+        commands = dict(self.config.get("voice_commands", {}))
+        
+        # 2. Comandos base (Activación de módulos)
+        if hasattr(self, 'base_module_commands') and self.base_module_commands:
+            commands.update(self.base_module_commands)
+        
+        # 3. Comandos contextuales (Módulo activo)
+        if self.contextual_commands:
+            commands.update(self.contextual_commands)
+
+        text_lower = text.lower()
+        
+        for trigger, action in commands.items():
+            if trigger.lower() in text_lower:
+                return action
+        
+        return None
+
+    def set_contextual_commands(self, commands: dict):
+        """Establece los comandos específicos del módulo activo."""
+        self.contextual_commands = commands
+        if commands:
+            print(f"[STTService] Contextual commands injected: {list(commands.keys())}")
+
+    def clear_contextual_commands(self):
+        """Limpia los comandos del módulo."""
+        self.contextual_commands = {}
+        print("[STTService] Contextual commands cleared.")
+
+    def set_base_module_commands(self, commands: dict):
+        """Establece los comandos permanentes de los módulos (ej: sus nombres)."""
+        self.base_module_commands = commands
+        if commands:
+            print(f"[STTService] Base module commands registered: {list(commands.keys())}")
+
+    def add_voice_command_callback(self, callback):
+        """Añade un suscriptor a los eventos de comando de voz."""
+        if callback not in self.voice_command_callbacks:
+            self.voice_command_callbacks.append(callback)
+
+    def set_voice_command_callback(self, callback):
+        """Mantenemos este método por compatibilidad, pero ahora usa la lista."""
+        self.add_voice_command_callback(callback)
 
     def _listen_loop(self):
         try:
@@ -116,14 +180,21 @@ class STTService:
                     if self._is_paused_by_voice:
                         continue
 
-                    temp_path = "temp_recording.wav"
-                    with open(temp_path, "wb") as f:
-                        f.write(audio.get_wav_data())
+                    temp_path = f"temp_recording_{id(threading.current_thread())}.wav"
+                    try:
+                        with open(temp_path, "wb") as f:
+                            f.write(audio.get_wav_data())
+                    except IOError as e:
+                        print(f"[STTService] Error writing temp file: {e}")
+                        continue
 
                     text = self.adapter.transcribe(temp_path)
 
-                    if os.path.exists(temp_path):
-                        os.remove(temp_path)
+                    try:
+                        if os.path.exists(temp_path):
+                            os.remove(temp_path)
+                    except IOError as e:
+                        print(f"[STTService] Could not remove temp file: {e}")
 
                     self._dispatch_text(text)
 

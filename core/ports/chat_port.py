@@ -8,7 +8,7 @@ class ChatPort(ABC):
     Esta clase es 'agnóstica' a la UI (PyQt) y a la implementación (Ollama/OpenAI).
     """
     @abstractmethod
-    def send_message(self, text: str, model: str = None, images: list = None) -> dict:
+    async def send_message(self, text: str, model: str = None, images: list = None, silent: bool = False, max_tokens: int = None, temperature: float = None, system_prompt: str = None) -> dict:
         """Envía un mensaje con contexto visual opcional y retorna un dict enriquecido."""
         pass
 

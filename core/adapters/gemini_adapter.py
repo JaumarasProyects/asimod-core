@@ -1,10 +1,12 @@
-import requests
+import httpx
 import base64
+import asyncio
+from typing import List
 from core.ports.llm_port import LLMPort
 
 class GeminiAdapter(LLMPort):
     """
-    Adaptador para Google Gemini con soporte multimodal.
+    Adaptador para Google Gemini con soporte multimodal asíncrono.
     """
     def __init__(self, api_key: str):
         self.api_key = api_key
@@ -13,14 +15,14 @@ class GeminiAdapter(LLMPort):
     def name(self) -> str:
         return "Gemini"
 
-    def list_models(self) -> list:
+    async def list_models(self) -> list:
         return ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"]
 
     def _encode_image(self, image_path):
         with open(image_path, "rb") as image_file:
             return base64.b64encode(image_file.read()).decode('utf-8')
 
-    def generate_chat(self, history: list, system_prompt: str, model: str, images: list = None, max_tokens: int = None, temperature: float = None) -> str:
+    async def generate_chat(self, history: list, system_prompt: str, model: str, images: list = None, max_tokens: int = None, temperature: float = None) -> str:
         if not self.api_key:
             return "Error: No se ha configurado la API Key de Gemini."
         
@@ -39,13 +41,17 @@ class GeminiAdapter(LLMPort):
 
             if images and contents:
                  for img_path in images:
-                    b64_data = self._encode_image(img_path)
-                    contents[-1]["parts"].append({
-                        "inline_data": {
-                            "mime_type": "image/jpeg",
-                            "data": b64_data
-                        }
-                    })
+                    try:
+                        # Nota: codificación de imagen es síncrona pero rápida (I/O local)
+                        b64_data = self._encode_image(img_path)
+                        contents[-1]["parts"].append({
+                            "inline_data": {
+                                "mime_type": "image/jpeg",
+                                "data": b64_data
+                            }
+                        })
+                    except Exception as e:
+                        print(f"[Gemini] Error encoding image: {e}")
 
             payload = {
                 "system_instruction": {
@@ -59,7 +65,9 @@ class GeminiAdapter(LLMPort):
             if temperature is not None:
                 payload["temperature"] = temperature
 
-            response = requests.post(url, headers=headers, json=payload, timeout=30)
+            async with httpx.AsyncClient() as client:
+                response = await client.post(url, headers=headers, json=payload, timeout=45.0)
+            
             if response.status_code == 200:
                 return response.json()["candidates"][0]["content"]["parts"][0]["text"]
             else:
@@ -68,7 +76,8 @@ class GeminiAdapter(LLMPort):
         except Exception as e:
             return f"Error de conexión con Gemini: {str(e)}"
 
-    def generate_response(self, prompt: str, model: str, images: list = None) -> str:
+    async def generate_response(self, prompt: str, model: str, images: list = None) -> str:
+        """Versión simplificada para una sola consulta."""
         if not self.api_key:
             return "Error: No se ha configurado la Gemini API Key."
 
@@ -95,7 +104,9 @@ class GeminiAdapter(LLMPort):
                 "contents": [{"parts": parts}]
             }
             
-            response = requests.post(url, headers=headers, json=payload, timeout=45)
+            async with httpx.AsyncClient() as client:
+                response = await client.post(url, headers=headers, json=payload, timeout=45.0)
+            
             if response.status_code == 200:
                 return response.json()["candidates"][0]["content"]["parts"][0]["text"]
             else:

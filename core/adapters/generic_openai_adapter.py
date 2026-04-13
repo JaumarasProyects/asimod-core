@@ -1,11 +1,12 @@
-import requests
+import httpx
 import base64
+import asyncio
 from core.ports.llm_port import LLMPort
 
 class GenericOpenAIAdapter(LLMPort):
     """
     Adaptador genérico para servicios compatibles con el protocolo de OpenAI
-    (DeepSeek, Groq, Perplexity, etc) con soporte multimodal.
+    (DeepSeek, Groq, Perplexity, etc) con soporte multimodal asíncrono.
     """
     def __init__(self, name: str, api_key: str, base_url: str, models: list):
         self._name = name
@@ -17,14 +18,14 @@ class GenericOpenAIAdapter(LLMPort):
     def name(self) -> str:
         return self._name
 
-    def list_models(self) -> list:
+    async def list_models(self) -> list:
         return self._models
 
     def _encode_image(self, image_path):
         with open(image_path, "rb") as image_file:
             return base64.b64encode(image_file.read()).decode('utf-8')
 
-    def generate_chat(self, history: list, system_prompt: str, model: str, images: list = None, max_tokens: int = None, temperature: float = None) -> str:
+    async def generate_chat(self, history: list, system_prompt: str, model: str, images: list = None, max_tokens: int = None, temperature: float = None) -> str:
         if not self.api_key:
             return f"Error: No se ha configurado la API Key para {self._name}."
         
@@ -49,7 +50,9 @@ class GenericOpenAIAdapter(LLMPort):
             if temperature is not None:
                 payload["temperature"] = temperature
 
-            response = requests.post(url, headers=headers, json=payload, timeout=30)
+            async with httpx.AsyncClient() as client:
+                response = await client.post(url, headers=headers, json=payload, timeout=45.0)
+            
             if response.status_code == 200:
                 return response.json()["choices"][0]["message"]["content"]
             else:
@@ -58,7 +61,7 @@ class GenericOpenAIAdapter(LLMPort):
         except Exception as e:
             return f"Error de conexión con {self._name}: {str(e)}"
 
-    def generate_response(self, prompt: str, model: str, images: list = None) -> str:
+    async def generate_response(self, prompt: str, model: str, images: list = None) -> str:
         if not self.api_key:
             return f"Error: No se ha configurado la API Key para {self._name}."
 
@@ -87,12 +90,14 @@ class GenericOpenAIAdapter(LLMPort):
                 "messages": [{"role": "user", "content": content}]
             }
             
-            response = requests.post(
-                f"{self.base_url}/chat/completions",
-                headers=headers, 
-                json=payload,
-                timeout=60
-            )
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    f"{self.base_url}/chat/completions",
+                    headers=headers, 
+                    json=payload,
+                    timeout=60.0
+                )
+            
             if response.status_code == 200:
                 return response.json()["choices"][0]["message"]["content"]
             else:

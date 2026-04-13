@@ -52,7 +52,17 @@ class ConfigService:
             "cloudflare_tunnel_id": "",
             "cloudflare_tunnel_credentials": "",
             "cloudflare_hostname": "",
-            "api_port": 8000
+            "api_port": 8000,
+            "modules_enabled": True,
+            "modules_path": "modules",
+            "visualizer_type": "waveform",
+            "visualizers_path": "visualizers",
+            "comfyui_defaults": {
+                "Imagen": {"type": "Simple", "subtype": "text2img", "workflow": "DefaultText2Img.json"},
+                "Video": {"type": "Simple", "subtype": "text2video", "workflow": "DefaultText2Video.json"},
+                "3D": {"type": "Simple", "subtype": "img23d", "workflow": "DefaultImg23D.json"},
+                "Audio": {"type": "Simple", "subtype": "text2speech", "workflow": "DefaultTTS.json"}
+            }
         }
 
     def save(self):

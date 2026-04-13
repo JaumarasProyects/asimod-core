@@ -18,8 +18,8 @@ temp_recording.wav
 # settings.json contiene API Keys, se recomienda no trackearlo
 settings.json
 # Túneles y ejecutables
-cloudflared.yml
-temp_cloudflared.yml
-tunnel_url.txt
-cloudflared.exe
-ngrok.exe
+core/tunnels/cloudflared.yml
+core/tunnels/temp_cf_*.yml
+core/tunnels/tunnel_url.txt
+core/tunnels/cloudflared.exe
+core/tunnels/ngrok.exe

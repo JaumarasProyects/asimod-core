@@ -27,7 +27,7 @@ class EdgeVoiceAdapter(VoicePort):
     def list_voices(self) -> List[Dict[str, str]]:
         return self._VOICES
 
-    def generate(self, text: str, output_path: str, voice_id: str = None) -> bool:
+    async def generate(self, text: str, output_path: str, voice_id: str = None) -> bool:
         # 1. Validar ID de voz
         default_voice = self._VOICES[3]["id"] # Álvaro por defecto
         
@@ -44,12 +44,8 @@ class EdgeVoiceAdapter(VoicePort):
         
         try:
             import edge_tts
-            
-            async def _save():
-                communicate = edge_tts.Communicate(text, voice_to_use)
-                await communicate.save(output_path)
-            
-            asyncio.run(_save())
+            communicate = edge_tts.Communicate(text, voice_to_use)
+            await communicate.save(output_path)
             return os.path.exists(output_path)
         except Exception as e:
             print(f"Error en EdgeTTS con voz {voice_to_use}: {e}")

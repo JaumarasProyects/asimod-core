@@ -8,7 +8,7 @@ start "ASIMOD API" cmd /k "python run_api.py"
 
 echo.
 echo [2/2] Iniciando Cloudflare Tunnel de forma dinámica...
-start "CLOUDFLARED" cmd /k "python run_tunnel.py"
+start "CLOUDFLARED" cmd /k "python core\tunnels\run_tunnel.py"
 
 echo.
 echo ========================================

@@ -23,7 +23,11 @@ class LocalVoiceAdapter(VoicePort):
             print(f"Error listando voces locales: {e}")
             return [{"id": "0", "name": "Voz del sistema"}]
 
-    def generate(self, text: str, output_path: str, voice_id: str = None) -> bool:
+    async def generate(self, text: str, output_path: str, voice_id: str = None) -> bool:
+        import asyncio
+        return await asyncio.to_thread(self._generate_sync, text, output_path, voice_id)
+
+    def _generate_sync(self, text: str, output_path: str, voice_id: str = None) -> bool:
         try:
             import pyttsx3
             engine = pyttsx3.init()
@@ -39,6 +43,9 @@ class LocalVoiceAdapter(VoicePort):
             
             engine.save_to_file(text, output_path)
             engine.runAndWait()
+            # Una pequeña pausa para asegurar que el archivo se ha cerrado
+            import time
+            time.sleep(0.1)
             return os.path.exists(output_path)
         except Exception as e:
             print(f"Error en LocalTTS: {e}")

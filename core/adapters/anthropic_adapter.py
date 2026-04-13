@@ -1,10 +1,11 @@
-import requests
+import httpx
+import asyncio
 from typing import List
 from core.ports.llm_port import LLMPort
 
 class AnthropicAdapter(LLMPort):
     """
-    Adaptador para Anthropic (Claude) que utiliza la API de Messages.
+    Adaptador para Anthropic (Claude) que utiliza la API de Messages de forma asíncrona.
     """
     def __init__(self, api_key: str):
         self.api_key = api_key
@@ -13,7 +14,7 @@ class AnthropicAdapter(LLMPort):
     def name(self) -> str:
         return "Anthropic"
 
-    def list_models(self) -> List[str]:
+    async def list_models(self) -> List[str]:
         return [
             "claude-3-5-sonnet-20241022",
             "claude-3-5-haiku-20241022",
@@ -21,7 +22,7 @@ class AnthropicAdapter(LLMPort):
             "claude-3-sonnet-20240229"
         ]
 
-    def generate_chat(self, history: list, system_prompt: str, model: str, images: list = None, max_tokens: int = None, temperature: float = None) -> str:
+    async def generate_chat(self, history: list, system_prompt: str, model: str, images: list = None, max_tokens: int = None, temperature: float = None) -> str:
         if not self.api_key:
             return "Error: No se ha configurado la API Key de Anthropic."
         
@@ -45,7 +46,9 @@ class AnthropicAdapter(LLMPort):
             if temperature is not None:
                 payload["temperature"] = temperature
             
-            response = requests.post(url, headers=headers, json=payload, timeout=30)
+            async with httpx.AsyncClient() as client:
+                response = await client.post(url, headers=headers, json=payload, timeout=45.0)
+            
             if response.status_code == 200:
                 return response.json()["content"][0]["text"]
             else:

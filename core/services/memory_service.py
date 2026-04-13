@@ -22,7 +22,7 @@ class MemoryService:
 
     def _get_empty_thread(self):
         return {
-            "name": "Gravity",
+            "name": "Asimod",
             "personality": "Asistente servicial y educado.",
             "character_history": "Eres un asistente virtual avanzado diseñado para ayudar al usuario.",
             "voice_provider": "",
@@ -100,7 +100,7 @@ class MemoryService:
 
     def get_system_prompt(self, locale_service=None) -> str:
         """Construye el system prompt basado en el perfil actual."""
-        name = self.data.get("name", "Gravity")
+        name = self.data.get("name", "Asimod")
         pers = self.data.get("personality", "")
         hist = self.data.get("character_history", "")
         
@@ -138,3 +138,116 @@ class MemoryService:
         self.data = self._get_empty_thread()
         self.save_current()
         return thread_id
+
+    def get_thread_data(self, thread_id: str) -> dict:
+        """Obtiene los datos de un hilo sin modificar el activo."""
+        if thread_id == "None":
+            return self._get_empty_thread()
+        
+        file_path = os.path.join(self.conv_dir, f"{thread_id}.json")
+        if os.path.exists(file_path):
+            try:
+                with open(file_path, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except Exception as e:
+                print(f"Error cargando hilo {thread_id}: {e}")
+        return None
+
+    def edit_message_in_thread(self, thread_id: str, message_index: int, new_content: str) -> dict:
+        """Edita un mensaje específico en un hilo."""
+        target_data = self.get_thread_data(thread_id)
+        if not target_data:
+            return {"status": "error", "message": "Thread not found"}
+        
+        history = target_data.get("history", [])
+        if message_index < 0 or message_index >= len(history):
+            return {"status": "error", "message": "Invalid message index"}
+        
+        history[message_index]["content"] = new_content
+        target_data["history"] = history
+        
+        file_path = os.path.join(self.conv_dir, f"{thread_id}.json")
+        with open(file_path, "w", encoding="utf-8") as f:
+            json.dump(target_data, f, indent=4, ensure_ascii=False)
+        
+        return {"status": "success", "message": f"Message {message_index} updated"}
+
+    def delete_message_in_thread(self, thread_id: str, message_index: int) -> dict:
+        """Borra un mensaje específico en un hilo."""
+        target_data = self.get_thread_data(thread_id)
+        if not target_data:
+            return {"status": "error", "message": "Thread not found"}
+        
+        history = target_data.get("history", [])
+        if message_index < 0 or message_index >= len(history):
+            return {"status": "error", "message": "Invalid message index"}
+        
+        del history[message_index]
+        target_data["history"] = history
+        
+        file_path = os.path.join(self.conv_dir, f"{thread_id}.json")
+        with open(file_path, "w", encoding="utf-8") as f:
+            json.dump(target_data, f, indent=4, ensure_ascii=False)
+        
+        return {"status": "success", "message": f"Message {message_index} deleted"}
+
+    def add_message_to_thread(self, thread_id: str, role: str, content: str) -> dict:
+        """Añade un mensaje a un hilo."""
+        target_data = self.get_thread_data(thread_id)
+        if not target_data:
+            return {"status": "error", "message": "Thread not found"}
+        
+        target_data["history"].append({"role": role, "content": content})
+        
+        file_path = os.path.join(self.conv_dir, f"{thread_id}.json")
+        with open(file_path, "w", encoding="utf-8") as f:
+            json.dump(target_data, f, indent=4, ensure_ascii=False)
+        
+        return {"status": "success", "message": "Message added"}
+
+    def clear_thread_history(self, thread_id: str) -> dict:
+        """Limpia el historial de un hilo."""
+        target_data = self.get_thread_data(thread_id)
+        if not target_data:
+            return {"status": "error", "message": "Thread not found"}
+        
+        target_data["history"] = []
+        
+        file_path = os.path.join(self.conv_dir, f"{thread_id}.json")
+        with open(file_path, "w", encoding="utf-8") as f:
+            json.dump(target_data, f, indent=4, ensure_ascii=False)
+        
+        return {"status": "success", "message": "History cleared"}
+
+    def delete_thread(self, thread_id: str) -> dict:
+        """Borra un hilo completamente."""
+        if thread_id == "None":
+            return {"status": "error", "message": "Cannot delete None thread"}
+        
+        file_path = os.path.join(self.conv_dir, f"{thread_id}.json")
+        if os.path.exists(file_path):
+            try:
+                os.remove(file_path)
+                return {"status": "success", "message": f"Thread {thread_id} deleted"}
+            except Exception as e:
+                return {"status": "error", "message": str(e)}
+        
+        return {"status": "error", "message": "Thread not found"}
+
+    def update_thread_profile(self, thread_id: str, name: str = None, personality: str = None, character_history: str = None, voice_id: str = None, voice_provider: str = None) -> dict:
+        """Actualiza el perfil de un hilo sin modificar el activo."""
+        target_data = self.get_thread_data(thread_id)
+        if not target_data:
+            return {"status": "error", "message": "Thread not found"}
+        
+        if name is not None: target_data["name"] = name
+        if personality is not None: target_data["personality"] = personality
+        if character_history is not None: target_data["character_history"] = character_history
+        if voice_id is not None: target_data["voice_id"] = voice_id
+        if voice_provider is not None: target_data["voice_provider"] = voice_provider
+        
+        file_path = os.path.join(self.conv_dir, f"{thread_id}.json")
+        with open(file_path, "w", encoding="utf-8") as f:
+            json.dump(target_data, f, indent=4, ensure_ascii=False)
+        
+        return {"status": "success", "message": "Profile updated"}
