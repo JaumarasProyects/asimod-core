@@ -58,11 +58,12 @@ class AsimodApp {
         // --- NEW Relocated Controls ---
         this.audioStopBtn = document.getElementById('audioStopBtn');
         this.visionMode = document.getElementById('visionMode');
+        this.chatModeSelect = document.getElementById('chatMode');
         this.imagePreview = document.getElementById('imagePreview');
         this.previewImg = document.getElementById('previewImg');
         this.removeImg = document.getElementById('removeImg');
-        this.mobileChatBtn = document.getElementById('mobileChatTrigger');
         this.closeChatBtn = document.getElementById('closeChat');
+        // Mobile chat trigger variable eliminada
         this.galleryToggle = document.getElementById('galleryToggle');
         this.currentGalleryPath = ''; // Track folder navigation
         this.currentImageBase64 = null;
@@ -429,10 +430,6 @@ class AsimodApp {
             this.coreTrigger.onclick = () => this.toggleChat();
         }
 
-        if (this.mobileChatBtn) {
-            this.mobileChatBtn.onclick = () => this.toggleChat();
-        }
-
         if (this.closeChatBtn) {
             this.closeChatBtn.onclick = () => this.toggleChat();
         }
@@ -633,6 +630,10 @@ class AsimodApp {
                 const formData = new FormData();
                 formData.append('text', text);
                 formData.append('play_audio', 'true');
+                
+                if (this.chatModeSelect) {
+                    formData.append('stt_mode', this.chatModeSelect.value);
+                }
                 
                 // Adjuntar imagen de visión si existe
                 if (this.currentImageBase64) {

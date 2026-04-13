@@ -125,10 +125,10 @@ class ChatService(ChatPort):
             return await self.current_adapter.list_models()
         return []
 
-    async def send_message(self, text: str, model: str = None, images: list = None, silent: bool = False, max_tokens: int = None, temperature: float = None, skip_tts: bool = False, system_prompt: str = None) -> Dict:
+    async def send_message(self, text: str, model: str = None, images: list = None, silent: bool = False, max_tokens: int = None, temperature: float = None, skip_tts: bool = False, system_prompt: str = None, mode: str = None) -> Dict:
         """
         Envía un mensaje usando el contexto de memoria activo y procesa la respuesta de forma asíncrona.
-        Permite sobrescribir las instrucciones del sistema con system_prompt.
+        Permite sobrescribir las instrucciones del sistema con system_prompt y el modo con mode.
         """
         if self.busy:
             print("[ChatService] BUSY: Ignoring concurrent message.")
@@ -152,7 +152,8 @@ class ChatService(ChatPort):
             history = self.memory.get_context()
             
             # --- Lógica de MODO AGENTE ---
-            is_agent_mode = self.config.get("stt_mode") in ["AGENT", "AGENT_AUDIO"]
+            effective_mode = mode if mode else self.config.get("stt_mode")
+            is_agent_mode = effective_mode in ["AGENT", "AGENT_AUDIO"]
             if is_agent_mode and self.module_service:
                 agent_context = self.module_service.get_agent_tools_context()
                 if system_prompt is None:

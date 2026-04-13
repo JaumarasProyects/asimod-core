@@ -95,7 +95,7 @@ class ChatWidget(tk.Frame):
             self._lbl_voice_mode: self.t("settings.mode"),
             self._lbl_stt: self.t("settings.stt_input"),
             self._lbl_stt_mode: self.t("settings.mode"),
-            self._lbl_vision: self.t("chat.vision"),
+            # self._lbl_vision: self.t("chat.vision"), (Desactivado para ahorrar espacio)
             self._btn_add_audio: self.t("chat.audio"),
             self._btn_send: self.t("chat.send"),
             self._btn_stop: self.t("chat.stop"),
@@ -111,6 +111,10 @@ class ChatWidget(tk.Frame):
         for widget, text in texts.items():
             if widget and text:
                 widget.config(text=text)
+        
+        # Etiquetas especiales solo icono
+        if hasattr(self, "_lbl_vision"): self._lbl_vision.config(text="👁️")
+        if hasattr(self, "_lbl_stt_mode"): self._lbl_stt_mode.config(text="🤖")
 
     def init_ui(self):
         # 1. VISTA DE CHAT
@@ -358,7 +362,7 @@ class ChatWidget(tk.Frame):
         btns_frame.pack(fill=tk.X)
 
         # Vision
-        self._lbl_vision = tk.Label(btns_frame, text="👁️ Vision:", bg=self.style.get_color("bg_main"), fg=self.style.get_color("text_dim"), font=("Arial", 8))
+        self._lbl_vision = tk.Label(btns_frame, text="👁️", bg=self.style.get_color("bg_main"), fg=self.style.get_color("text_dim"), font=("Arial", 10, "bold"))
         self._lbl_vision.pack(side=tk.LEFT)
         self.combo_vision = ttk.Combobox(btns_frame, values=["None", "Cam", "Screen", "Imagen"], state="readonly", width=8)
         self.combo_vision.set("None")
@@ -386,7 +390,7 @@ class ChatWidget(tk.Frame):
         self.combo_stt_mode.pack(side=tk.RIGHT, padx=5)
         self.combo_stt_mode.bind("<<ComboboxSelected>>", self._on_stt_mode_change)
 
-        self._lbl_stt_mode = tk.Label(btns_frame, text="STT:", bg=self.style.get_color("bg_main"), fg=self.style.get_color("text_dim"), font=("Arial", 8))
+        self._lbl_stt_mode = tk.Label(btns_frame, text="🤖", bg=self.style.get_color("bg_main"), fg=self.style.get_color("text_dim"), font=("Arial", 10, "bold"))
         self._lbl_stt_mode.pack(side=tk.RIGHT, padx=(5, 0))
 
         # Línea de archivos seleccionados

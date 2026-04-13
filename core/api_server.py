@@ -891,7 +891,8 @@ class APIServer:
             temperature: Optional[float] = Form(None),
             play_audio: Optional[str] = Form(None),
             image: Optional[UploadFile] = File(None),
-            image_b64: Optional[str] = Form(None)
+            image_b64: Optional[str] = Form(None),
+            stt_mode: Optional[str] = Form(None)
         ):
             try:
                 import asyncio
@@ -928,7 +929,8 @@ class APIServer:
                             silent=silent,
                             max_tokens=max_tokens,
                             temperature=temperature,
-                            skip_tts=True
+                            skip_tts=True,
+                            mode=stt_mode
                         ),
                         timeout=45.0
                     )

@@ -182,8 +182,17 @@
                         <button id="chatSend" title="Enviar Mensaje">🚀</button>
                     </div>
                     <div class="extra-controls-row">
+                        <div class="chat-mode-control">
+                            <span>🤖</span>
+                            <select id="chatMode">
+                                <option value="OFF">💬 CHAT</option>
+                                <option value="VOICE_COMMAND">⌨️ COMANDOS</option>
+                                <option value="AGENT">🧠 AGENTE</option>
+                                <option value="AGENT_AUDIO">🔊 AGENTE VOZ</option>
+                            </select>
+                        </div>
                         <div class="vision-control">
-                            <span>📽️ VISIÓN:</span>
+                            <span>📽️</span>
                             <select id="visionMode">
                                 <option value="OFF">APAGADO</option>
                                 <option value="CAMERA">CÁMARA</option>
@@ -199,7 +208,7 @@
     </div>
 
     <!-- Modal para Mobile (Chat Overlay) -->
-    <button id="mobileChatTrigger" class="mobile-chat-btn">💬</button>
+    <!-- Botón móvil eliminado a petición (Ya existe el botón NÚCLEO arriba) -->
 
     <script src="/web/js/app.js?v=2.0.2"></script>
 </body>

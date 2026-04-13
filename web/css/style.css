@@ -374,8 +374,10 @@ body {
     flex-direction: column;
     overflow: hidden !important;
     transition: max-height 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-    max-height: 800px;
+    max-height: 50vh; /* Limitado a la mitad de la pantalla para no empujar el chat */
     flex-shrink: 0;
+    overflow-y: auto;
+    z-index: 10;
 }
 
 .side-tech-panel.collapsed {
@@ -427,8 +429,9 @@ body {
 }
 
 .chat-messages {
-    flex: 1;
-    padding: 20px;
+    flex: 1 1 0; /* Permitir que se encoja agresivamente */
+    min-height: 0;
+    padding: 15px;
     overflow-y: auto;
     display: flex;
     flex-direction: column;
@@ -470,12 +473,15 @@ body {
 }
 
 .chat-input-area {
-    padding: 15px 20px;
-    background: rgba(0,0,0,0.3);
-    border-top: 1px solid rgba(255,255,255,0.05);
+    padding: 15px 20px 130px 20px; /* Elevado otros 40px (total 130px) */
+    background: rgba(0,0,0,0.4);
+    border-top: 1px solid rgba(255,255,255,0.08);
     display: flex;
     flex-direction: column;
     gap: 12px;
+    flex-shrink: 0;
+    position: relative;
+    z-index: 5;
 }
 
 .main-input-row { display: flex; gap: 10px; width: 100%; }
@@ -499,12 +505,50 @@ body {
     font-size: 1.2rem;
 }
 
-.extra-controls-row { display: flex; justify-content: space-between; align-items: center; }
-.vision-control {
-    display: flex; align-items: center; gap: 8px;
-    background: rgba(255,255,255,0.03); padding: 5px 12px; border-radius: 8px;
+.extra-controls-row { 
+    display: flex; 
+    justify-content: flex-start; 
+    align-items: center; 
+    gap: 10px;
+    flex-wrap: wrap;
 }
-.vision-control select { background: transparent; border: none; color: white; font-size: 0.75rem; cursor: pointer; }
+
+.chat-mode-control, .vision-control {
+    display: flex; 
+    align-items: center; 
+    gap: 8px;
+    background: rgba(255, 255, 255, 0.03); 
+    padding: 6px 12px; 
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    transition: border-color 0.2s;
+}
+
+.chat-mode-control:hover, .vision-control:hover {
+    border-color: var(--accent);
+}
+
+.chat-mode-control span, .vision-control span {
+    font-size: 0.65rem;
+    font-weight: 800;
+    color: var(--text-dim);
+    letter-spacing: 0.5px;
+}
+
+.chat-mode-control select, .vision-control select { 
+    background: transparent; 
+    border: none; 
+    color: white; 
+    font-size: 0.8rem; 
+    font-weight: 600;
+    cursor: pointer; 
+    outline: none;
+}
+
+.chat-mode-control select option {
+    background: #1a1a1a;
+    color: white;
+}
 
 .stop-btn {
     background: rgba(255, 68, 68, 0.1); color: #ff4444;
