@@ -15,7 +15,7 @@ echo ========================================
 echo Esperando a que todo inicie...
 echo.
 echo Cuando veas la URL en la ventana CLOUDFLARED, esa es tu URL FIJA.
-echo Sera: https://asimod.noglowgames.com
+echo Sera: https://...
 echo.
 echo Copiala y pegala en tu navegador del movil.
 echo.
