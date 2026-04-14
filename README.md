@@ -165,4 +165,71 @@ To ensure your modules work flawlessly with the Agentic Engine, follow these bes
 
 ---
 
+## 🔧 Creating & Integrating Your Own Module
+
+Drop a Python file (or folder) into the `modules/` directory. ASIMOD will auto-discover it at startup — no registration required.
+
+### 📁 File Structure
+
+Two valid structures:
+
+```
+modules/
+├── my_module.py              # Option A: single file
+└── my_module/                # Option B: package (recommended)
+    └── __init__.py           # ← the system looks for this file
+```
+
+> ⚠️ Folders named `widgets` or starting with `__` are reserved and will be ignored.
+
+---
+
+### ✅ Minimum Requirements
+
+Your class **must** inherit from `BaseModule` and be **defined locally** in the file (not imported from elsewhere):
+
+```python
+from core.base_module import BaseModule
+
+class MyModule(BaseModule):
+    def __init__(self, chat_service, config_service, style_service, data_service=None):
+        super().__init__(chat_service, config_service, style_service, data_service)
+        self.name = "My Module"     # Display name in the sidebar
+        self.id   = "my_module"     # Unique ID — no spaces
+        self.icon = "🚀"            # Emoji shown in the nav menu
+
+    def get_widget(self, parent):   # REQUIRED: return a Tkinter Frame
+        import tkinter as tk
+        frame = tk.Frame(parent, bg=self.style.get_color("bg_main"))
+        tk.Label(frame, text="Hello from My Module!",
+                 fg=self.style.get_color("text_main"),
+                 bg=self.style.get_color("bg_main")).pack(expand=True)
+        return frame
+```
+
+---
+
+### 🛠️ Optional Hooks
+
+| Method | When it's called | Purpose |
+|---|---|---|
+| `get_widget(parent)` | When the module is displayed | **Required.** Returns the UI frame |
+| `get_voice_commands()` | When the module activates | Register voice/agent commands |
+| `on_voice_command(slug, text)` | When a voice command is detected | React to commands |
+| `on_activate()` | When the user opens the module | Initialize state |
+| `on_deactivate()` | When switching to another module | Clean up resources |
+
+---
+
+### 🧰 Available Services via `self`
+
+| Attribute | What it provides |
+|---|---|
+| `self.chat_service` | LLM inference, STT, and TTS |
+| `self.config_service` | Persistent settings (read/write) |
+| `self.style` | Active theme colors and fonts |
+| `self.data_service` | Shared SQLite database |
+
+---
+
 Developed with ❤️ for the **ASIMOD Ecosystem**.
