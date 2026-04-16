@@ -88,7 +88,8 @@ class AgendaModule(BaseModule):
         self.lbl_date.config(text=date_str)
         
         # Programar siguiente actualización en 1 minuto
-        self.lbl_time.after(60000, self._update_time)
+        if self.lbl_time.winfo_exists():
+            self.lbl_time.after(60000, lambda: self._update_time() if self.lbl_time.winfo_exists() else None)
 
     def _update_weather(self):
         """Obtiene clima actual de forma asíncrona (thread simple)."""
@@ -97,8 +98,10 @@ class AgendaModule(BaseModule):
         def fetch():
             data = WeatherService.get_weather()
             if data:
-                self.lbl_temp.after(0, lambda: self.lbl_temp.config(text=f"{data['temp']}°"))
-                self.lbl_condition.after(0, lambda: self.lbl_condition.config(text=data['condition']))
+                if self.lbl_temp.winfo_exists():
+                    self.lbl_temp.after(0, lambda: self.lbl_temp.config(text=f"{data['temp']}°") if self.lbl_temp.winfo_exists() else None)
+                if self.lbl_condition.winfo_exists():
+                    self.lbl_condition.after(0, lambda: self.lbl_condition.config(text=data['condition']) if self.lbl_condition.winfo_exists() else None)
 
         threading.Thread(target=fetch, daemon=True).start()
 

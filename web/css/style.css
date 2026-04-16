@@ -23,6 +23,12 @@
     --glass-border: rgba(255, 255, 255, 0.08);
     --glass-blur: blur(12px);
     --shadow-premium: 0 10px 40px rgba(0, 0, 0, 0.3);
+
+    /* Dynamic Background Images (filled by JS) */
+    --bg-img-center: none;
+    --bg-img-sidebar: none;
+    --bg-img-chat: none;
+    --bg-img-box: none;
 }
 
 * {
@@ -34,6 +40,10 @@
 body {
     font-family: 'Outfit', sans-serif;
     background-color: var(--bg-main);
+    background-image: var(--bg-img-center);
+    background-size: cover;
+    background-position: center;
+    background-attachment: fixed;
     color: var(--text-main);
     overflow: hidden;
     height: 100vh;
@@ -49,14 +59,20 @@ body {
 /* Sidebar */
 .sidebar {
     width: var(--sidebar-width);
+    background-image: var(--bg-img-sidebar);
+    background-position: center center;
+    background-size: cover;
+    background-repeat: no-repeat;
     background-color: var(--bg-sidebar);
-    border-right: 1px solid rgba(255, 255, 255, 0.05);
+    backdrop-filter: blur(20px);
+    border-right: 1px solid rgba(255, 255, 255, 0.1);
     display: flex;
     flex-direction: column;
     z-index: 100;
     transition: width var(--transition-speed) cubic-bezier(0.4, 0, 0.2, 1);
     position: relative;
     flex-shrink: 0;
+    box-shadow: 10px 0 30px rgba(0,0,0,0.3);
 }
 
 .sidebar.collapsed {
@@ -153,19 +169,20 @@ body {
     flex: 1;
     display: flex;
     flex-direction: column;
-    background-color: var(--bg-main);
+    background: transparent; /* Ver el fondo del body */
     min-width: 0; 
     transition: all var(--transition-speed);
 }
 
 .top-nav {
     height: 70px;
-    background-color: var(--bg-header);
+    background: rgba(13, 13, 20, 0.4);
+    backdrop-filter: blur(15px);
     display: flex;
     align-items: center;
     justify-content: space-between;
     padding: 0 25px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
     flex-shrink: 0;
 }
 
@@ -290,20 +307,42 @@ body {
 .gallery-nav-back {
     display: flex;
     align-items: center;
-    gap: 10px;
-    padding: 12px 15px;
-    margin-bottom: 20px;
-    background: rgba(255, 255, 255, 0.05);
-    border-radius: 12px;
+    gap: 15px;
+    padding: 15px 20px;
+    margin-bottom: 15px;
+    background: rgba(0, 163, 255, 0.1);
+    border: 1px solid rgba(0, 163, 255, 0.2);
+    border-radius: 15px;
     cursor: pointer;
-    font-size: 0.8rem;
+    font-size: 0.9rem;
     font-weight: 700;
-    color: var(--accent);
-    transition: all 0.2s;
+    color: white;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .gallery-nav-back:hover {
-    background: rgba(255, 255, 255, 0.1);
+    background: rgba(0, 163, 255, 0.2);
+    transform: translateX(-5px);
+    box-shadow: 0 5px 20px rgba(0, 163, 255, 0.2);
+}
+
+.sis-item.is-back {
+    background: rgba(0, 163, 255, 0.08) !important;
+    border: 1px dashed rgba(0, 163, 255, 0.3) !important;
+    flex-direction: row !important;
+    justify-content: flex-start !important;
+    padding: 12px 20px !important;
+}
+
+.sis-item.is-back:hover {
+    background: rgba(0, 163, 255, 0.15) !important;
+    transform: translateX(-5px) !important;
+}
+
+.sis-item.is-back .icon {
+    font-size: 1.2rem !important;
+    margin-bottom: 0 !important;
+    margin-right: 15px;
 }
 
 .gallery-thumb {
@@ -338,24 +377,42 @@ body {
 
 .workspace-area {
     flex: 1;
-    padding: 30px;
+    padding: 30px; /* Margen para ver el BackgroundCenter.png */
     overflow-y: auto;
     display: flex;
     justify-content: center;
 }
 
-.workspace-content { max-width: 1200px; width: 100%; }
+.workspace-content { 
+    max-width: 1400px; 
+    width: 100%; 
+    background-image: var(--bg-img-box);
+    background-position: center center;
+    background-size: cover;
+    background-repeat: no-repeat;
+    background-color: var(--bg-main); 
+    border-radius: 20px;
+    border: 1px solid rgba(255,255,255,0.1);
+    box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+    min-height: 100%;
+}
 
 /* Chat Side (The "Core" Panel) */
 .chat-side {
     width: var(--chat-width);
-    background: var(--bg-sidebar);
-    border-left: 1px solid rgba(255, 255, 255, 0.05);
+    background-image: var(--bg-img-chat);
+    background-position: center center;
+    background-size: cover;
+    background-repeat: no-repeat;
+    background-color: var(--bg-sidebar);
+    backdrop-filter: blur(25px);
+    border-left: 1px solid rgba(255, 255, 255, 0.1);
     display: flex;
     flex-direction: column;
     transition: width var(--transition-speed) cubic-bezier(0.4, 0, 0.2, 1), opacity var(--transition-speed);
     overflow: hidden;
     flex-shrink: 0;
+    box-shadow: -10px 0 30px rgba(0,0,0,0.3);
 }
 
 .chat-side.hidden {
@@ -687,13 +744,15 @@ body {
     grid-template-columns: repeat(2, 1fr);
     gap: 15px;
     align-content: start;
+    min-width: 0;
 }
 
 .mg-prompt-side {
-    flex: 1.2;
+    flex: 1;
     display: flex;
     flex-direction: column;
     gap: 10px;
+    min-width: 0;
 }
 
 .mg-prompt-side textarea {
@@ -707,9 +766,77 @@ body {
     font-size: 0.9rem;
     resize: none;
     outline: none;
+    max-width: 450px; /* Incrementado un poco */
+    width: 100%;
+    align-self: flex-end;
 }
 
-.mg-prompt-side textarea:focus { border-color: var(--accent); }
+.mg-neg-prompt {
+    height: 70px !important;
+    font-size: 0.75rem !important;
+    opacity: 0.7;
+    border-style: dashed !important;
+}
+
+.mg-prompt-side textarea:focus { border-color: var(--accent); opacity: 1; }
+
+.mg-ingredients-box {
+    width: 280px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    background: rgba(0,0,0,0.2);
+    border-radius: 15px;
+    padding: 15px;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.mg-ingredients-box label {
+    font-size: 0.6rem;
+    font-weight: 800;
+    color: var(--accent);
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+}
+
+.mg-ingredients-list {
+    flex: 1;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    max-height: 140px;
+    padding-right: 5px;
+}
+
+.ingredient-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: rgba(255, 255, 255, 0.03);
+    padding: 6px 10px;
+    border-radius: 8px;
+    transition: all 0.2s;
+}
+
+.ingredient-item:hover {
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.ingredient-item label {
+    font-size: 0.75rem !important;
+    color: var(--text-main) !important;
+    cursor: pointer;
+    font-weight: 500;
+    letter-spacing: 0 !important;
+    text-transform: none !important;
+}
+
+.mg-ing-check {
+    accent-color: var(--accent);
+    width: 14px;
+    height: 14px;
+}
 
 .mg-btn-generate {
     background: var(--accent);
@@ -717,8 +844,12 @@ body {
     border: none;
     padding: 14px;
     border-radius: 12px;
-    font-weight: 800;
     cursor: pointer;
+    font-weight: 600;
+    transition: all 0.2s;
+    max-width: 450px;
+    width: 100%;
+    align-self: flex-end;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -1091,5 +1222,178 @@ body {
 
     .mg-prompt-side textarea {
         min-height: 120px;
+    }
+}
+
+/* =========================================================
+   SISTEMA MODULE (Explorer) STYLES
+   ========================================================= */
+.sis-container {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 80vh;
+    gap: 15px;
+    animation: fadeIn 0.4s ease-out;
+}
+
+.sis-header {
+    background: var(--bg-header);
+    border-radius: 20px;
+    padding: 15px;
+    border: 1px solid rgba(255,255,255,0.05);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.sis-tabs {
+    display: flex;
+    gap: 10px;
+    overflow-x: auto;
+    padding-bottom: 5px;
+}
+
+.sis-tab {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.05);
+    color: var(--text-dim);
+    padding: 8px 16px;
+    border-radius: 12px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+}
+
+.sis-tab:hover {
+    background: rgba(255,255,255,0.08);
+    color: white;
+}
+
+.sis-tab.active {
+    background: var(--accent);
+    color: white;
+    box-shadow: 0 4px 15px rgba(0, 163, 255, 0.3);
+}
+
+.sis-path-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: rgba(0,0,0,0.2);
+    padding: 8px 12px;
+    border-radius: 12px;
+    border: 1px solid rgba(255,255,255,0.03);
+}
+
+.path-text {
+    flex: 1;
+    font-size: 0.75rem;
+    font-family: 'Consolas', monospace;
+    color: var(--accent);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.sis-body {
+    flex: 1;
+    display: flex;
+    gap: 15px;
+    min-height: 500px;
+}
+
+.sis-gallery-panel {
+    flex: 1;
+    background: rgba(0,0,0,0.2);
+    border-radius: 20px;
+    border: 1px solid rgba(255,255,255,0.05);
+    overflow-y: auto;
+    max-height: 70vh;
+}
+
+.sis-file-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 10px;
+    padding: 15px;
+}
+
+.sis-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 15px 10px;
+    border-radius: 15px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    text-align: center;
+    border: 1px solid transparent;
+}
+
+.sis-item:hover {
+    background: rgba(255,255,255,0.05);
+    transform: translateY(-2px);
+}
+
+.sis-item.selected {
+    background: rgba(0, 163, 255, 0.1);
+    border-color: rgba(0, 163, 255, 0.3);
+}
+
+.sis-item .icon {
+    font-size: 2.2rem;
+    margin-bottom: 8px;
+    filter: drop-shadow(0 5px 10px rgba(0,0,0,0.3));
+}
+
+.sis-item .name {
+    font-size: 0.75rem;
+    color: var(--text-dim);
+    word-break: break-all;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.sis-item.is-folder .icon { color: #f9d949; }
+.sis-item.is-file .name { color: #ddd; }
+
+.sis-viewer-panel {
+    flex: 1.2;
+    background: var(--bg-header);
+    border-radius: 20px;
+    border: 1px solid rgba(255,255,255,0.05);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    position: relative;
+    padding: 20px;
+}
+
+.viewer-placeholder {
+    text-align: center;
+    color: var(--text-dim);
+}
+
+.viewer-placeholder .icon {
+    font-size: 4rem;
+    opacity: 0.1;
+    margin-bottom: 20px;
+}
+
+@media (max-width: 1024px) {
+    .sis-body {
+        flex-direction: column;
+    }
+    .sis-gallery-panel {
+        max-height: 400px;
+    }
+    .sis-viewer-panel {
+        min-height: 300px;
     }
 }

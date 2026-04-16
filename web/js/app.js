@@ -104,16 +104,40 @@ class AsimodApp {
 
     async loadStyle() {
         try {
-            const resp = await fetch('/v1/style');
+            const resp = await fetch('/v1/style?t=' + new Date().getTime());
             if (!resp.ok) throw new Error("Style Error");
             const data = await resp.json();
             this.style = data;
             
+            const root = document.documentElement;
             if (data && data.colors) {
-                const root = document.documentElement;
+
                 Object.entries(data.colors).forEach(([key, value]) => {
                     const cssKey = `--${key.replace(/_/g, '-')}`;
                     root.style.setProperty(cssKey, value);
+                });
+            }
+
+            // --- NUEVO: Cargar texturas si el estilo las define (Glass Neon) ---
+            if (data && data.backgrounds) {
+                const bgMapping = {
+                    "center": "--bg-img-center",
+                    "sidebar": "--bg-img-sidebar",
+                    "chat": "--bg-img-chat",
+                    "module_box": "--bg-img-box"
+                };
+                Object.entries(data.backgrounds).forEach(([key, value]) => {
+                    const cssVar = bgMapping[key];
+                    if (cssVar) {
+                        // Convertir ruta de recurso en URL web válida
+                        const urlValue = value ? `url('/${value.replace(/\\/g, '/')}')` : 'none';
+                        root.style.setProperty(cssVar, urlValue);
+                    }
+                });
+            } else {
+                // Resetear si el tema no tiene imágenes
+                ["--bg-img-center", "--bg-img-sidebar", "--bg-img-chat", "--bg-img-box"].forEach(v => {
+                    root.style.setProperty(v, 'none');
                 });
             }
         } catch (e) {
@@ -257,9 +281,12 @@ class AsimodApp {
 
     async renderWorkspace(mod) {
         if (!this.workspace) return;
+        console.log(`[ASIMOD] Renderizando workspace para: ${mod.id} (${mod.name})`);
+
+        const mid = mod.id.toLowerCase();
 
         // --- ESPECIAL: Media Generator Dashboard (Desktop Parity) ---
-        if (mod.id === 'media_generator') {
+        if (mid === 'media_generator') {
             this.workspace.innerHTML = `
                 <div class="mg-container">
                     <div class="mg-tabs" id="mgTabs">
@@ -282,8 +309,13 @@ class AsimodApp {
                     </div>
                     <div class="mg-footer">
                         <div class="mg-params-grid" id="mgParams"></div>
+                        <div id="mgIngredientsContainer" class="mg-ingredients-box" style="display:none;">
+                            <label>📦 REFERENCIAS / INGREDIENTES</label>
+                            <div id="mgIngredientsList" class="mg-ingredients-list"></div>
+                        </div>
                         <div class="mg-prompt-side">
-                            <textarea id="mgPrompt" placeholder="Describe lo que quieres crear..."></textarea>
+                            <textarea id="mgPrompt" placeholder="Describe lo que quieres crear... (PROMPT POSITIVO)"></textarea>
+                            <textarea id="mgNegPrompt" placeholder="Lo que NO quieres que aparezca... (PROMPT NEGATIVO)" class="mg-neg-prompt"></textarea>
                             <button id="mgBtnGenerate" class="mg-btn-generate">
                                 <span class="icon">✨</span> GENERAR CONTENIDO
                             </button>
@@ -295,6 +327,44 @@ class AsimodApp {
             return;
         }
         
+        // --- ESPECIAL: Sistema Module (Explorer Dashboard) ---
+        if (mid === 'sistema' || mod.name.toLowerCase() === 'sistema') {
+            const initialPath = "C:/";
+            this.workspace.innerHTML = `
+                <div class="sis-container">
+                    <div class="sis-header">
+                        <div class="sis-tabs" id="sisRoots">
+                            <button class="sis-tab active" data-root="Principal">🏠 Principal</button>
+                            <button class="sis-tab" data-root="Secundario">📀 Secundario</button>
+                            <button class="sis-tab" data-root="Descargas">📥 Descargas</button>
+                            <button class="sis-tab" data-root="Escritorio">🖥️ Escritorio</button>
+                        </div>
+                        <div class="sis-path-bar">
+                            <button id="sisBtnBack" class="icon-btn" title="Atrás">⬅</button>
+                            <span id="sisCurrentPath" class="path-text">${initialPath}</span>
+                            <button id="sisBtnRefresh" class="icon-btn" title="Refrescar">🔄</button>
+                        </div>
+                    </div>
+                    
+                    <div class="sis-body">
+                        <div class="sis-gallery-panel">
+                            <div class="sis-file-list" id="sisFileList">
+                                <div style="padding:40px; text-align:center; color:var(--text-dim);">Cargando explorador...</div>
+                            </div>
+                        </div>
+                        <div class="sis-viewer-panel" id="sisViewer">
+                            <div class="viewer-placeholder">
+                                <div class="icon">📂</div>
+                                <p>Selecciona un archivo del sistema para previsualizar</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            this.initSistemaPanel();
+            return;
+        }
+
         // --- Otros módulos: Carga Modular Dinámica ---
         if (mod.has_web_ui) {
             try {
@@ -320,6 +390,7 @@ class AsimodApp {
                 <div class="card" style="background:var(--bg-header); padding:60px; border-radius:30px; text-align:center; border: 1px solid rgba(255,255,255,0.05);">
                     <div style="font-size:4rem; margin-bottom:30px;">${mod.icon}</div>
                     <p style="color:var(--text-dim);">El módulo de ${mod.name} está bajo control.</p>
+                    <div style="margin-top:20px; font-size:0.7rem; color:var(--accent); font-family:monospace;">DEBUG: ID=${mod.id} | NAME=${mod.name}</div>
                 </div>
             </div>
         `;
@@ -784,12 +855,14 @@ class AsimodApp {
             if (data.can_go_back) {
                 const backBtn = document.createElement('div');
                 backBtn.className = 'gallery-nav-back';
-                backBtn.innerHTML = `<span>⬅</span> ATRÁS / PARENT`;
+                backBtn.innerHTML = `<span class="icon">⬅</span> Atrás (Subir nivel)`;
                 backBtn.onclick = (e) => {
                     e.stopPropagation();
-                    const parts = this.currentGalleryPath.split('/');
-                    parts.pop();
-                    this.loadGallery(parts.join('/'));
+                    const parts = this.currentGalleryPath.split(/[/\\]/);
+                    if (parts.length > 0) {
+                        parts.pop();
+                        this.loadGallery(parts.join('/'));
+                    }
                 };
                 this.galleryList.appendChild(backBtn);
             }
@@ -954,11 +1027,11 @@ class AsimodApp {
             const oldGalleryList = this.galleryList;
             this.galleryList = mgLocalGallery;
             
-            const tabs = ["Texto", "Imagen", "Audio", "Video", "3D"];
+            const tabs = ["Texto", "Imagen", "Audio", "Video", "3D", "Compuesta"];
             
             const renderTabs = () => {
                 mgTabs.innerHTML = tabs.map(t => {
-                    const id = t.toLowerCase() === 'imagen' ? 'imagen' : t.toLowerCase();
+                    const id = t.toLowerCase();
                     return `<button class="mg-tab-btn ${currentMode === id ? 'active' : ''}" data-mode="${id}">${t}</button>`;
                 }).join('');
                 
@@ -970,6 +1043,29 @@ class AsimodApp {
                         this.loadGallery(currentMode === 'imagen' ? 'imagen' : (currentMode === 'texto' ? 'texto' : currentMode));
                     };
                 });
+            };
+
+            const fetchIngredients = async () => {
+                try {
+                    const resp = await fetch(`/v1/modules/media_generator/action`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ action: 'list_all_compound_pieces' })
+                    });
+                    const res = await resp.json();
+                    if (res.status === 'success') {
+                        const ingredients = res.result.ingredients || [];
+                        const list = document.getElementById('mgIngredientsList');
+                        if (list) {
+                            list.innerHTML = ingredients.map(ing => `
+                                <div class="ingredient-item">
+                                    <input type="checkbox" class="mg-ing-check" id="ing_${ing.path}" value="${ing.path}">
+                                    <label for="ing_${ing.path}"> ${ing.category === 'Personaje' ? '👤' : (ing.category === 'Escenario' ? '🌄' : '⛺')} ${ing.name}</label>
+                                </div>
+                            `).join('');
+                        }
+                    }
+                } catch (e) { console.error("Error fetching ingredients:", e); }
             };
 
             const renderControls = () => {
@@ -1065,6 +1161,15 @@ class AsimodApp {
                     ` : ''}
                 `;
 
+                // Controlar visibilidad de ingredientes
+                const ingBox = document.getElementById('mgIngredientsContainer');
+                if (currentMode === 'compuesta') {
+                    if (ingBox) ingBox.style.display = 'flex';
+                    fetchIngredients();
+                } else {
+                    if (ingBox) ingBox.style.display = 'none';
+                }
+
                 // Eventos de botones de enlace
                 mgParams.querySelectorAll('.btn-link-gallery').forEach(btn => {
                     btn.onclick = () => {
@@ -1108,7 +1213,14 @@ class AsimodApp {
 
                 const workflowEl = document.getElementById('mgWorkflow');
                 const resEl = document.getElementById('mgRes');
+                const negPrompt = document.getElementById('mgNegPrompt')?.value || "";
                 
+                // Recoger ingredientes seleccionados
+                const selectedRefs = [];
+                document.querySelectorAll('.mg-ing-check:checked').forEach(cb => {
+                    selectedRefs.push(cb.value);
+                });
+
                 // Recoger inputs de referencia
                 const imgFiles = [];
                 for(let i=1; i<=3; i++) {
@@ -1125,7 +1237,7 @@ class AsimodApp {
                         engine: "ComfyUI",
                         workflow: workflowEl ? workflowEl.value : null,
                         res: resEl ? resEl.value : "1024x1024",
-                        type: currentMode === 'imagen' ? 'Simple' : currentMode,
+                        type: currentMode === 'imagen' ? 'Simple' : (currentMode === 'compuesta' ? 'Compuesto' : currentMode),
                         subtype: currentSub,
                         img_count: currentImgCount,
                         input_image_1: imgFiles[0] || imgBase || null,
@@ -1136,8 +1248,16 @@ class AsimodApp {
                         input_audio: audBase || null,
                         "3d_input_image": imgBase || null,
                         video_subtype: currentMode === 'video' ? currentSub : null,
-                        audio_type: currentMode === 'audio' ? currentSub : null
-                    }
+                        audio_type: currentMode === 'audio' ? currentSub : null,
+                        neg_prompt: negPrompt
+                    },
+                    compound: {
+                        type: currentMode === 'compuesta' ? 'Compuesto' : 'Simple',
+                        subtype: 'Productos', 
+                        category: currentSub.split('/')[0].charAt(0).toUpperCase() + currentSub.split('/')[0].slice(1), 
+                        references: selectedRefs
+                    },
+                    source_doc: currentMode === 'compuesta' ? (imgBase || imgFiles[0] || null) : null
                 };
 
                 try {
@@ -1216,6 +1336,191 @@ class AsimodApp {
         } catch (e) {
             console.error("[ASIMOD] Error en acción de módulo:", e);
         }
+    }
+
+    // --- Sistema Module Logic ---
+    async initSistemaPanel() {
+        const sisRoots = document.getElementById('sisRoots');
+        const sisFileList = document.getElementById('sisFileList');
+        const sisCurrentPath = document.getElementById('sisCurrentPath');
+        const sisBtnBack = document.getElementById('sisBtnBack');
+        const sisBtnRefresh = document.getElementById('sisBtnRefresh');
+        if (!sisRoots || !sisFileList) return;
+
+        let currentPath = '';
+
+        const loadGallery = async (path = "") => {
+            sisFileList.innerHTML = '<div style="padding:40px; text-align:center; color:var(--text-dim);">Cargando archivos...</div>';
+            try {
+                // Si el path es vacío, el backend del módulo sistema usará el root por defecto (Principal)
+                const resp = await fetch(`/v1/gallery?module_id=sistema&path=${encodeURIComponent(path)}`);
+                const data = await resp.json();
+                if (data.status === 'success') {
+                    currentPath = data.current_path;
+                    if (sisCurrentPath) sisCurrentPath.innerText = currentPath;
+                    if (sisBtnBack) sisBtnBack.style.opacity = data.is_root ? '0.3' : '1';
+                    renderItems(data.items, data.is_root);
+                } else {
+                    sisFileList.innerHTML = `<div style="padding:40px; text-align:center; color:red;">${data.message || 'Error'}</div>`;
+                }
+            } catch (e) {
+                sisFileList.innerHTML = `<div style="padding:40px; text-align:center; color:red;">Error de conexión</div>`;
+            }
+        };
+
+        const renderItems = (items, isRoot) => {
+            if (!items || items.length === 0) {
+                sisFileList.innerHTML = '<div style="padding:40px; text-align:center; color:var(--text-dim);">Carpeta vacía</div>';
+                if (!isRoot) {
+                    sisFileList.insertAdjacentHTML('afterbegin', `
+                        <div class="sis-item is-back" style="grid-column: 1 / -1;">
+                            <span class="icon">⬅</span>
+                            <span class="name">Subir un nivel</span>
+                        </div>
+                    `);
+                    sisFileList.querySelector('.is-back').onclick = () => {
+                        const parts = currentPath.split(/[/\\]/);
+                        parts.pop();
+                        loadGallery(parts.join('/') || '/');
+                    };
+                }
+                return;
+            }
+
+            let html = '';
+            if (!isRoot) {
+                html += `
+                    <div class="sis-item is-back" style="grid-column: 1 / -1; background: rgba(0, 163, 255, 0.05);">
+                        <span class="icon">⬅</span>
+                        <span class="name">SUBIR UN NIVEL (ATRÁS)</span>
+                    </div>
+                `;
+            }
+
+            html += items.map(item => `
+                <div class="sis-item ${item.type === 'folder' ? 'is-folder' : 'is-file'}" data-path="${item.path}" data-type="${item.type}" data-url="${item.url || ''}">
+                    <span class="icon">${this.getIconForType(item.type)}</span>
+                    <span class="name">${item.name}</span>
+                </div>
+            `).join('');
+
+            sisFileList.innerHTML = html;
+
+            const backBtn = sisFileList.querySelector('.is-back');
+            if (backBtn) {
+                backBtn.onclick = () => {
+                    const parts = currentPath.split(/[/\\]/);
+                    parts.pop();
+                    loadGallery(parts.join('/') || '/');
+                };
+            }
+
+            sisFileList.querySelectorAll('.sis-item:not(.is-back)').forEach(el => {
+                el.onclick = () => {
+                    const type = el.getAttribute('data-type');
+                    const path = el.getAttribute('data-path');
+                    const url = el.getAttribute('data-url');
+                    
+                    if (type === 'folder') {
+                        loadGallery(path);
+                    } else {
+                        // Resaltar seleccionado
+                        sisFileList.querySelectorAll('.sis-item').forEach(i => i.classList.remove('selected'));
+                        el.classList.add('selected');
+                        this.previewSistemaMedia({
+                            name: el.querySelector('.name').innerText,
+                            type: type,
+                            url: url,
+                            path: path
+                        });
+                    }
+                };
+            });
+        };
+
+        // Eventos de Navegación
+        sisRoots.querySelectorAll('.sis-tab').forEach(btn => {
+            btn.onclick = () => {
+                sisRoots.querySelectorAll('.sis-tab').forEach(t => t.classList.remove('active'));
+                btn.classList.add('active');
+                // Al cambiar de raíz en la web, mandamos una acción al módulo si fuera necesario, 
+                // pero aquí simplemente forzamos el on_menu_change vía una petición de galería vacía con el modo
+                // En este caso, el SistemaModule.handle_get_gallery usará el modo activo del backend si no pasamos path.
+                // O mejor, implementamos una acción de cambio de raíz.
+                this.executeModuleAction('on_menu_change', {mode: btn.getAttribute('data-root')}).then(() => {
+                    loadGallery("");
+                });
+            };
+        });
+
+        if (sisBtnBack) {
+            sisBtnBack.onclick = () => {
+                // Navegación hacia arriba: cortamos el último segmento
+                const parts = currentPath.split(/[/\\]/);
+                if (parts.length > 1) {
+                    parts.pop();
+                    const parent = parts.join('/') || '/';
+                    loadGallery(parent);
+                }
+            };
+        }
+
+        if (sisBtnRefresh) sisBtnRefresh.onclick = () => loadGallery(currentPath);
+
+        // Carga inicial
+        await loadGallery("");
+    }
+
+    getIconForType(type) {
+        switch(type) {
+            case 'folder': return '📁';
+            case 'image': return '🖼️';
+            case 'video': return '🎬';
+            case 'audio': return '🎵';
+            case 'pdf': return '📄';
+            case '3d': return '🧊';
+            default: return '📄';
+        }
+    }
+
+    previewSistemaMedia(item) {
+        const viewer = document.getElementById('sisViewer');
+        if (!viewer) return;
+
+        let html = `
+            <div class="media-viewer-premium">
+                <h3 style="margin-bottom:20px; color:var(--text-dim); font-size:0.8rem;">ARCHIVO: ${item.name}</h3>
+        `;
+
+        if (item.type === 'image') {
+            html += `<img src="${item.url}" alt="${item.name}" style="max-height: 80vh;">`;
+        } else if (item.type === 'video') {
+            html += `<video src="${item.url}" controls autoplay loop style="width:100%;"></video>`;
+        } else if (item.type === 'audio') {
+            html += `
+                <div class="audio-player-premium">
+                    <span style="font-size:2rem;">🔊</span>
+                    <div style="flex:1; text-align:left;">
+                        <div style="font-weight:700; margin-bottom:5px;">Reproduciendo Audio</div>
+                        <div style="font-size:0.7rem; color:var(--text-dim);">${item.name}</div>
+                    </div>
+                </div>
+                <audio src="${item.url}" controls autoplay style="width:100%; margin-top:20px;"></audio>
+            `;
+        } else if (item.type === 'pdf') {
+            html += `<iframe src="${item.url}" style="width:100%; height:70vh; border:none; border-radius:10px;"></iframe>`;
+        } else {
+            html += `
+                <div class="card" style="padding:100px; text-align:center;">
+                    <div style="font-size:4rem; margin-bottom:20px;">📄</div>
+                    <h3>${item.name}</h3>
+                    <p style="color:var(--text-dim);">Este formato se previsualiza mejor en la aplicación de escritorio.</p>
+                </div>
+            `;
+        }
+        
+        html += '</div>';
+        viewer.innerHTML = html;
     }
 }
 

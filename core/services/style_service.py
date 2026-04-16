@@ -61,6 +61,10 @@ class StyleService:
         """Retorna un color del tema actual."""
         return self.current_theme.get("colors", {}).get(key, "#ff00ff") # Magenta fallback para detectar errores
 
+    def get_background(self, key):
+        """Retorna la ruta de imagen de fondo para un componente si existe."""
+        return self.current_theme.get("backgrounds", {}).get(key)
+
     def get_available_styles_names(self):
         """Retorna un diccionario de {id: nombre_legible}."""
         return {sid: data.get("name", sid) for sid, data in self.available_styles.items()}

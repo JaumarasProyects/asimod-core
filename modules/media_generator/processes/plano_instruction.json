@@ -1,0 +1,28 @@
+{
+    "type": "Plano",
+    "description": "Receta para la creación de un Plano (Shot) combinando ingredientes.",
+    "grades": {
+        "1": {
+            "panel": "Texto",
+            "instruction": "Define los parámetros técnicos del plano y asocia los ingredientes necesarios."
+        },
+        "2": {
+            "panel": "Imagen",
+            "workflow_folder": "workflows/compuesta/plano/imagen",
+            "default_workflow": "shot_composition.json",
+            "prompt_template": "Composición de plano: {tipo_plano}, {tipo_toma}. Cámara: {movimiento_camara}. Elementos: {referencias_ingredientes}.",
+            "narrative_enrichment": true,
+            "audio_planning": true
+        },
+        "3": {
+            "panel": "Audio",
+            "workflow_folder": "workflows/compuesta/plano/audio",
+            "default_workflow": "shot_audio.json"
+        },
+        "4": {
+            "panel": "Video",
+            "workflow_folder": "workflows/compuesta/plano/video",
+            "default_workflow": "shot_render.json"
+        }
+    }
+}

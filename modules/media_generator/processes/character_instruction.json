@@ -1,0 +1,28 @@
+{
+    "type": "Personaje",
+    "description": "Receta para la creación y evolución de un personaje.",
+    "grades": {
+        "1": {
+            "panel": "Texto",
+            "instruction": "Define los rasgos básicos del personaje: nombre, edad, historia y personalidad."
+        },
+        "2": {
+            "panel": "Imagen",
+            "workflow_folder": "workflows/compuesta/personaje/imagen",
+            "default_workflow": "character_sheet.json",
+            "prompt_template": "Crea una hoja de diseño detallada del personaje {nombre}. Rasgos: {historia}. Personalidad: {personalidad}.",
+            "narrative_enrichment": true,
+            "audio_planning": true
+        },
+        "3": {
+            "panel": "Audio",
+            "workflow_folder": "workflows/compuesta/personaje/audio",
+            "default_workflow": "character_voice.json"
+        },
+        "4": {
+            "panel": "Video",
+            "workflow_folder": "workflows/compuesta/personaje/video",
+            "default_workflow": "character_animation.json"
+        }
+    }
+}

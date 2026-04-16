@@ -1,4 +1,5 @@
 import tkinter as tk
+from .image_button import ImageButton
 
 class HorizontalMenu(tk.Frame):
     """
@@ -34,25 +35,38 @@ class HorizontalMenu(tk.Frame):
 
     def init_ui(self):
         # Contenedor central para los botones
-        self.content_frame = tk.Frame(self, bg=self.bg_color)
+        ghost_bg = self.style.get_color("bg_main") if self.style else self.bg_color
+        
+        self.config(bg=ghost_bg)
+        self.content_frame = tk.Frame(self, bg=ghost_bg)
         self.content_frame.pack(side=tk.LEFT, fill=tk.Y)
 
         for item in self.items:
             # Contenedor para el botón + indicador (opcional)
-            btn_frame = tk.Frame(self.content_frame, bg=self.bg_color)
+            btn_frame = tk.Frame(self.content_frame, bg=ghost_bg)
             btn_frame.pack(side=tk.LEFT, padx=10)
 
-            btn = tk.Label(btn_frame, text=item.upper(), bg=self.bg_color, fg=self.text_color,
-                           font=("Arial", 9, "bold"), cursor="hand2", padx=10, pady=10)
+            # Si el estilo tiene imagen de fondo para botones, usamos ImageButton
+            has_btn_img = self.style.get_background("button") if self.style else False
+            
+            if has_btn_img:
+                btn = ImageButton(btn_frame, text=item.upper(), style=self.style, 
+                                  callback=lambda it=item: self._on_item_click(it),
+                                  font=("Arial", 9, "bold"), padx=20, pady=15)
+            else:
+                btn = tk.Label(btn_frame, text=item.upper(), bg=self.bg_color, fg=self.text_color,
+                               font=("Arial", 9, "bold"), cursor="hand2", padx=10, pady=10)
+                btn.bind("<Button-1>", lambda e, it=item: self._on_item_click(it))
+            
             btn.pack()
             
             # Línea indicadora inferior
             indicator = tk.Frame(btn_frame, bg=self.bg_color, height=2)
             indicator.pack(fill=tk.X, side=tk.BOTTOM)
             
-            # Eventos
-            btn.bind("<Button-1>", lambda e, it=item: self._on_item_click(it))
+            # Eventos (ImageButton ya maneja el clic y parte del hover, pero los sincronizamos)
             btn.bind("<Enter>", lambda e, b=btn, i=indicator: self._on_hover(b, i, True))
+            btn.bind("<Leave>", lambda e, b=btn, i=indicator, it=item: self._on_hover(b, i, False, it))
             btn.bind("<Leave>", lambda e, b=btn, i=indicator, it=item: self._on_hover(b, i, False, it))
             
             self.buttons[item] = {"btn": btn, "indicator": indicator}
@@ -74,7 +88,10 @@ class HorizontalMenu(tk.Frame):
         # Activar nuevo
         self.active_item = item
         curr = self.buttons[item]
-        curr["btn"].config(fg=self.active_text_color)
+        if isinstance(curr["btn"], ImageButton):
+            curr["btn"].set_active(True)
+        else:
+            curr["btn"].config(fg=self.active_text_color)
         curr["indicator"].config(bg=self.active_color)
         
         # Notificar
@@ -86,9 +103,15 @@ class HorizontalMenu(tk.Frame):
             return
             
         if enter:
-            btn.config(fg=self.active_text_color)
+            if isinstance(btn, ImageButton):
+                btn.set_active(True)
+            else:
+                btn.config(fg=self.active_text_color)
         else:
-            btn.config(fg=self.text_color)
+            if isinstance(btn, ImageButton):
+                btn.set_active(False)
+            else:
+                btn.config(fg=self.text_color)
 
     def select(self, item):
         """Selecciona un ítem programáticamente."""

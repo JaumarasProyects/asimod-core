@@ -1,0 +1,929 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chess Master</title>
+    <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;600;700&family=Roboto+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/chessboard-js/1.0.0/chessboard-1.0.0.min.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --bg-primary: #0f0f1a;
+            --bg-secondary: #1a1a2e;
+            --bg-panel: #16213e;
+            --board-light: #16213e;
+            --board-dark: #0f0f1a;
+            --accent-cyan: #00d9ff;
+            --accent-coral: #ff6b6b;
+            --accent-gold: #ffd700;
+            --text-primary: #ffffff;
+            --text-secondary: #8892b0;
+            --shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+        }
+
+        body {
+            font-family: 'Rajdhani', sans-serif;
+            background: var(--bg-primary);
+            background-image: 
+                radial-gradient(ellipse at top, #1a1a2e 0%, transparent 50%),
+                radial-gradient(ellipse at bottom right, rgba(0, 217, 255, 0.1) 0%, transparent 40%);
+            min-height: 100vh;
+            color: var(--text-primary);
+            overflow-x: hidden;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        header {
+            text-align: center;
+            padding: 20px 0 30px;
+        }
+
+        h1 {
+            font-size: 2.5rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--accent-cyan), var(--accent-coral));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            letter-spacing: 3px;
+            text-transform: uppercase;
+        }
+
+        .mode-selector {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            margin: 25px 0;
+            flex-wrap: wrap;
+        }
+
+        .mode-btn {
+            padding: 12px 30px;
+            font-family: 'Rajdhani', sans-serif;
+            font-size: 1.1rem;
+            font-weight: 600;
+            border: 2px solid var(--text-secondary);
+            background: transparent;
+            color: var(--text-primary);
+            cursor: pointer;
+            transition: all 0.3s ease;
+            border-radius: 8px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .mode-btn:hover {
+            transform: scale(1.05);
+            border-color: var(--accent-cyan);
+            box-shadow: 0 0 20px rgba(0, 217, 255, 0.3);
+        }
+
+        .mode-btn.active {
+            border-color: var(--accent-cyan);
+            background: rgba(0, 217, 255, 0.1);
+            box-shadow: 0 0 25px rgba(0, 217, 255, 0.4);
+        }
+
+        .game-container {
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            gap: 30px;
+            flex-wrap: wrap;
+        }
+
+        .board-wrapper {
+            background: var(--bg-panel);
+            padding: 20px;
+            border-radius: 16px;
+            box-shadow: var(--shadow);
+            position: relative;
+            min-height: 520px;
+        }
+
+        #board {
+            width: 480px;
+            max-width: 100%;
+        }
+
+        #board .white-1e1d7 {
+            background-color: var(--board-light) !important;
+            border: 1px solid #1a2a4a;
+        }
+
+        #board .black-3c85d {
+            background-color: var(--board-dark) !important;
+            border: 1px solid #1a2a4a;
+        }
+
+        .piece-417db {
+            z-index: 10;
+        }
+
+        .side-panel {
+            width: 280px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .panel {
+            background: var(--bg-panel);
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: var(--shadow);
+        }
+
+        .panel h3 {
+            font-size: 1rem;
+            color: var(--accent-cyan);
+            margin-bottom: 12px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            border-bottom: 1px solid rgba(0, 217, 255, 0.3);
+            padding-bottom: 8px;
+        }
+
+        .turn-indicator {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            font-size: 1.2rem;
+            font-weight: 600;
+        }
+
+        .turn-piece {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.8rem;
+            background: var(--bg-secondary);
+            transition: all 0.3s ease;
+        }
+
+        .turn-piece.white {
+            color: #fff;
+            text-shadow: 0 0 10px rgba(255,255,255,0.5);
+        }
+
+        .turn-piece.black {
+            color: #000;
+            background: #888;
+        }
+
+        .turn-piece.active {
+            box-shadow: 0 0 15px var(--accent-cyan);
+            transform: scale(1.1);
+        }
+
+        .captured-pieces {
+            display: flex;
+            gap: 10px;
+            min-height: 30px;
+            flex-wrap: wrap;
+        }
+
+        .captured-piece {
+            font-size: 1.4rem;
+            opacity: 0.7;
+        }
+
+        .moves-list {
+            font-family: 'Roboto Mono', monospace;
+            font-size: 0.85rem;
+            max-height: 200px;
+            overflow-y: auto;
+            color: var(--text-secondary);
+        }
+
+        .moves-list::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .moves-list::-webkit-scrollbar-track {
+            background: var(--bg-secondary);
+            border-radius: 3px;
+        }
+
+        .moves-list::-webkit-scrollbar-thumb {
+            background: var(--accent-cyan);
+            border-radius: 3px;
+        }
+
+        .move-item {
+            display: inline-block;
+            padding: 3px 6px;
+            margin: 2px;
+            background: var(--bg-secondary);
+            border-radius: 4px;
+            transition: all 0.2s ease;
+        }
+
+        .move-item:hover {
+            background: rgba(0, 217, 255, 0.2);
+        }
+
+        .move-number {
+            color: var(--accent-cyan);
+            margin-right: 5px;
+        }
+
+        .game-status {
+            padding: 10px 15px;
+            border-radius: 8px;
+            font-weight: 600;
+            text-align: center;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            transition: all 0.3s ease;
+        }
+
+        .status-check {
+            background: rgba(255, 107, 107, 0.2);
+            border: 1px solid var(--accent-coral);
+            color: var(--accent-coral);
+            animation: pulse 1s infinite;
+        }
+
+        .status-checkmate {
+            background: rgba(255, 215, 0, 0.2);
+            border: 1px solid var(--accent-gold);
+            color: var(--accent-gold);
+        }
+
+        .status-playing {
+            background: rgba(0, 217, 255, 0.1);
+            border: 1px solid var(--accent-cyan);
+            color: var(--accent-cyan);
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.6; }
+        }
+
+        .controls {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .control-btn {
+            flex: 1;
+            min-width: 80px;
+            padding: 10px 15px;
+            font-family: 'Rajdhani', sans-serif;
+            font-size: 0.9rem;
+            font-weight: 600;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+        }
+
+        .btn-primary {
+            background: var(--accent-cyan);
+            color: var(--bg-primary);
+        }
+
+        .btn-danger {
+            background: var(--accent-coral);
+            color: var(--bg-primary);
+        }
+
+        .btn-secondary {
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            border: 1px solid var(--text-secondary);
+        }
+
+        .control-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+        }
+
+        .ai-level {
+            margin-top: 10px;
+        }
+
+        .ai-level label {
+            display: block;
+            margin-bottom: 8px;
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+
+        .ai-level select {
+            width: 100%;
+            padding: 10px;
+            font-family: 'Rajdhani', sans-serif;
+            font-size: 1rem;
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            border: 1px solid var(--text-secondary);
+            border-radius: 6px;
+            cursor: pointer;
+        }
+
+        .online-panel {
+            display: none;
+        }
+
+        .online-panel.visible {
+            display: block;
+        }
+
+        .room-input {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+
+        .room-input input {
+            flex: 1;
+            padding: 10px;
+            font-family: 'Roboto Mono', monospace;
+            font-size: 1rem;
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            border: 1px solid var(--text-secondary);
+            border-radius: 6px;
+            text-align: center;
+            letter-spacing: 2px;
+        }
+
+        .room-input input:focus {
+            outline: none;
+            border-color: var(--accent-cyan);
+        }
+
+        .connection-status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.9rem;
+            margin-top: 10px;
+        }
+
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: var(--text-secondary);
+        }
+
+        .status-dot.connected {
+            background: #4ade80;
+            box-shadow: 0 0 10px #4ade80;
+        }
+
+        .status-dot.connecting {
+            background: var(--accent-gold);
+            animation: blink 1s infinite;
+        }
+
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+
+        .waiting-message {
+            text-align: center;
+            padding: 20px;
+            color: var(--text-secondary);
+        }
+
+        .your-color {
+            font-size: 1.2rem;
+            text-align: center;
+            padding: 15px;
+            background: var(--bg-secondary);
+            border-radius: 8px;
+            margin-top: 10px;
+        }
+
+        .your-color span {
+            color: var(--accent-cyan);
+            font-weight: 700;
+        }
+
+        @media (max-width: 900px) {
+            #board {
+                width: 380px;
+            }
+            
+            .side-panel {
+                width: 100%;
+                flex-direction: row;
+                flex-wrap: wrap;
+            }
+            
+            .panel {
+                flex: 1;
+                min-width: 200px;
+            }
+        }
+
+        @media (max-width: 500px) {
+            h1 {
+                font-size: 1.8rem;
+            }
+            
+            #board {
+                width: 320px;
+            }
+            
+            .board-wrapper {
+                padding: 10px;
+            }
+            
+            .mode-btn {
+                padding: 10px 20px;
+                font-size: 0.9rem;
+            }
+        }
+
+        .highlight-valid {
+            background: radial-gradient(circle, rgba(0, 217, 255, 0.5) 0%, transparent 70%);
+        }
+
+        .highlight-last-move {
+            background: rgba(255, 215, 0, 0.3);
+        }
+
+        .highlight-check {
+            box-shadow: inset 0 0 20px rgba(255, 107, 107, 0.6);
+        }
+
+        .chessboard-piece {
+            filter: drop-shadow(0 0 2px rgba(255,255,255,0.3));
+            transition: filter 0.2s ease;
+        }
+
+        .chessboard-piece:hover {
+            filter: drop-shadow(0 0 5px rgba(0,217,255,0.6));
+        }
+    
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 40px;
+            height: 20px;
+        }
+
+        .switch input { 
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #333;
+            transition: .4s;
+            border-radius: 20px;
+        }
+
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 14px;
+            width: 14px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+
+        input:checked + .slider {
+            background-color: var(--accent-cyan);
+            box-shadow: 0 0 10px var(--accent-cyan);
+        }
+
+        input:checked + .slider:before {
+            transform: translateX(20px);
+        }
+
+        .agent-config-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+            font-size: 0.9rem;
+            color: var(--text-primary);
+        }
+
+        .threat-alert {
+            color: var(--accent-coral);
+            font-weight: bold;
+            font-size: 0.8rem;
+            margin-top: 5px;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 0.7; }
+            50% { opacity: 1; }
+            100% { opacity: 0.7; }
+        }
+
+        .highlight-selected { background-color: #1e3a5f !important; }
+        .highlight-valid { background-color: #1a4a4a !important; }
+        .highlight-last { background-color: #223344 !important; }
+</style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>♔ Chess Master</h1>
+            <div class="mode-selector">
+                <button class="mode-btn active" data-mode="ai">vs IA</button>
+                <button class="mode-btn" data-mode="online">vs Jugador</button>
+            </div>
+        </header>
+
+        <div class="game-container">
+            <div class="board-wrapper">
+                <div id="board"></div>
+            </div>
+
+            <div class="side-panel">
+                <div class="panel">
+                    <h3>Estado</h3>
+                    <div class="game-status status-playing" id="gameStatus">Juego en progreso</div>
+                </div>
+
+                <div class="panel">
+                    <h3>Turno</h3>
+                    <div class="turn-indicator">
+                        <div class="turn-piece white active" id="whiteTurn">♔</div>
+                        <span id="turnText">Blancas</span>
+                        <div class="turn-piece black" id="blackTurn">♚</div>
+                    </div>
+                </div>
+
+                <div class="panel">
+                    <h3>Capturadas</h3>
+                    <div class="captured-pieces" id="capturedWhite"></div>
+                    <div class="captured-pieces" id="capturedBlack"></div>
+                </div>
+
+                <div class="panel" id="asimodAgentPanel">
+                    <h3>Control ASIMOD (Agente)</h3>
+                    <div class="agent-config-row">
+                        <span>Asimod juega Blancas</span>
+                        <label class="switch">
+                            <input type="checkbox" id="asimodW">
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+                    <div class="agent-config-row">
+                        <span>Asimod juega Negras</span>
+                        <label class="switch">
+                            <input type="checkbox" id="asimodB">
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+                    <div class="agent-config-row">
+                        <span>Fallos Máx. IA</span>
+                        <input type="number" id="asimodRetries" value="5" min="1" max="50" style="width: 50px; background: var(--bg-secondary); color: white; border: 1px solid var(--text-secondary); border-radius: 4px; text-align: center;">
+                    </div>
+                </div>
+
+                <div class="panel" id="aiPanel">
+                    <h3>Dificultad IA Motor</h3>
+                    <div class="ai-level">
+                        <select id="aiDifficulty" disabled>
+                            <option value="1">1 - Principiante</option>
+                            <option value="2" selected>2 - Medio</option>
+                            <option value="3">3 - Avanzado</option>
+                            <option value="4">4 - MAESTRO</option>
+                        </select>
+                        <p style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 5px;">Gestionado por servidor PC</p>
+                    </div>
+                </div>
+
+                <div class="panel">
+                    <h3>JUGADORES</h3>
+                    <div style="margin-bottom: 10px;">
+                        <input type="text" id="p1Name" value="Jugador 1" style="width: 100%; padding: 8px; background: var(--bg-secondary); color: white; border: 1px solid var(--text-secondary); margin-bottom: 5px; border-radius: 4px; font-family: 'Rajdhani', sans-serif;">
+                        <input type="text" id="p2Name" value="Jugador 2" style="width: 100%; padding: 8px; background: var(--bg-secondary); color: white; border: 1px solid var(--text-secondary); border-radius: 4px; font-family: 'Rajdhani', sans-serif;">
+                    </div>
+                    <button class="control-btn btn-secondary" id="saveBtn" style="width:100%; margin-bottom:15px; padding: 5px;">💾 Guardar Partida</button>
+                    
+                    <h3 style="margin-top: 10px; font-size: 1rem; color: var(--accent-cyan); text-transform: uppercase; letter-spacing: 2px; border-bottom: 1px solid rgba(0, 217, 255, 0.3); padding-bottom: 8px;">PARTIDAS</h3>
+                    <select id="gameCombo" style="width: 100%; padding: 8px; background: var(--bg-secondary); color: white; border: 1px solid var(--text-secondary); margin-bottom: 5px; border-radius: 4px; font-family: 'Rajdhani', sans-serif;"></select>
+                    <button class="control-btn btn-primary" id="loadBtn" style="width:100%; padding: 5px;">📂 Cargar</button>
+                    
+                    <div class="connection-status" style="margin-top: 15px;">
+                        <div class="status-dot" id="connStatus"></div>
+                        <span id="connText">Sincronizando...</span>
+                    </div>
+                </div>
+
+                <div class="panel">
+                    <h3>Movimientos</h3>
+                    <div class="moves-list" id="movesList"></div>
+                </div>
+
+                <div class="panel">
+                    <h3>Controles</h3>
+                    <div class="controls">
+                        <button class="control-btn btn-primary" id="newGameBtn">Nuevo</button>
+                        <button class="control-btn btn-secondary" id="undoBtn">Deshacer</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/chessboard-js/1.0.0/chessboard-1.0.0.min.js"></script>
+    <script>
+        window.onload = function() {
+            if (typeof Chess === 'undefined' || typeof Chessboard === 'undefined') {
+                document.getElementById('board').innerHTML = '<p style="color:red;text-align:center;padding:20px;">Error: Librerías no cargadas.</p>';
+                return;
+            }
+
+            class ChessSync {
+                constructor() {
+                    this.game = new Chess();
+                    this.board = null;
+                    this.gameMode = 'ia';
+                    this.lastHistory = [];
+                    this.init();
+                }
+
+                init() {
+                    const pieceThemeFn = function(piece) {
+                        const pcs = {'wK':'♔','wQ':'♕','wR':'♖','wB':'♗','wN':'♘','wP':'♙','bK':'♚','bQ':'♛','bR':'♜','bB':'♝','bN':'♞','bP':'♟'};
+                        const clr = piece.charAt(0) === 'w' ? '#00d9ff' : '#ff6b6b';
+                        const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text x="50" y="75" font-size="80" text-anchor="middle" font-family="Segoe UI Symbol" fill="${clr}">${pcs[piece]}</text></svg>`;
+                        return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
+                    };
+
+                    this.board = Chessboard('board', {
+                        draggable: false,  // Modificado: click-to-move
+                        position: 'start',
+                        pieceTheme: pieceThemeFn
+                    });
+                    
+                    this.selectedSquare = null;
+                    this.validMoves = [];
+                    this.isSyncing = false;
+                    
+                    // Click handlers for the exact desktop behavior
+                    $('#board').on('click', '.square-55d63', (e) => {
+                        if (this.game.game_over()) return;
+                        
+                        const square = $(e.currentTarget).attr('data-square');
+                        
+                        // Si era un movimiento válido desde la selección actual
+                        if (this.selectedSquare && this.validMoves.includes(square)) {
+                            // Mover inmediatamente en modo optimista (evita congelación de animaciones)
+                            const move = this.game.move({ from: this.selectedSquare, to: square, promotion: 'q' });
+                            if (move) {
+                                // Actualizar tablero visual y historial temporalmente
+                                this.board.position(this.game.fen());
+                                this.lastHistory = this.game.history();
+                                this.updateMovesList(this.lastHistory);
+
+                                // Notificar a backend
+                                this.isSyncing = true;
+                                this.apiCall('sync_move', { source: this.selectedSquare, target: square }).then(res => {
+                                    this.isSyncing = false;
+                                    // Si por alguna razón el servidor rechazó el movimiento pacíficamente
+                                    if (res && res.result && res.result.success === false) {
+                                        this.game.undo();
+                                        this.board.position(this.game.fen());
+                                        this.lastHistory = this.game.history();
+                                        this.updateMovesList(this.lastHistory);
+                                    } else {
+                                        this.syncWithBackend(); // Force refresh to get AI response instantly
+                                    }
+                                }).catch(() => { this.isSyncing = false; });
+                            }
+                            this.clearHighlights();
+                            return;
+                        }
+
+                        // O bien, seleccionar una pieza
+                        const piece = this.game.get(square);
+                        if (piece) {
+                            const isWhiteTurn = this.game.turn() === 'w';
+                            if ((isWhiteTurn && piece.color === 'w') || (!isWhiteTurn && piece.color === 'b')) {
+                                this.clearHighlights();
+                                this.selectedSquare = square;
+                                const moves = this.game.moves({ square: square, verbose: true });
+                                this.validMoves = moves.map(m => m.to);
+                                
+                                $(e.currentTarget).addClass('highlight-selected');
+                                this.validMoves.forEach(sq => {
+                                    $(`#board .square-${sq}`).addClass('highlight-valid');
+                                });
+                            } else {
+                                this.clearHighlights();
+                            }
+                        } else {
+                            this.clearHighlights();
+                        }
+                    });
+
+                    this.setupListeners();
+                    this.pollTimer = setInterval(() => this.syncWithBackend(), 1000);
+                    this.syncWithBackend(); // init
+                }
+                
+                clearHighlights() {
+                    this.selectedSquare = null;
+                    this.validMoves = [];
+                    $('#board .square-55d63').removeClass('highlight-selected highlight-valid');
+                }
+
+                setupListeners() {
+                    document.querySelectorAll('.mode-btn').forEach(btn => {
+                        btn.addEventListener('click', (e) => {
+                            const mode = e.target.dataset.mode === 'online' ? 'local' : 'ia'; // map online to local for PC
+                            this.apiCall('api_reset', { mode: mode });
+                            document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+                            e.target.classList.add('active');
+                        });
+                    });
+
+                    document.getElementById('newGameBtn').addEventListener('click', () => {
+                        this.apiCall('api_reset', { mode: this.gameMode });
+                    });
+                    document.getElementById('undoBtn').addEventListener('click', () => {
+                        this.apiCall('api_undo', {});
+                    });
+                    document.getElementById('saveBtn').addEventListener('click', () => {
+                        const p1 = document.getElementById('p1Name').value;
+                        const p2 = document.getElementById('p2Name').value;
+                        this.apiCall('api_save', { p1: p1, p2: p2 });
+                    });
+                    document.getElementById('loadBtn').addEventListener('click', () => {
+                        const gameId = document.getElementById('gameCombo').value;
+                        if (gameId) this.apiCall('api_load', { game_id: gameId });
+                    });
+                    
+                    document.getElementById('asimodW').addEventListener('change', () => this.syncAgentConfig());
+                    document.getElementById('asimodB').addEventListener('change', () => this.syncAgentConfig());
+                    document.getElementById('asimodRetries').addEventListener('change', () => this.syncAgentConfig());
+                }
+
+                syncAgentConfig() {
+                    const asimodW = document.getElementById('asimodW').checked;
+                    const asimodB = document.getElementById('asimodB').checked;
+                    const maxRetries = document.getElementById('asimodRetries').value;
+                    this.apiCall('api_update_agent_config', { 
+                        asimod_w: asimodW, 
+                        asimod_b: asimodB, 
+                        max_retries: maxRetries 
+                    });
+                }
+
+                async apiCall(actionName, params) {
+                    try {
+                        const res = await fetch('/v1/modules/ajedrez/action', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ action: actionName, params: params })
+                        });
+                        const data = await res.json();
+                        this.syncWithBackend(); // Instant poll after action
+                        return data;
+                    } catch (e) {
+                        console.error('API Error:', e);
+                        return null;
+                    }
+                }
+
+                async syncWithBackend() {
+                    try {
+                        const res = await fetch('/v1/modules/ajedrez/action', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ action: 'sync_state', params: {} })
+                        });
+                        const json = await res.json();
+                        if (json.status === "success" && json.result) {
+                            this.updateState(json.result);
+                            document.getElementById('connStatus').className = 'status-dot connected';
+                            document.getElementById('connText').textContent = 'Conectado';
+                        } else {
+                            document.getElementById('connStatus').className = 'status-dot';
+                            document.getElementById('connText').textContent = 'Desconectado';
+                        }
+                    } catch(e) {
+                        document.getElementById('connStatus').className = 'status-dot';
+                        document.getElementById('connText').textContent = 'Error de Red';
+                    }
+                }
+
+                updateState(state) {
+                    if (this.isSyncing) return; // Prevent overwriting optimistic UI
+                    
+                    // Update metadata
+                    this.gameMode = state.mode;
+                    document.getElementById('aiDifficulty').value = state.difficulty;
+                    
+                    const asimodW = document.getElementById('asimodW');
+                    const asimodB = document.getElementById('asimodB');
+                    const asimodRetries = document.getElementById('asimodRetries');
+                    
+                    if (document.activeElement !== asimodW) asimodW.checked = state.asimod_w;
+                    if (document.activeElement !== asimodB) asimodB.checked = state.asimod_b;
+                    if (document.activeElement !== asimodRetries) asimodRetries.value = state.ai_max_retries;
+                    
+                    const p1Input = document.getElementById('p1Name');
+                    const p2Input = document.getElementById('p2Name');
+                    if (document.activeElement !== p1Input) p1Input.value = state.player1;
+                    if (document.activeElement !== p2Input) p2Input.value = state.player2;
+
+                    // Update UI components 
+                    const modeBtns = document.querySelectorAll('.mode-btn');
+                    modeBtns[0].classList.toggle('active', state.mode === 'ia');
+                    modeBtns[1].classList.toggle('active', state.mode === 'local');
+
+                    // Update Combo list deeply
+                    const combo = document.getElementById('gameCombo');
+                    const prevVal = combo.value;
+                    const validGames = state.saved_games || [];
+                    if (JSON.stringify(Array.from(combo.options).map(o=>o.value)) !== JSON.stringify(validGames)) {
+                        combo.innerHTML = validGames.map(g => `<option value="${g}">${g}</option>`).join('');
+                        if (validGames.includes(prevVal)) combo.value = prevVal;
+                        else if (validGames.length) combo.selectedIndex = validGames.length - 1;
+                    }
+
+                    // Check if history changed
+                    const sans = state.history_san || [];
+                    if (JSON.stringify(sans) !== JSON.stringify(this.lastHistory)) {
+                        this.game.reset();
+                        sans.forEach(s => this.game.move(s));
+                        this.board.position(this.game.fen());
+                        this.lastHistory = sans;
+                        this.updateMovesList(sans);
+                    }
+                    
+                    // Display details
+                    const isWhite = state.turn === 'w';
+                    document.getElementById('whiteTurn').classList.toggle('active', isWhite);
+                    document.getElementById('blackTurn').classList.toggle('active', !isWhite);
+                    document.getElementById('turnText').textContent = isWhite ? 'Blancas' : 'Negras';
+                    
+                    const stat = document.getElementById('gameStatus');
+                    if (state.is_game_over) {
+                        stat.textContent = 'JUEGO TERMINADO';
+                        stat.className = 'game-status status-checkmate';
+                    } else if (state.is_check) {
+                        stat.textContent = '¡JAQUE!';
+                        stat.className = 'game-status status-check';
+                    } else {
+                        stat.textContent = 'Juego en progreso';
+                        stat.className = 'game-status status-playing';
+                    }
+                }
+
+                updateMovesList(history) {
+                    const movesList = document.getElementById('movesList');
+                    let html = '';
+                    for (let i = 0; i < history.length; i += 2) {
+                        const moveNum = Math.floor(i / 2) + 1;
+                        const whiteMove = history[i] || '';
+                        const blackMove = history[i + 1] || '';
+                        html += `<span class="move-item"><span class="move-number">${moveNum}.</span>${whiteMove} ${blackMove}</span> `;
+                    }
+                    movesList.innerHTML = html;
+                    movesList.scrollTop = movesList.scrollHeight;
+                }
+
+            }
+
+            const app = new ChessSync();
+        };
+    </script>
+</body>
+</html>

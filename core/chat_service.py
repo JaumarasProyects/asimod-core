@@ -125,10 +125,36 @@ class ChatService(ChatPort):
             return await self.current_adapter.list_models()
         return []
 
-    async def send_message(self, text: str, model: str = None, images: list = None, silent: bool = False, max_tokens: int = None, temperature: float = None, skip_tts: bool = False, system_prompt: str = None, mode: str = None) -> Dict:
+    async def generate_chat(self, messages: List[Dict], system_prompt: str = None, model: str = None, 
+                            images: list = None, max_tokens: int = None, temperature: float = None) -> str:
+        """
+        Llamada directa al adaptador de chat sin persistencia en memoria ni TTS.
+        Útil para tareas de procesamiento interno o generación técnica.
+        """
+        if not self.current_adapter:
+            return "Error: No hay un motor de LLM configurado."
+            
+        if not model or model.strip() == "":
+            model = self.config.get("last_model")
+            
+        if max_tokens is None:
+            max_tokens = self.config.get("max_tokens")
+        if temperature is None:
+            temperature = self.config.get("temperature")
+
+        try:
+            return await self.current_adapter.generate_chat(
+                messages, system_prompt, model, images, max_tokens, temperature
+            )
+        except Exception as e:
+            print(f"[ChatService] Error en generate_chat: {e}")
+            return f"Error: {str(e)}"
+
+    async def send_message(self, text: str, model: str = None, images: list = None, silent: bool = False, max_tokens: int = None, temperature: float = None, skip_tts: bool = False, system_prompt: str = None, mode: str = None, isolated: bool = False, agent_retries: int = None) -> Dict:
         """
         Envía un mensaje usando el contexto de memoria activo y procesa la respuesta de forma asíncrona.
         Permite sobrescribir las instrucciones del sistema con system_prompt y el modo con mode.
+        Con isolated=True se omite el historial previo de usuario.
         """
         if self.busy:
             print("[ChatService] BUSY: Ignoring concurrent message.")
@@ -149,7 +175,7 @@ class ChatService(ChatPort):
                 temperature = self.config.get("temperature")
             
             # 1. Obtener contexto e instrucciones (Priorizar override si existe)
-            history = self.memory.get_context()
+            history = self.memory.get_context() if not isolated else []
             
             # --- Lógica de MODO AGENTE ---
             effective_mode = mode if mode else self.config.get("stt_mode")
@@ -167,10 +193,12 @@ class ChatService(ChatPort):
             # 2. Si NO es silent, guardar mensaje del usuario
             if not silent:
                 self.memory.add_message("user", text)
-                history = self.memory.get_context()
+                history = self.memory.get_context() if not isolated else [{"role": "user", "content": text}]
+            elif isolated:
+                history.append({"role": "user", "content": text})
 
             # 3. Generar respuesta de forma asíncrona (con Reintentos para Agente)
-            max_attempts = 3 if is_agent_mode else 1
+            max_attempts = agent_retries if agent_retries is not None else (3 if is_agent_mode else 1)
             best_block = None
             current_system_prompt = system_prompt
             
@@ -305,7 +333,9 @@ class ChatService(ChatPort):
             return {
                 "response": raw_response,
                 "clean_text": clean_response,
-                "emojis": self.last_emojis
+                "emojis": self.last_emojis,
+                "agent_action": agent_action,
+                "status": "success"
             }
         finally:
             self.is_processing = False

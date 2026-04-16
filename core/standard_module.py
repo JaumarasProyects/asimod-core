@@ -33,10 +33,14 @@ class StandardModule(BaseModule):
 
     def get_widget(self, parent):
         """Implementa la construcción del layout estándar usando los flags configurados."""
-        main_frame = tk.Frame(parent, bg=self.style.get_color("bg_main"))
+        has_bg = self.style.get_background("center") is not None
+        pad = 20 if has_bg else 0
+        ghost_bg = self.style.get_color("bg_main")
+        
+        main_frame = tk.Frame(parent, bg=ghost_bg)
         
         # 0. Preparar Contenedores Inferiores PRIMERO para evitar race conditions con el menú
-        self.sub_widget_area = tk.Frame(main_frame, bg=self.style.get_color("bg_main"))
+        self.sub_widget_area = tk.Frame(main_frame, bg=ghost_bg)
         
         self.sub_widget_area.columnconfigure(0, weight=0)
         self.sub_widget_area.columnconfigure(1, weight=1)
@@ -50,7 +54,7 @@ class StandardModule(BaseModule):
                 self.gallery.grid(row=1, column=0, sticky="nsew", padx=(0, 10))
 
         # Workspace (DEBE existir antes de que el menú pueda disparar callbacks)
-        self.workspace = tk.Frame(self.sub_widget_area, bg=self.style.get_color("bg_main"))
+        self.workspace = tk.Frame(self.sub_widget_area, bg=ghost_bg)
         self.workspace.grid(row=1, column=1, sticky="nsew")
 
         # 1. Menú Superior (Ahora puede disparar callbacks con seguridad)
@@ -61,7 +65,7 @@ class StandardModule(BaseModule):
                 callback=self.on_menu_change,
                 style=self.style
             )
-            self.menu.pack(fill=tk.X, pady=(0, 2), side=tk.TOP)
+            self.menu.pack(fill=tk.X, pady=(0, 10), side=tk.TOP)
 
         # 2. Panel de Controladores (Ahora incluye internamente las Acciones Superiores)
         if self.show_controllers:
@@ -73,10 +77,11 @@ class StandardModule(BaseModule):
             
         # 3. Separador sutil
         if self.show_menu or self.show_controllers:
-            tk.Frame(main_frame, bg="#333", height=1).pack(fill=tk.X, side=tk.TOP)
+            tk.Frame(main_frame, bg="#333", height=1).pack(fill=tk.X, side=tk.TOP, padx=pad)
 
         # 4. Pack de Área de Contenido Principal (Ahora que está configurada)
-        self.sub_widget_area.pack(fill=tk.BOTH, expand=True, padx=20, pady=20, side=tk.TOP)
+        # Aplicamos el padding dinámico si hay imagen de fondo
+        self.sub_widget_area.pack(fill=tk.BOTH, expand=True, padx=pad, pady=pad, side=tk.TOP)
         
         # Llamar al render específico de la subclase
         self.render_workspace(self.workspace)

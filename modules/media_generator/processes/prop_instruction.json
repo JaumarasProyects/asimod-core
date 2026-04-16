@@ -1,0 +1,28 @@
+{
+    "type": "Prop",
+    "description": "Receta para la creación y evolución de un objeto (Prop).",
+    "grades": {
+        "1": {
+            "panel": "Texto",
+            "instruction": "Define el título, descripción y utilidad del objeto."
+        },
+        "2": {
+            "panel": "Imagen",
+            "workflow_folder": "workflows/compuesta/prop/imagen",
+            "default_workflow": "prop_render.json",
+            "prompt_template": "Diseño conceptual de {titulo}: {descripcion}. Utilidad: {utilidad}.",
+            "narrative_enrichment": false,
+            "audio_planning": true
+        },
+        "3": {
+            "panel": "Audio",
+            "workflow_folder": "workflows/compuesta/prop/audio",
+            "default_workflow": "prop_sound_fx.json"
+        },
+        "4": {
+            "panel": "Video",
+            "workflow_folder": "workflows/compuesta/prop/video",
+            "default_workflow": "prop_turntable.json"
+        }
+    }
+}

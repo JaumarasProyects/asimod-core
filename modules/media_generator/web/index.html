@@ -17,36 +17,6 @@
     </header>
 
     <div class="studio-layout-v">
-        
-        <!-- Top Control Ribbon (Minimizable) -->
-        <div class="studio-controls-ribbon asimod-card" id="topControls">
-            <div class="ribbon-header">
-                <span class="studio-label" style="margin:0;">⚙️ CONFIGURACIÓN</span>
-                <button class="minimize-btn" id="toggleRibbon" title="Contraer/Expandir">▲</button>
-            </div>
-            
-            <div class="ribbon-content" id="ribbonContent">
-                <!-- Row 1: Prompt -->
-                <div class="ribbon-row">
-                    <div style="flex:1;">
-                        <label class="studio-label">PROMPT / INSTRUCCIONES</label>
-                        <textarea id="studioPrompt" placeholder="Describe lo que quieres generar..." class="studio-textarea-small"></textarea>
-                    </div>
-                </div>
-
-                <!-- Row 2: Options & Generate -->
-                <div class="ribbon-row ribbon-actions">
-                    <div id="contextualControls" class="contextual-grid">
-                        <!-- Se llena dinámicamente -->
-                    </div>
-                    
-                    <button id="btnGenerateStudio" class="generate-btn-ribbon">
-                        <span class="btn-icon">✨</span> GENERAR <span id="modeName">Texto</span>
-                    </button>
-                </div>
-            </div>
-        </div>
-
         <!-- Dynamic Viewport (Takes remaining height) -->
         <main class="studio-viewport-v" id="studioViewport">
             <div id="viewportPlaceholder" class="viewport-placeholder">
@@ -64,6 +34,34 @@
                 <p>Estudio procesando...</p>
             </div>
         </main>
+
+        <!-- Bottom Control Ribbon (Minimizable) -->
+        <div class="studio-controls-ribbon asimod-card" id="bottomControls">
+            <div class="ribbon-header">
+                <span class="studio-label" style="margin:0;">⚙️ CONFIGURACIÓN</span>
+                <button class="minimize-btn" id="toggleRibbon" title="Contraer/Expandir">▼</button>
+            </div>
+            
+            <div class="ribbon-content" id="ribbonContent">
+                <!-- Row 1: Options & Generate (Grouped Left) -->
+                <div class="ribbon-row ribbon-actions" style="border-top:none; padding-top:0;">
+                    <div id="contextualControls" class="contextual-grid">
+                        <!-- Se llena dinámicamente -->
+                    </div>
+                    
+                    <button id="btnGenerateStudio" class="generate-btn-ribbon">
+                        <span class="btn-icon">✨</span> GENERAR <span id="modeName">Texto</span>
+                    </button>
+                </div>
+
+                <!-- Row 2: Prompt -->
+                <div class="ribbon-row" style="margin-top:10px;">
+                    <div style="flex:1;">
+                        <textarea id="studioPrompt" placeholder="Describe lo que quieres generar..." class="studio-textarea-small"></textarea>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 
     <style>
@@ -102,7 +100,7 @@
         }
 
         .contextual-grid { display: flex; gap: 15px; flex: 1; align-items: flex-end; flex-wrap: wrap; }
-        .ctx-group { display: flex; flex-direction: column; gap: 5px; min-width: 150px; flex: 1; }
+        .ctx-group { display: flex; flex-direction: column; gap: 5px; min-width: 140px; flex: 1; }
 
         .generate-btn-ribbon {
             min-width: 200px; background: var(--accent); color: var(--bg-dark); border: none; padding: 12px 25px;
@@ -132,19 +130,50 @@
         }
         @keyframes spin { to { transform: rotate(360deg); } }
 
-        /* Estilos de inputs contextuales */
         .ctx-select, .ctx-input {
             width: 100%; background: var(--bg-header); border: 1px solid rgba(255,255,255,0.1); 
             color: white; padding: 8px 12px; border-radius: 10px; font-size: 0.8rem; outline: none;
         }
         .ctx-input:focus { border-color: var(--accent); }
+
+        .multi-tag-container {
+            display: flex; flex-wrap: wrap; gap: 5px; padding: 10px;
+            background: rgba(0,0,0,0.3); border-radius: 8px; border: 1px solid rgba(255,255,255,0.05);
+            min-height: 35px; margin-bottom: 5px;
+        }
+        
+        /* Ref Manager Web */
+        .ref-manager-web {
+            display: flex; flex-direction: column; gap: 5px; padding: 10px;
+            background: rgba(255,255,255,0.03); border-radius: 12px;
+        }
+        .ref-filters { display: flex; gap: 5px; margin-bottom: 8px; flex-wrap: wrap; }
+        .ref-btn {
+            background: #222; border: none; color: #888; padding: 5px 10px;
+            border-radius: 6px; cursor: pointer; font-size: 0.75rem; transition: all 0.2s;
+        }
+        .ref-btn:hover { background: #333; color: white; }
+        .ref-btn.active { background: var(--accent); color: var(--bg-dark); font-weight: bold; }
+        .ref-tag {
+            background: var(--accent); color: var(--bg-dark); padding: 2px 8px; border-radius: 5px;
+            font-size: 0.75rem; font-weight: bold; display: flex; align-items: center; gap: 5px;
+        }
+        .ref-tag span { cursor: pointer; opacity: 0.6; }
+        .ref-tag span:hover { opacity: 1; }
     </style>
 
     <script>
         (function() {
             const state = {
                 mode: 'Texto',
-                loading: false
+                loading: false,
+                compound: {
+                    type: 'Simple',
+                    subtype: 'Ingredientes',
+                    category: 'Personaje',
+                    target_product: 'Plano',
+                    references: []
+                }
             };
 
             const selectors = {
@@ -156,240 +185,352 @@
                 canvas: document.getElementById('viewportCanvas'),
                 placeholder: document.getElementById('viewportPlaceholder'),
                 loader: document.getElementById('viewportLoader'),
-                ribbon: document.getElementById('topControls'),
+                ribbon: document.getElementById('bottomControls'),
                 toggle: document.getElementById('toggleRibbon')
+            };
+
+            const CONFIG_COMPUESTA = {
+                'Ingredientes': ['Personaje', 'Escenario', 'Prop', 'Sinopsis'],
+                'Productos': ['Plano', 'Escena', 'Secuencia', 'Pelicula']
             };
 
             const configs = {
                 'Texto': {
-                    controls: `
-                        <div class="ctx-group">
-                            <label class="studio-label">PROVEEDOR</label>
-                            <select class="ctx-select" id="ctxProvider">
-                                <option>Ollama</option>
-                                <option>Gemini</option>
-                                <option>OpenAI</option>
-                            </select>
-                        </div>
-                        <div class="ctx-group">
-                            <label class="studio-label">CREATIVIDAD (TEMP)</label>
-                            <input type="range" id="temperature" min="0" max="1" step="0.1" value="0.7" style="width:100%; accent-color:var(--accent); margin-bottom:8px;">
-                        </div>
-                    `
+                    render: () => {
+                        const isC = state.compound.type === 'Compuesto';
+                        let html = `
+                            <div class="ctx-group">
+                                <label class="studio-label">PROVEEDOR LLM</label>
+                                <select class="ctx-select" id="ctxProvider">
+                                    <option>Ollama</option><option>Gemini</option><option>OpenAI</option>
+                                </select>
+                            </div>
+                            <div class="ctx-group">
+                                <label class="studio-label">TIPO</label>
+                                <select class="ctx-select" id="gen_type" onchange="window.studio.updateCompoundType(this.value)">
+                                    <option value="Simple" ${state.compound.type==='Simple'?'selected':''}>⚡ Simple</option>
+                                    <option value="Compuesto" ${state.compound.type==='Compuesto'?'selected':''}>🧱 Compuesto</option>
+                                </select>
+                            </div>
+                        `;
+
+                        if (isC) {
+                            html += `
+                                <div class="ctx-group">
+                                    <label class="studio-label">SUBTIPO</label>
+                                    <select class="ctx-select" id="gen_subtype" onchange="window.studio.updateSubtype(this.value)">
+                                        <option value="Ingredientes" ${state.compound.subtype==='Ingredientes'?'selected':''}>📦 Ingrediente</option>
+                                        <option value="Productos" ${state.compound.subtype==='Productos'?'selected':''}>🎬 Producto</option>
+                                    </select>
+                                </div>
+                                <div class="ctx-group">
+                                    <label class="studio-label">CATEGORÍA</label>
+                                    <select class="ctx-select" id="gen_category" onchange="window.studio.updateCategory(this.value)">
+                                        ${CONFIG_COMPUESTA[state.compound.subtype].map(cat => `
+                                            <option value="${cat}" ${state.compound.category===cat?'selected':''}>${cat}</option>
+                                        `).join('')}
+                                    </select>
+                                </div>
+                            `;
+
+                            if (state.compound.category === 'Sinopsis') {
+                                html += `
+                                    <div class="ctx-group">
+                                        <label class="studio-label">DESTINO DE SINOPSIS</label>
+                                        <select class="ctx-select" id="target_product" onchange="window.studio.updateTargetProduct(this.value)">
+                                            ${CONFIG_COMPUESTA['Productos'].map(p => `
+                                                <option value="${p}" ${state.compound.target_product===p?'selected':''}>${p}</option>
+                                            `).join('')}
+                                        </select>
+                                    </div>
+                                `;
+                            }
+                        } else {
+                            html += `
+                                <div class="ctx-group">
+                                    <label class="studio-label">PROMPT DINÁMICO</label>
+                                    <select class="ctx-select"><option>Desactivado</option><option>Asistido</option></select>
+                                </div>
+                            `;
+                        }
+
+                        // Referencias para Productos o Sinopsis
+                        if (isC && (state.compound.subtype === 'Productos' || state.compound.category === 'Sinopsis')) {
+                            html += `
+                                <div class="ctx-group" style="flex:2; min-width:250px;">
+                                    <label class="studio-label">ADJUNTAR COMPONENTES (Referencias)</label>
+                                    <div class="ref-manager-web">
+                                        <div class="ref-filters">
+                                            <button class="ref-btn active" onclick="window.studio.filterRefs('TODOS')">TODO</button>
+                                            <button class="ref-btn" onclick="window.studio.filterRefs('Personaje')">👤</button>
+                                            <button class="ref-btn" onclick="window.studio.filterRefs('Escenario')">🌄</button>
+                                            <button class="ref-btn" onclick="window.studio.filterRefs('Prop')">⛺</button>
+                                            <button class="ref-btn" onclick="window.studio.filterRefs('Sinopsis')">📖</button>
+                                        </div>
+                                        <div class="multi-tag-container" id="refContainer"></div>
+                                        <select class="ctx-select" style="margin-top:5px;" id="refSelector" onchange="window.studio.addRef(this.value); this.value='';">
+                                            <option value="">Añadir referencia...</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            `;
+                        }
+
+                        return html;
+                    }
                 },
                 'Imagen': {
-                    controls: `
-                        <div class="ctx-group" style="min-width:180px;">
-                            <label class="studio-label">MOTOR / ADAPTADOR</label>
-                            <select class="ctx-select" id="engine">
-                                <option value="DALL-E 3">DALL-E 3 (Cloud)</option>
-                                <option value="ComfyUI">ComfyUI (Local)</option>
-                                <option value="Stable Diffusion">Stable Diffusion (Local)</option>
-                            </select>
-                        </div>
-                        <div class="ctx-group">
-                            <label class="studio-label">RESOLUCIÓN</label>
-                            <select class="ctx-select" id="resolution">
-                                <option value="Apaisada Pequeña (768x512)">Apaisada (768x512)</option>
-                                <option value="Cuadrada Pequeña (512x512)">Cuadrada (512x512)</option>
-                                <option value="Cuadrada Grande (1024x1024)">Retrato (1024x1024)</option>
-                                <option value="Apaisada Grande (1280x720)">Panorámica (1280x720)</option>
-                            </select>
-                        </div>
-                        <div class="ctx-group">
-                            <label class="studio-label">SEMILLA</label>
-                            <input type="number" class="ctx-input" id="seed" value="-1" title="-1 para aleatorio">
-                        </div>
-                        <div class="ctx-group" style="flex:2; min-width:250px;">
-                            <label class="studio-label">PROMPT NEGATIVO</label>
-                            <input type="text" class="ctx-input" id="neg_prompt" placeholder="Saca lo feo..." value="low quality, blurry, text">
-                        </div>
-                    `
-                },
-                'Video': {
-                    controls: `
-                        <div class="ctx-group">
-                            <label class="studio-label">TIPO</label>
-                            <select class="ctx-select" id="video_type">
-                                <option value="Simple">🎞️ Simple (Single Clip)</option>
-                                <option value="Compuesto">🎥 Compuesto (Story)</option>
-                            </select>
-                        </div>
-                        <div class="ctx-group">
-                            <label class="studio-label">SUBTIPO</label>
-                            <select class="ctx-select" id="video_subtype">
-                                <option value="text2video">Texto a Video</option>
-                                <option value="img2video">Imagen a Video</option>
-                                <option value="Img+Audio2Video">Talking Head</option>
-                            </select>
-                        </div>
-                        <div class="ctx-group">
-                            <label class="studio-label">RESOLUCIÓN</label>
-                            <select class="ctx-select" id="video_resolution">
-                                <option value="Apaisada SD (640x480)">SD (640x480)</option>
-                                <option value="Apaisada HD (1280x720)">HD (1280x720)</option>
-                                <option value="Cuadrada (640x640)">Square (640x640)</option>
-                            </select>
-                        </div>
-                        <div class="ctx-group" style="min-width:80px;">
-                            <label class="studio-label">DURAC (S)</label>
-                            <input type="number" class="ctx-input" id="video_duration" value="5">
-                        </div>
-                    `
+                    render: () => {
+                        const isC = state.compound.type === 'Compuesto';
+                        let html = `
+                            <div class="ctx-group">
+                                <label class="studio-label">TIPO</label>
+                                <select class="ctx-select" id="gen_type" onchange="window.studio.updateCompoundType(this.value)">
+                                    <option value="Simple" ${state.compound.type==='Simple'?'selected':''}>⚡ Simple</option>
+                                    <option value="Compuesto" ${state.compound.type==='Compuesto'?'selected':''}>🧱 Compuesto (Upgr. G2)</option>
+                                </select>
+                            </div>
+                        `;
+
+                        if (isC) {
+                            html += `
+                                <div class="ctx-group" style="flex:2;">
+                                    <label class="studio-label">DOCUMENTO ORIGEN (Grado 1)</label>
+                                    <select class="ctx-select" id="source_doc">
+                                        <option value="">Cargando documentos...</option>
+                                    </select>
+                                </div>
+                            `;
+                        } else {
+                            html += `
+                                <div class="ctx-group">
+                                    <label class="studio-label">MOTOR</label>
+                                    <select class="ctx-select" id="engine">
+                                        <option value="ComfyUI">ComfyUI</option><option value="DALL-E 3">DALL-E 3</option>
+                                    </select>
+                                </div>
+                            `;
+                        }
+                        return html;
+                    }
                 },
                 'Audio': {
-                    controls: `
-                        <div class="ctx-group">
-                            <label class="studio-label">MOTOR DE VOZ</label>
-                            <select class="ctx-select" id="audio_provider">
-                                <option value="Microsoft Edge">Microsoft Edge (Gratis)</option>
-                                <option value="ElevenLabs">ElevenLabs (Pro)</option>
-                            </select>
-                        </div>
-                        <div class="ctx-group">
-                            <label class="studio-label">TIPO</label>
-                            <select class="ctx-select" id="audio_type">
-                                <option>Voces</option>
-                                <option>Música</option>
-                                <option>Efectos</option>
-                            </select>
-                        </div>
-                    `
+                    render: () => {
+                        const isC = state.compound.type === 'Compuesto';
+                        let html = `
+                            <div class="ctx-group">
+                                <label class="studio-label">TIPO</label>
+                                <select class="ctx-select" id="gen_type" onchange="window.studio.updateCompoundType(this.value)">
+                                    <option value="Simple" ${state.compound.type==='Simple'?'selected':''}>⚡ Simple</option>
+                                    <option value="Compuesto" ${state.compound.type==='Compuesto'?'selected':''}>🧱 Compuesto (Upgr. G3)</option>
+                                </select>
+                            </div>
+                        `;
+                        if (isC) {
+                            html += `
+                                <div class="ctx-group" style="flex:2;">
+                                    <label class="studio-label">DOCUMENTO ORIGEN (Grado 2)</label>
+                                    <select class="ctx-select" id="source_doc">
+                                        <option value="">Cargando documentos...</option>
+                                    </select>
+                                </div>
+                            `;
+                        } else {
+                            html += `<div class="ctx-group"><label class="studio-label">MOTOR</label><select class="ctx-select" id="audio_provider"><option>Microsoft Edge</option><option>ElevenLabs</option></select></div>`;
+                        }
+                        return html;
+                    }
                 },
-                '3D': {
-                    controls: `
-                        <div class="ctx-group">
-                            <label class="studio-label">MOTOR 3D</label>
-                            <select class="ctx-select" id="3d_provider">
-                                <option value="ComfyUI">ComfyUI (Local)</option>
-                                <option value="Rodin">Rodin (Cloud)</option>
-                            </select>
-                        </div>
-                        <div class="ctx-group">
-                            <label class="studio-label">TIPO</label>
-                            <select class="ctx-select" id="3d_type">
-                                <option>Texto a 3D</option>
-                                <option>Imagen a 3D</option>
-                            </select>
-                        </div>
-                    `
+                'Video': {
+                    render: () => {
+                        const isC = state.compound.type === 'Compuesto';
+                        let html = `
+                            <div class="ctx-group">
+                                <label class="studio-label">TIPO</label>
+                                <select class="ctx-select" id="gen_type" onchange="window.studio.updateCompoundType(this.value)">
+                                    <option value="Simple" ${state.compound.type==='Simple'?'selected':''}>⚡ Simple</option>
+                                    <option value="Compuesto" ${state.compound.type==='Compuesto'?'selected':''}>🧱 Compuesto (Upgr. G4)</option>
+                                </select>
+                            </div>
+                        `;
+                        if (isC) {
+                            html += `
+                                <div class="ctx-group" style="flex:2;">
+                                    <label class="studio-label">DOCUMENTO ORIGEN (Grado 3)</label>
+                                    <select class="ctx-select" id="source_doc">
+                                        <option value="">Cargando documentos...</option>
+                                    </select>
+                                </div>
+                            `;
+                        } else {
+                            html += `<div class="ctx-group"><label class="studio-label">SUBTIPO</label><select class="ctx-select" id="video_subtype"><option>text2video</option><option>img2video</option></select></div>`;
+                        }
+                        return html;
+                    }
                 }
             };
 
-            // Lógica de Minimizar
-            selectors.toggle.onclick = () => {
-                const isCollapsed = selectors.ribbon.classList.toggle('collapsed');
-                selectors.toggle.innerText = isCollapsed ? '▼' : '▲';
+            // API publica para el script
+            window.studio = {
+                updateCompoundType: (val) => {
+                    state.compound.type = val;
+                    this.renderControls();
+                    if (val === 'Compuesto') this.loadSourceDocs();
+                },
+                updateSubtype: (val) => {
+                    state.compound.subtype = val;
+                    state.compound.category = CONFIG_COMPUESTA[val][0];
+                    this.renderControls();
+                },
+                updateCategory: (val) => {
+                    state.compound.category = val;
+                    this.renderControls();
+                },
+                updateTargetProduct: (val) => {
+                    state.compound.target_product = val;
+                },
+                addRef: (val) => {
+                    if (!val || state.compound.references.includes(val)) return;
+                    state.compound.references.push(val);
+                    this.renderRefs();
+                },
+                removeRef: (val) => {
+                    state.compound.references = state.compound.references.filter(r => r !== val);
+                    this.renderRefs();
+                    this.filterRefs(state.currentRefFilter || 'TODOS');
+                },
+                filterRefs: (cat) => {
+                    state.currentRefFilter = cat;
+                    document.querySelectorAll('.ref-btn').forEach(btn => {
+                        const isMatch = (cat === 'TODOS' && btn.innerText === 'TODO') || (btn.innerText.includes(cat) && cat !== 'TODOS');
+                        // Simplificación: buscamos por icono o texto
+                        const icons = { 'Personaje': '👤', 'Escenario': '🌄', 'Prop': '⛺', 'Sinopsis': '📖' };
+                        const btnIcon = icons[cat] || 'TODO';
+                        btn.classList.toggle('active', btn.innerText === btnIcon);
+                    });
+
+                    const select = document.getElementById('refSelector');
+                    if (!select) return;
+
+                    const filtered = (cat === 'TODOS') 
+                        ? state.allPieces 
+                        : state.allPieces.filter(p => p.category === cat);
+
+                    select.innerHTML = '<option value="">Añadir referencia...</option>';
+                    filtered.forEach(p => {
+                        if (!state.compound.references.includes(p.path)) {
+                            select.innerHTML += `<option value="${p.path}">${p.name}</option>`;
+                        }
+                    });
+                }
+            };
+
+            this.renderControls = () => {
+                const config = configs[state.mode] || configs['Texto'];
+                selectors.context.innerHTML = config.render ? config.render() : '<p>Modo en desarrollo...</p>';
+                this.renderRefs();
+                if (state.compound.type === 'Compuesto' && state.mode !== 'Texto') this.loadSourceDocs();
+                else if (state.compound.type === 'Compuesto' && state.mode === 'Texto' && state.compound.subtype === 'Productos') this.loadAllRefs();
+            };
+
+            this.renderRefs = () => {
+                const container = document.getElementById('refContainer');
+                if (!container) return;
+                container.innerHTML = state.compound.references.map(ref => `
+                    <div class="ref-tag">${ref.split('/').pop()} <span onclick="window.studio.removeRef('${ref}')">×</span></div>
+                `).join('');
+            };
+
+            this.loadSourceDocs = async () => {
+                const select = document.getElementById('source_doc');
+                if (!select) return;
+                
+                // Mapeo de grado deseado según modo
+                const targetGrade = state.mode === 'Imagen' ? 1 : state.mode === 'Audio' ? 2 : 3;
+                
+                try {
+                    const resp = await fetch(`/v1/modules/media_generator/action`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ action: 'list_compound_docs', params: { grade: targetGrade } })
+                    });
+                    const data = await resp.json();
+                    if (data.status === 'success' && data.result) {
+                        select.innerHTML = '<option value="">Selecciona un origen...</option>' + 
+                            data.result.map(doc => `<option value="${doc.path}">${doc.name} (G${doc.grade})</option>`).join('');
+                    } else {
+                        select.innerHTML = '<option value="">No hay documentos G' + targetGrade + '</option>';
+                    }
+                } catch(e) { console.error(e); }
+            };
+
+            this.loadAllRefs = async () => {
+                try {
+                    const resp = await fetch(`/v1/modules/media_generator/action`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ action: 'list_all_compound_pieces' })
+                    });
+                    const data = await resp.json();
+                    if (data.status === 'success' && data.result) {
+                        state.allPieces = [...data.result.ingredients, ...data.result.products];
+                        this.filterRefs(state.currentRefFilter || 'TODOS');
+                    }
+                } catch(e) { console.error(e); }
             };
 
             function setMode(mode) {
                 state.mode = mode;
                 selectors.modeLabel.innerText = mode;
-                
-                // Actualizar Botones nav
-                selectors.nav.querySelectorAll('.mode-btn').forEach(btn => {
-                    btn.classList.toggle('active', btn.getAttribute('data-mode') === mode);
-                });
-
-                // Actualizar Controles
-                selectors.context.innerHTML = configs[mode] ? configs[mode].controls : '<p style="color:var(--text-dim); font-size:0.8rem;">Modo en desarrollo...</p>';
+                selectors.nav.querySelectorAll('.mode-btn').forEach(btn => btn.classList.toggle('active', btn.getAttribute('data-mode') === mode));
+                this.renderControls();
                 selectors.prompt.placeholder = `Describe lo que quieres generar para ${mode}...`;
             }
 
-            // Bindings Nav
-            selectors.nav.querySelectorAll('.mode-btn').forEach(btn => {
-                btn.onclick = () => setMode(btn.getAttribute('data-mode'));
-            });
+            selectors.nav.querySelectorAll('.mode-btn').forEach(btn => btn.onclick = () => setMode(btn.getAttribute('data-mode')));
 
-            // Recolectar parámetros de los controles contextuales
-            function collectParams() {
-                const params = {};
-                // Buscar selects e inputs dentro del contenedor contextual
-                selectors.context.querySelectorAll('select, input').forEach(el => {
-                    if (el.id) {
-                        params[el.id] = el.value;
-                    }
-                });
-                return params;
-            }
-
-            // Acción de Generación
             selectors.btn.onclick = async () => {
                 const prompt = selectors.prompt.value.trim();
-                if (!prompt || state.loading) return;
+                if (!prompt && state.compound.type === 'Simple') return;
 
                 state.loading = true;
                 selectors.btn.disabled = true;
-                selectors.btn.innerHTML = `<span class="spinner" style="width:15px; height:15px; border-width:2px; margin:0; display:inline-block; vertical-align:middle;"></span> GENERANDO...`;
-                
+                selectors.btn.innerHTML = `<span class="spinner" style="width:15px; height:15px; border-width:2px; margin:0; display:inline-block; vertical-align:middle;"></span> PROCESANDO...`;
                 selectors.loader.classList.remove('hidden');
-                selectors.placeholder.classList.add('hidden');
-                selectors.canvas.classList.add('hidden');
 
-                const contextualParams = collectParams();
+                const params = {};
+                selectors.context.querySelectorAll('select, input').forEach(el => { if(el.id) params[el.id] = el.value; });
+                
+                // Inyectar estado de composición
+                params.compound = state.compound;
 
                 try {
-                    // LLAMADA AL BRIDGE DE ACCIONES (Sync-Wait)
                     const resp = await fetch('/v1/modules/media_generator/action', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
                             action: 'handle_generate_from_web',
-                            params: {
-                                prompt: prompt,
-                                mode: state.mode,
-                                params: contextualParams
-                            }
+                            params: { prompt, mode: state.mode, params }
                         })
                     });
 
                     const data = await resp.json();
-                    
-                    // Extraer el payload real del bridge
                     let payload = data.result || data;
-                    if (typeof payload === 'string' && payload.startsWith('{')) {
-                        try { payload = JSON.parse(payload); } catch(e) {}
-                    }
+                    if (typeof payload === 'string' && payload.startsWith('{')) try { payload = JSON.parse(payload); } catch(e) {}
 
-                    const isSuccess = data.status === 'success' || (payload && payload.status === 'success');
-
-                    if (isSuccess) {
+                    if (data.status === 'success' || (payload && payload.status === 'success')) {
                         selectors.loader.classList.add('hidden');
                         selectors.canvas.classList.remove('hidden');
-                        
-                        // Prioridad: Si hay una URL en el payload, es un archivo/imagen
-                        const hasFile = payload.type === 'file' || payload.url;
-                        
-                        if (hasFile && payload.url) {
-                            selectors.canvas.innerHTML = `
-                                <div style="display:flex; flex-direction:column; align-items:center; gap:20px; height:100%;">
-                                    <div style="flex:1; display:flex; align-items:center; justify-content:center; overflow:hidden; width:100%;">
-                                        <img src="${payload.url}" style="max-width:100%; max-height:100%; object-fit:contain; box-shadow:0 10px 30px rgba(0,0,0,0.5); border-radius:15px;" onerror="this.onerror=null; this.src='https://via.placeholder.com/800x450?text=Imagen+Generada+(Cargando...)';">
-                                    </div>
-                                    <div style="display:flex; gap:15px; padding-bottom:10px;">
-                                        <a href="${payload.url}" download class="mode-btn active" style="text-decoration:none;">💾 DESCARGAR RESULTADO</a>
-                                    </div>
-                                </div>`;
+                        if (payload.url) {
+                            selectors.canvas.innerHTML = `<div style="display:flex; flex-direction:column; align-items:center; gap:20px; height:100%;"><img src="${payload.url}" style="max-width:100%; max-height:100%; box-shadow:0 10px 30px rgba(0,0,0,0.5); border-radius:15px;"><a href="${payload.url}" download class="mode-btn active">💾 DESCARGAR</a></div>`;
                         } else {
-                            // Extraer el texto limpio (content o el objeto completo si no hay más)
-                            const cleanText = payload.content || (typeof payload === 'string' ? payload : (payload.result || JSON.stringify(payload)));
-                            
-                            selectors.canvas.innerHTML = `
-                                <div class="asimod-card" style="padding:30px; line-height:1.7; font-size:1.05rem; white-space:pre-wrap; border-left:4px solid var(--accent); background:rgba(255,255,255,0.02);">
-                                    ${cleanText}
-                                </div>`;
+                            const cleanText = payload.content || JSON.stringify(payload, null, 2);
+                            selectors.canvas.innerHTML = `<div class="asimod-card" style="padding:30px; line-height:1.7; white-space:pre-wrap; border-left:4px solid var(--accent); background:rgba(255,255,255,0.02);">${cleanText}</div>`;
                         }
-                        
-                        // Refrescar galería global si existe
                         if (window.app && window.app.loadGallery) window.app.loadGallery();
-
-                    } else {
-                        const errorMsg = data.message || payload.message || "Error en la generación";
-                        throw new Error(errorMsg);
-                    }
-
+                    } else { throw new Error(data.message || "Error en la generación"); }
                 } catch (e) {
-                    console.error("[STUDIO] Error:", e);
+                    console.error(e);
                     selectors.loader.classList.add('hidden');
                     selectors.canvas.classList.remove('hidden');
                     selectors.canvas.innerHTML = `<div class="asimod-card" style="border-color:#ff5555; color:#ff5555; padding:20px;">⚠️ ERROR: ${e.message}</div>`;
@@ -400,8 +541,8 @@
                 }
             };
 
-            // Inicializar
             setMode('Texto');
         })();
+            </div>
     </script>
 </div>

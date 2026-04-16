@@ -27,16 +27,17 @@ class GalleryWidget(tk.Frame):
         self.header_bg = header_bg
         
         # 1. Cabecera de la Galería
-        self.header = tk.Frame(self, bg=self.header_bg, padx=10, pady=5)
+        # Usar bg_color para transparencia total
+        self.header = tk.Frame(self, bg=header_bg if not self.style else bg_color, padx=10, pady=5)
         self.header.pack(fill=tk.X)
         
         # Botón Atrás (Flecha)
-        self.btn_back = tk.Button(self.header, text="◀", bg=self.header_bg, fg=self.style.get_color("accent") if self.style else "#4EC9B0",
+        self.btn_back = tk.Button(self.header, text="◀", bg=header_bg if not self.style else bg_color, fg=self.style.get_color("accent") if self.style else "#4EC9B0",
                                   relief="flat", font=("Arial", 10, "bold"), cursor="hand2", command=self._trigger_back)
         self.btn_back.pack(side=tk.LEFT, padx=(0, 5))
         self.btn_back.pack_forget() # Oculto por defecto
         
-        tk.Label(self.header, text=title, bg=self.header_bg, fg=self.style.get_color("text_dim") if self.style else "#888", 
+        tk.Label(self.header, text=title, bg=header_bg if not self.style else bg_color, fg=self.style.get_color("text_dim") if self.style else "#888", 
                  font=("Arial", 8, "bold")).pack(side=tk.LEFT)
         
         # 2. Área Scrollable

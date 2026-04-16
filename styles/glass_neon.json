@@ -1,0 +1,23 @@
+{
+    "name": "Glass Neon",
+    "colors": {
+        "bg_main": "#0c0c14",
+        "bg_dark": "#08080c",
+        "bg_sidebar": "#08080c",
+        "bg_header": "#12121e",
+        "bg_input": "#1a1a2a",
+        "accent": "#00d9ff",
+        "accent_hover": "#00aacc",
+        "text_main": "#ffffff",
+        "text_dim": "#a0aaca",
+        "btn_bg": "#1a1a2a",
+        "btn_fg": "#ffffff"
+    },
+    "backgrounds": {
+        "sidebar": "Resources/BackgroundMenu.png",
+        "chat": "Resources/BackgroundChat.png",
+        "center": "Resources/BackgroundCenter.png",
+        "module_box": "Resources/boxMain.png",
+        "button": "Resources/button.png"
+    }
+}

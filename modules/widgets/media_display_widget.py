@@ -6,6 +6,10 @@ import time
 from PIL import Image, ImageTk
 import pygame
 import cv2
+try:
+    import fitz # PyMuPDF
+except ImportError:
+    fitz = None
 
 class MediaDisplayWidget(tk.Frame):
     """
@@ -25,6 +29,10 @@ class MediaDisplayWidget(tk.Frame):
         self.image_ref = None
         self.video_thread = None
         self.stop_video_flag = threading.Event()
+        
+        # Estado PDF
+        self.current_pdf_doc = None
+        self.current_pdf_page = 0
 
         # Configurar Grid principal para el widget
         self.grid_rowconfigure(0, weight=1) # Contenido (expandible)
@@ -54,6 +62,13 @@ class MediaDisplayWidget(tk.Frame):
 
         self.lbl_info = tk.Label(self.controls_frame, text="Esperando generación...", bg=self.controls_frame["bg"], fg="#888", font=("Arial", 8))
         self.lbl_info.pack(side=tk.LEFT, padx=10)
+
+        # Controles PDF (ocultos por defecto)
+        self.btn_prev_page = tk.Button(self.controls_frame, text="◀ Pág", bg="#333", fg="white", bd=0, padx=5, 
+                                       command=lambda: self._change_pdf_page(-1))
+        self.btn_next_page = tk.Button(self.controls_frame, text="Pág ▶", bg="#333", fg="white", bd=0, padx=5, 
+                                       command=lambda: self._change_pdf_page(1))
+        self.lbl_pdf_page = tk.Label(self.controls_frame, text="0 / 0", bg=self.controls_frame["bg"], fg="#aaa", font=("Arial", 8, "bold"))
 
         # Placeholder inicial
         self._show_placeholder()
@@ -88,6 +103,11 @@ class MediaDisplayWidget(tk.Frame):
             self._show_error(f"Archivo no encontrado: {file_path}")
             return
 
+        # Si el archivo ya está seleccionado y se vuelve a pulsar, asegurar reproducción (Play/Pause toggle)
+        if self.current_media_path and os.path.abspath(self.current_media_path) == os.path.abspath(file_path):
+            self.ensure_playing()
+            return
+
         self.stop_playback()
         self.current_media_path = file_path
         ext = os.path.splitext(file_path)[1].lower()
@@ -102,6 +122,8 @@ class MediaDisplayWidget(tk.Frame):
             self._display_video(file_path)
         elif ext in [".obj", ".glb", ".ply", ".stl"]:
             self._display_3d(file_path)
+        elif ext == ".pdf":
+            self._display_pdf(file_path)
         else:
             # Intentar ver si es texto aunque no tenga extensión conocida
             try:
@@ -129,8 +151,13 @@ class MediaDisplayWidget(tk.Frame):
         # Video
         self.stop_video_flag.set()
         if self.video_thread and self.video_thread.is_alive():
-            # El video_thread debería terminar pronto por la flag
             pass
+
+        # PDF
+        if self.current_pdf_doc:
+            self.current_pdf_doc.close()
+            self.current_pdf_doc = None
+        self._update_pdf_ui(False)
 
     def _clear_content(self, target=None):
         target = target or self.content_frame
@@ -317,7 +344,8 @@ class MediaDisplayWidget(tk.Frame):
             
         cap.release()
         self.is_playing = False
-        self.after(0, lambda: self.btn_play.config(text="▶"))
+        if self.winfo_exists():
+            self.after(0, lambda: self.btn_play.config(text="▶") if self.winfo_exists() else None)
 
     def _update_video_frame(self, frame, target=None):
         target = target or (self.video_canvas.master if self.video_canvas else self.content_frame)
@@ -336,7 +364,94 @@ class MediaDisplayWidget(tk.Frame):
         img = img.resize((int(iw*ratio), int(ih*ratio)), Image.Resampling.LANCZOS)
         
         self.image_ref = ImageTk.PhotoImage(img)
-        self.after(0, lambda: self.video_canvas.config(image=self.image_ref))
+        if self.winfo_exists():
+            self.after(0, lambda: self.video_canvas.config(image=self.image_ref) if self.video_canvas.winfo_exists() else None)
+
+    # --- PDF ---
+    def _display_pdf(self, path, target=None):
+        if not fitz:
+            self._show_error("PyMuPDF (fitz) no está instalado. Ejecuta 'pip install pymupdf'")
+            return
+            
+        self.current_type = "pdf"
+        target = target or self.content_frame
+        self._clear_content(target)
+        self.controls_frame.grid()
+        self.btn_play.pack_forget() # No necesitamos Play para PDF
+        self._update_pdf_ui(True)
+        
+        self.image_label = tk.Label(target, bg=self.bg_color)
+        self.image_label.pack(fill=tk.BOTH, expand=True)
+
+        try:
+            self.current_pdf_doc = fitz.open(path)
+            self.current_pdf_page = 0
+            self._render_pdf_page()
+            
+            # Soporte para redimensionado
+            self.image_label.bind("<Configure>", lambda e: self._on_resize_pdf())
+        except Exception as e:
+            self._show_error(f"Error cargando PDF: {e}")
+
+    def _render_pdf_page(self):
+        if not self.current_pdf_doc or not self.image_label: return
+        
+        try:
+            page = self.current_pdf_doc.load_page(self.current_pdf_page)
+            
+            # Obtener dimensiones del contenedor
+            self.content_frame.update_idletasks()
+            w = self.content_frame.winfo_width()
+            h = self.content_frame.winfo_height()
+            if w < 10: w, h = 600, 800
+            
+            # Ajustar zoom para que quepa en el visor manteniendo calidad
+            zoom = 2 # Renderizar al doble para nitidez
+            mat = fitz.Matrix(zoom, zoom)
+            pix = page.get_pixmap(matrix=mat)
+            
+            # Convertir a PIL
+            img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+            
+            # Redimensionar al tamaño del widget
+            iw, ih = img.size
+            ratio = min(w/iw, h/ih)
+            img_res = img.resize((int(iw*ratio), int(ih*ratio)), Image.Resampling.LANCZOS)
+            
+            self.image_ref = ImageTk.PhotoImage(img_res)
+            self.image_label.config(image=self.image_ref)
+            
+            # Actualizar contador
+            total = len(self.current_pdf_doc)
+            self.lbl_pdf_page.config(text=f"{self.current_pdf_page + 1} / {total}")
+            self.lbl_info.config(text=f"PDF: {os.path.basename(self.current_media_path)}")
+        except Exception as e:
+            print(f"Error renderizando página PDF: {e}")
+
+    def _change_pdf_page(self, delta):
+        if not self.current_pdf_doc: return
+        
+        new_page = self.current_pdf_page + delta
+        if 0 <= new_page < len(self.current_pdf_doc):
+            self.current_pdf_page = new_page
+            self._render_pdf_page()
+
+    def _on_resize_pdf(self):
+        if hasattr(self, "_resize_pdf_job"): self.after_cancel(self._resize_pdf_job)
+        self._resize_pdf_job = self.after(300, self._render_pdf_page)
+
+    def _update_pdf_ui(self, visible):
+        """Muestra u oculta los controles específicos de PDF."""
+        if visible:
+            self.btn_prev_page.pack(side=tk.LEFT, padx=5)
+            self.lbl_pdf_page.pack(side=tk.LEFT, padx=10)
+            self.btn_next_page.pack(side=tk.LEFT, padx=5)
+        else:
+            self.btn_prev_page.pack_forget()
+            self.lbl_pdf_page.pack_forget()
+            self.btn_next_page.pack_forget()
+            # Restaurar botón play por si acaso (aunque load_media lo maneja)
+            self.btn_play.pack(side=tk.LEFT, padx=5)
 
     # --- MULTI MEDIA (GALLERY) ---
     def _display_multi_media(self, paths):
@@ -435,8 +550,8 @@ class MediaDisplayWidget(tk.Frame):
                 continue
 
         # Mostrar primer elemento
-        if paths:
-            self.after(200, lambda: select_media(paths[0]))
+        if paths and self.winfo_exists():
+            self.after(200, lambda: select_media(paths[0]) if self.winfo_exists() else None)
 
     # --- 3D ---
     def _display_3d_old(self, path, parent=None):

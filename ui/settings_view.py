@@ -469,11 +469,10 @@ class SettingsView(tk.Frame):
         import re
         url_pattern = re.compile(r'https://[a-z0-9-]+\.trycloudflare\.com')
         
-        # Si no es túnel rápido, ya podemos mostrar el hostname configurado
         if not self._force_quick_tunnel.get():
             fixed_host = self.config.get("cloudflare_hostname", "")
-            if fixed_host:
-                self.after(0, lambda h=fixed_host: self._show_tunnel_url(f"https://{h}"))
+            if fixed_host and self.winfo_exists():
+                self.after(0, lambda h=fixed_host: self._show_tunnel_url(f"https://{h}") if self.winfo_exists() else None)
 
         try:
             while self._tunnel_process and self._tunnel_process.poll() is None:
@@ -485,12 +484,13 @@ class SettingsView(tk.Frame):
                         match = url_pattern.search(line)
                         if match:
                             found_url = match.group(0)
-                            self.after(0, lambda u=found_url: self._show_tunnel_url(u))
+                            if self.winfo_exists():
+                                self.after(0, lambda u=found_url: self._show_tunnel_url(u) if self.winfo_exists() else None)
                 
                 try:
                     if self.winfo_exists():
-                        self.after(0, lambda: self.tunnel_canvas.itemconfig(self.tunnel_indicator, fill="#00ff00"))
-                        self.after(0, lambda: self.lbl_tunnel_status.config(text="Activo", fg="#00ff00"))
+                        self.after(0, lambda: self.tunnel_canvas.itemconfig(self.tunnel_indicator, fill="#00ff00") if self.winfo_exists() else None)
+                        self.after(0, lambda: self.lbl_tunnel_status.config(text="Activo", fg="#00ff00") if self.winfo_exists() else None)
                 except:
                     pass
                 
@@ -501,7 +501,7 @@ class SettingsView(tk.Frame):
         
         try:
             if self.winfo_exists():
-                self.after(0, self._on_tunnel_died)
+                self.after(0, lambda: self._on_tunnel_died() if self.winfo_exists() else None)
         except:
             pass
 

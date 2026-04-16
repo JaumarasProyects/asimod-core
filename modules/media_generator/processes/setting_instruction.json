@@ -1,0 +1,28 @@
+{
+    "type": "Escenario",
+    "description": "Receta para la creación y evolución de un escenario o ubicación.",
+    "grades": {
+        "1": {
+            "panel": "Texto",
+            "instruction": "Define el título, ubicación y descripción detallada del entorno."
+        },
+        "2": {
+            "panel": "Imagen",
+            "workflow_folder": "workflows/compuesta/escenario/imagen",
+            "default_workflow": "environment_render.json",
+            "prompt_template": "Renderizado cinematográfico de {titulo}: {descripcion_detallada}. Ubicación: {ubicacion}.",
+            "narrative_enrichment": false,
+            "audio_planning": true
+        },
+        "3": {
+            "panel": "Audio",
+            "workflow_folder": "workflows/compuesta/escenario/audio",
+            "default_workflow": "ambient_sound.json"
+        },
+        "4": {
+            "panel": "Video",
+            "workflow_folder": "workflows/compuesta/escenario/video",
+            "default_workflow": "environment_flythrough.json"
+        }
+    }
+}

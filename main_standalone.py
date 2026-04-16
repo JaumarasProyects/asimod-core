@@ -11,6 +11,8 @@ from core.chat_service import ChatService
 from core.api_server import APIServer
 from core.services.data_service import DataService
 from ui.chat_widget import ChatWidget
+from ui.background_frame import BackgroundFrame
+from modules.widgets import ImageButton
 
 def center_window(root, width=450, height=750):
     screen_width = root.winfo_screenwidth()
@@ -21,7 +23,7 @@ def center_window(root, width=450, height=750):
 
 def main():
     root = tk.Tk()
-    root.title("ASIMOD Core")
+    root.title("ASIMOD")
     
     # Comprobar si el sistema modular está activo
     config_service = ConfigService(filename="settings.json")
@@ -37,6 +39,10 @@ def main():
         center_window(root, 450, 750)
         
     root.configure(bg=style_service.get_color("bg_main"))
+
+    # Inicializar variables de estilo con valores por defecto
+    ghost_bg = style_service.get_color("bg_main")
+    has_btn_img = style_service.get_background("button") is not None
 
     try:
         current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -83,20 +89,23 @@ def main():
         # Contenedor horizontal
         main_container = tk.Frame(root, bg=style_service.get_color("bg_dark"))
         main_container.pack(fill=tk.BOTH, expand=True)
+        
+        # Variables de estilo compartidas
+        # Ya inicializadas arriba
 
         # 1. Sidebar de Módulos (Izquierda)
-        sidebar = tk.Frame(main_container, bg=style_service.get_color("bg_dark"), width=150)
+        sidebar = BackgroundFrame(main_container, style_service, "sidebar", width=150)
         sidebar.pack(side=tk.LEFT, fill=tk.Y)
         sidebar.pack_propagate(False)
 
         # 2. Chat Widget (Derecha) - LO PONEMOS ANTES DEL CONTENIDO PARA QUE SEA FIJO
-        chat_frame = tk.Frame(main_container, width=350)
+        chat_frame = BackgroundFrame(main_container, style_service, "chat", width=350)
         chat_frame.pack(side=tk.RIGHT, fill=tk.BOTH)
         chat_frame.pack_propagate(False)
 
         # 3. Área de Contenido del Módulo (Centro)
         # Al tener expand=True, ocupará todo el espacio restante entre la sidebar y el chat
-        content_area = tk.Frame(main_container, bg=style_service.get_color("bg_main"))
+        content_area = BackgroundFrame(main_container, style_service, "center")
         content_area.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
         # 4. Barra de restauración de Chat (Derecha - Oculta por defecto)
@@ -132,19 +141,25 @@ def main():
             sidebar.config(width=new_width)
             
             # Actualizar botones
-            for btn, mod_icon, mod_name in sidebar_btns:
+            for btn, mod_icon, mod_name, mod_id in sidebar_btns:
                 if sidebar_expanded:
-                    btn.config(text=f" {mod_icon}  {mod_name}", anchor="w", padx=10)
+                    btn.config(text=f" {mod_icon}  {mod_name}", anchor="center", padx=10)
                 else:
                     btn.config(text=mod_icon, anchor="center", padx=0)
 
-        # Botón Toggle superior
-        tk.Button(sidebar, text="☰", bg=style_service.get_color("bg_header") if style_service else "#111", 
-                  fg=style_service.get_color("accent") if style_service else "#4EC9B0",
-                  bd=0, font=("Arial", 12, "bold"), cursor="hand2", pady=10,
-                  command=toggle_sidebar).pack(fill=tk.X)
-
-        tk.Frame(sidebar, bg="#333", height=1).pack(fill=tk.X, pady=(0, 10))
+        # Botón Toggle superior con imagen si está disponible
+        if has_btn_img:
+            toggle_btn = ImageButton(sidebar, text=" ☰ ", style=style_service, 
+                                     callback=toggle_sidebar, 
+                                     font=("Arial", 12, "bold"), pady=10)
+        else:
+            toggle_btn = tk.Button(sidebar, text="☰", bg=ghost_bg, 
+                                   fg=style_service.get_color("accent") if style_service else "#4EC9B0",
+                                   bd=0, font=("Arial", 12, "bold"), cursor="hand2", pady=10,
+                                   command=toggle_sidebar)
+        toggle_btn.pack(fill=tk.X)
+        
+        tk.Frame(sidebar, bg="#333", height=1).pack(fill=tk.X, pady=(0, 5))
 
         def update_module_ui(module_id):
             """Actualiza únicamente la interfaz de usuario (área central)."""
@@ -152,36 +167,74 @@ def main():
             for widget in content_area.winfo_children():
                 widget.destroy()
             
-            # Obtener el módulo (ya activado en el servicio)
             module = module_service.loaded_modules.get(module_id)
 
             if module:
-                m_widget = module.get_widget(content_area)
-                m_widget.pack(fill=tk.BOTH, expand=True)
+                # Envolver el módulo en un cuadro (box) con imagen si el tema lo permite
+                has_box = style_service.get_background("module_box") is not None
+                has_center_bg = style_service.get_background("center") is not None
+                outer_pad = 30 if has_center_bg else 0
+                
+                if has_box:
+                    # Contenedor con textura boxMain.png
+                    box_frame = BackgroundFrame(content_area, style_service, "module_box")
+                    box_frame.pack(fill=tk.BOTH, expand=True, padx=outer_pad, pady=outer_pad)
+                    
+                    # El widget del módulo se empaqueta dentro del cuadro
+                    m_widget = module.get_widget(box_frame)
+                    m_widget.pack(fill=tk.BOTH, expand=True)
+                    
+                    # Intentar que el fondo del módulo no tape la textura (si es un tk.Frame)
+                    try:
+                        m_widget.config(bg="") # Intentar transparencia si es posible o simplemente dejarlo
+                    except: pass
+                else:
+                    m_widget = module.get_widget(content_area)
+                    m_widget.pack(fill=tk.BOTH, expand=True, padx=outer_pad, pady=outer_pad)
             else:
-                # Mostrar pantalla de bienvenida si no hay módulo
-                welcome = tk.Label(content_area, text="ASIMOD MODULAR", fg=style_service.get_color("text_dim"), bg=style_service.get_color("bg_main"), font=("Arial", 24, "bold"))
+                welcome = tk.Label(content_area, text="ASIMOD MODULAR", fg=style_service.get_color("text_dim"), 
+                                   bg=style_service.get_color("bg_main"), font=("Arial", 24, "bold"))
                 welcome.pack(expand=True)
 
         def select_module(module_id):
-            """Inicia la activación de un módulo en el servicio."""
+            """Inicia la activación de un módulo en el servicio y actualiza sidebar."""
             module_service.activate_module(module_id)
+            
+            # Actualizar estado visual de los botones de la sidebar
+            for btn_tuple in sidebar_btns:
+                btn_obj = btn_tuple[0]
+                mod_id = btn_tuple[3] # Necesitamos guardar el id en la tupla
+                is_active = (mod_id == module_id)
+                
+                if isinstance(btn_obj, ImageButton):
+                    btn_obj.set_active(is_active)
+                else:
+                    btn_obj.config(bg="#222" if is_active else ghost_bg)
 
         # Llenar sidebar con botones
+        
         for mod in module_service.get_modules():
-            # Botón modular
-            btn = tk.Button(sidebar, text=f" {mod.icon}  {mod.name}", 
-                            bg=style_service.get_color("bg_dark"), 
-                            fg=style_service.get_color("text_main"), bd=0, 
-                            command=lambda m=mod.id: select_module(m),
-                            font=("Segoe UI Emoji", 10, "bold"), cursor="hand2", 
-                            anchor="w", padx=10, pady=10)
-            btn.pack(fill=tk.X)
-            sidebar_btns.append((btn, mod.icon, mod.name))
+            if has_btn_img:
+                btn = ImageButton(sidebar, text=f" {mod.icon}  {mod.name}", 
+                                  style=style_service, 
+                                  callback=lambda m=mod.id: select_module(m),
+                                  font=("Segoe UI Emoji", 10, "bold"), anchor="center", padx=10, pady=15)
+            else:
+                # Botón modular - Estilo Ghost original
+                btn = tk.Button(sidebar, text=f" {mod.icon}  {mod.name}", 
+                                bg=ghost_bg, 
+                                fg=style_service.get_color("text_main"), bd=0, 
+                                command=lambda m=mod.id: select_module(m),
+                                font=("Segoe UI Emoji", 10, "bold"), cursor="hand2", 
+                                anchor="center", padx=10, pady=15,
+                                activebackground="#222")
+            
+            btn.pack(fill=tk.X, pady=1)
+            sidebar_btns.append((btn, mod.icon, mod.name, mod.id))
             
             # Tooltip simple
             btn.bind("<Enter>", lambda e, n=mod.name: root.title(f"ASIMOD - {n}"))
-            btn.bind("<Leave>", lambda e: root.title("ASIMOD Core"))
+            btn.bind("<Leave>", lambda e: root.title("ASIMOD"))
 
         # Configurar callback de activación (ES EL ÚNICO que actualiza la UI)
         module_service.on_module_activated = update_module_ui

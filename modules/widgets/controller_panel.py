@@ -1,6 +1,7 @@
 import tkinter as tk
 from tkinter import ttk
 import os
+from .image_button import ImageButton
 
 class ControllerPanel(tk.Frame):
     """
@@ -21,15 +22,18 @@ class ControllerPanel(tk.Frame):
         self.is_minimized = False
         
         # 1. Cabecera (Título + Botón Toggle)
-        self.header = tk.Frame(self, bg=header_bg, padx=10, pady=5)
+        # Usar bg_color si queremos máxima transparencia en el header tb
+        self.header = tk.Frame(self, bg=header_bg if not self.style else bg_color, padx=10, pady=5)
         self.header.pack(fill=tk.X)
         self.header.bind("<Button-1>", lambda e: self.toggle()) # Clic en cabecera colapsa
 
-        self.title_label = tk.Label(self.header, text=title, bg=header_bg, fg="#888", 
+        self.title_label = tk.Label(self.header, text=title, bg=header_bg if not self.style else bg_color, 
+                                    fg=self.style.get_color("text_dim") if self.style else "#888", 
                                     font=("Arial", 8, "bold"))
         self.title_label.pack(side=tk.LEFT)
 
-        self.toggle_btn = tk.Label(self.header, text="▼", bg=header_bg, fg="#888", 
+        self.toggle_btn = tk.Label(self.header, text="▼", bg=header_bg if not self.style else bg_color, 
+                                   fg=self.style.get_color("accent") if self.style else "#888", 
                                    font=("Arial", 10), cursor="hand2")
         self.toggle_btn.pack(side=tk.RIGHT)
         self.toggle_btn.bind("<Button-1>", lambda e: self.toggle())
@@ -213,10 +217,18 @@ class ControllerPanel(tk.Frame):
         """Añade un botón de acción al panel."""
         row = len(self.grid_container.winfo_children()) // 2
         
-        btn = tk.Button(self.grid_container, text=label_text, 
-                        bg=bg or (self.style.get_color("accent") if self.style else "#4CAF50"), 
-                        fg="white", bd=0, padx=15, pady=5, font=("Arial", 9, "bold"),
-                        cursor="hand2", command=callback)
+        # Si el estilo tiene imagen de fondo para botones, usamos ImageButton
+        has_btn_img = self.style.get_background("button") if self.style else False
+        
+        if has_btn_img:
+            btn = ImageButton(self.grid_container, text=label_text.upper(), style=self.style, 
+                              callback=callback, font=("Arial", 9, "bold"), padx=15, pady=12)
+        else:
+            btn = tk.Button(self.grid_container, text=label_text, 
+                            bg=bg or (self.style.get_color("accent") if self.style else "#4CAF50"), 
+                            fg="white", bd=0, padx=15, pady=5, font=("Arial", 9, "bold"),
+                            cursor="hand2", command=callback)
+            
         btn.grid(row=row, column=1, sticky="ew", pady=5)
         return btn
 
@@ -241,15 +253,74 @@ class ControllerPanel(tk.Frame):
         self.controls[key] = txt
         return txt
 
+    def add_check_list(self, label_text, key, items, callback=None, parent=None):
+        """Añade una lista de checkboxes con scroll para múltiples selecciones."""
+        target = parent if parent else self.grid_container
+        is_grid = (target == self.grid_container)
+        
+        if is_grid:
+            row = len(self.grid_container.winfo_children()) // 2
+            lbl = tk.Label(target, text=f"{label_text}:", bg=self.bg_color, 
+                           fg=self.style.get_color("text_dim") if self.style else "#aaa", font=("Arial", 9))
+            lbl.grid(row=row, column=0, sticky="nw", pady=5, padx=(0, 10))
+        
+        # Contenedor con scroll
+        canvas_container = tk.Frame(target, bg=self.style.get_color("bg_dark") if self.style else "#333", height=150)
+        if is_grid:
+            canvas_container.grid(row=row, column=1, sticky="ew", pady=5)
+            canvas_container.columnconfigure(0, weight=1)
+        else:
+            canvas_container.pack(fill=tk.BOTH, expand=True, pady=5)
+        
+        canvas = tk.Canvas(canvas_container, bg=self.style.get_color("bg_dark") if self.style else "#333", 
+                           height=150, bd=0, highlightthickness=0)
+        scrollbar = ttk.Scrollbar(canvas_container, orient="vertical", command=canvas.yview)
+        scroll_frame = tk.Frame(canvas, bg=self.style.get_color("bg_dark") if self.style else "#333")
+
+        scroll_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+        canvas.create_window((0, 0), window=scroll_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+
+        selected_vars = []
+        for text, value in items:
+            var = tk.BooleanVar()
+            chk = tk.Checkbutton(scroll_frame, text=text, variable=var, 
+                                 bg=self.style.get_color("bg_dark") if self.style else "#333",
+                                 fg=self.style.get_color("text_main") if self.style else "#eee",
+                                 selectcolor=self.style.get_color("bg_main") if self.style else "#222",
+                                 activebackground=self.style.get_color("accent") if self.style else "#4CAF50",
+                                 font=("Arial", 8), anchor="w")
+            chk.pack(fill=tk.X, padx=5, pady=2)
+            selected_vars.append((value, var))
+            
+            if callback:
+                var.trace_add("write", lambda *args: callback())
+
+        self.controls[key] = selected_vars
+        return canvas_container
+
     def get_value(self, key, default=None):
         """Retorna el valor de un controlador por su clave."""
         if key in self.controls:
             ctrl = self.controls[key]
             if isinstance(ctrl, tk.Text):
                 return ctrl.get("1.0", tk.END).strip()
+            if isinstance(ctrl, list) and len(ctrl) > 0 and isinstance(ctrl[0], tuple):
+                # Es una lista de checkboxes (value, BooleanVar)
+                return [val for val, var in ctrl if var.get()]
             return ctrl.get()
         return default
-
+    def add_label(self, text, color=None, font_size=9, bold=False):
+        """Añade una etiqueta de información al panel."""
+        row = len(self.grid_container.winfo_children()) // 2
+        
+        weight = "bold" if bold else "normal"
+        lbl = tk.Label(self.grid_container, text=text, bg=self.bg_color, 
+                       fg=color or (self.style.get_color("text_main") if self.style else "#eee"), 
+                       font=("Arial", font_size, weight))
         lbl.grid(row=row, column=0, columnspan=2, sticky="w", pady=5)
         return lbl
 

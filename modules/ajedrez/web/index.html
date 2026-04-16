@@ -1,0 +1,35 @@
+<div class="ajedrez-wrapper" style="height: 100%; display: flex; flex-direction: column; overflow: hidden; padding: 10px; animation: fadeIn 0.8s ease-out;">
+    <div class="ajedrez-header" style="margin-bottom: 20px; display: flex; align-items: center; gap: 20px; background: rgba(255,255,255,0.02); padding: 15px 25px; border-radius: 25px; border: 1px solid rgba(255,255,255,0.05); backdrop-filter: blur(10px);">
+        <div class="ajedrez-icon-box" style="font-size: 2.5rem; background: var(--bg-dark); width: 60px; height: 60px; display: flex; align-items: center; justify-content: center; border-radius: 18px; border: 1px solid var(--accent);">
+            ♟️
+        </div>
+        <div style="flex: 1;">
+            <h1 style="margin: 0; font-size: 1.8rem; font-weight: 800; color: var(--text-main); letter-spacing: -0.5px;">AJEDREZ <span style="color: var(--accent);">MASTER</span></h1>
+            <p style="margin: 0; color: var(--text-dim); font-size: 0.9rem; opacity: 0.8;">Entorno de Gran Maestro Sincronizado</p>
+        </div>
+        <div class="ajedrez-status" style="display: flex; align-items: center; gap: 10px; background: rgba(78, 201, 176, 0.1); padding: 8px 15px; border-radius: 12px; border: 1px solid rgba(78, 201, 176, 0.2);">
+            <span style="width: 8px; height: 8px; background: var(--accent); border-radius: 50%; box-shadow: 0 0 10px var(--accent); animation: pulse 2s infinite;"></span>
+            <span style="color: var(--accent); font-size: 0.75rem; font-weight: 800; letter-spacing: 1px; text-transform: uppercase;">Módulo Activo</span>
+        </div>
+    </div>
+
+    <div class="ajedrez-game-area" style="flex: 1; border-radius: 30px; border: 1px solid rgba(255,255,255,0.08); overflow: hidden; box-shadow: 0 20px 50px rgba(0,0,0,0.4); background: var(--bg-dark); position: relative;">
+        <!-- Iframe wrapper for isolation -->
+        <iframe src="/v1/modules/ajedrez/assets/game.html?v=4" style="width: 100%; height: 100%; border: none; background: transparent;" id="chessGameIframe"></iframe>
+    </div>
+
+    <style>
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes pulse {
+            0% { opacity: 0.5; transform: scale(1); }
+            50% { opacity: 1; transform: scale(1.2); }
+            100% { opacity: 0.5; transform: scale(1); }
+        }
+        /* Custom scrollbar for the module workspace if needed */
+        .ajedrez-wrapper::-webkit-scrollbar { width: 6px; }
+        .ajedrez-wrapper::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 3px; }
+    </style>
+</div>

@@ -318,24 +318,18 @@ class APIServer:
             
             workflows = {}
             
-            def scan_dir(path: Path):
-                """Escanea una carpeta y retorna archivos JSON o subcarpetas con JSON."""
+            def scan_dir(path: Path, base_rel=""):
+                """Escanea una carpeta recursivamente y retorna carpetas que contienen archivos JSON."""
                 results = {}
+                direct_files = [f.name for f in path.iterdir() if f.is_file() and f.suffix == ".json"]
+                if direct_files:
+                    key = base_rel if base_rel else "root"
+                    results[key] = direct_files
+                
                 for item in path.iterdir():
                     if item.is_dir():
-                        # Buscar archivos JSON recursivamente (max 1 nivel más)
-                        files = [f.name for f in item.rglob("*.json")]
-                        if files:
-                            # Simplificar nombre para el combo
-                            results[item.name] = [f.name for f in item.iterdir() if f.is_file() and f.suffix == ".json"]
-                            # Si es una carpeta de categorías (como video/simple), bajamos un nivel
-                            for sub in item.iterdir():
-                                if sub.is_dir():
-                                    sub_files = [f.name for f in sub.iterdir() if f.suffix == ".json"]
-                                    if sub_files: results[f"{item.name}/{sub.name}"] = sub_files
-                    elif item.is_file() and item.suffix == ".json":
-                        if "root" not in results: results["root"] = []
-                        results["root"].append(item.name)
+                        sub_rel = f"{base_rel}/{item.name}" if base_rel else item.name
+                        results.update(scan_dir(item, sub_rel))
                 return results
 
             for sub in ["simple", "compuesta", "audio", "video", "3d"]:
@@ -600,6 +594,21 @@ class APIServer:
                 "audio_duration": audio_duration,
                 "playback_mode": self.chat_service.config.get("voice_playback_mode", "interrupt")
             }
+
+        @self.app.get("/v1/fs/get")
+        async def get_fs_file(path: str):
+            """Sirve un archivo local para el explorador del sistema."""
+            from pathlib import Path
+            from starlette.responses import FileResponse
+            import mimetypes
+
+            file_path = Path(path)
+            if not file_path.exists() or not file_path.is_file():
+                raise HTTPException(status_code=404, detail="Archivo no encontrado")
+
+            # Mimetypes suele resolver bien .png, .jpg, .pdf, .mp4, etc.
+            mime, _ = mimetypes.guess_type(path)
+            return FileResponse(str(file_path), media_type=mime or "application/octet-stream")
 
         @self.app.get("/v1/audio/file/{filename}")
         async def get_audio_file(filename: str):

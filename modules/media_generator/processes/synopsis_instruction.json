@@ -1,0 +1,16 @@
+{
+    "type": "Sinopsis",
+    "description": "Receta para la creación de la idea global (Sinopsis).",
+    "grades": {
+        "1": {
+            "panel": "Texto",
+            "instruction": "Define el título, la idea global y la estructura/partes del contenido."
+        },
+        "2": {
+            "panel": "Imagen",
+            "instruction": "En el caso de la sinopsis, el Grado 2 desarrolla el Guion Técnico detallado basado en la estructura definida en el Grado 1.",
+            "narrative_enrichment": true,
+            "audio_planning": true
+        }
+    }
+}
