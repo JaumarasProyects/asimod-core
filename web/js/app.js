@@ -185,6 +185,9 @@ class AsimodApp {
             if (this.ttsMode) this.ttsMode.value = status.voice_mode || "autoplay";
             if (this.sttModeSelect) this.sttModeSelect.value = status.stt_mode || "OFF";
 
+            // Actualizar Avatar HUD (NUEVO)
+            this.updateAvatarHUD(status);
+
             await this.refreshMemories(status.active_thread);
             await this.refreshModels(status.provider, status.model);
             await this.refreshVoices(status.voice_provider, status.voice_id);
@@ -615,9 +618,20 @@ class AsimodApp {
                     method: 'POST', headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({mode: nextMode})
                 });
-                if (this.sttModeSelect) this.sttModeSelect.value = nextMode;
-                this.syncQuickStatus();
-            };
+                if (this.chatModeSelect) this.chatModeSelect.addEventListener('change', () => this.syncQuickStatus());
+        
+        // Character Library Events (NUEVO)
+        const openLibBtn = document.getElementById('avatarVisualizer');
+        const libModal = document.getElementById('charLibraryModal');
+        const closeLibBtn = document.getElementById('closeCharLibrary');
+
+        if (openLibBtn) openLibBtn.onclick = () => this.openCharacterLibrary();
+        if (closeLibBtn) closeLibBtn.onclick = () => libModal.style.display = "none";
+        window.onclick = (event) => {
+            if (event.target == libModal) libModal.style.display = "none";
+        };
+    }
+        };
         }
         // --- NEW Relocated Controls Logic ---
         if (this.audioStopBtn) {
@@ -735,6 +749,14 @@ class AsimodApp {
                     if (result.audio_path) {
                         if (this.currentAudio) this.currentAudio.pause(); // Parar previo
                         this.currentAudio = new Audio(`/v1/audio/file/${result.audio_path}`);
+                        
+                        // Vincular con Avatar HUD (NUEVO)
+                        const hud = document.getElementById('avatarContainer');
+                        if (hud) {
+                            this.currentAudio.addEventListener('play', () => hud.classList.add('speaking'));
+                            this.currentAudio.addEventListener('ended', () => hud.classList.remove('speaking'));
+                        }
+
                         this.currentAudio.play().catch(e => console.warn("Auto-playback blocked by browser:", e));
                     }
                 } else {
@@ -1521,6 +1543,140 @@ class AsimodApp {
         
         html += '</div>';
         viewer.innerHTML = html;
+    }
+
+    updateAvatarHUD(status) {
+        const nameEl = document.getElementById('avatarName');
+        const fallbackEl = document.getElementById('avatarFallback');
+        const imgEl = document.getElementById('avatarImage');
+        const videoEl = document.getElementById('avatarVideo');
+        
+        if (nameEl) nameEl.innerText = status.char_name || "Sistema";
+        
+        const avatar = status.char_avatar || {};
+        const idle = avatar.idle || (status.char_avatar ? status.char_avatar.imagen_principal : null);
+        const videoIdle = avatar.video_idle || avatar.video_loop;
+
+        // Reset visibility
+        if (fallbackEl) fallbackEl.style.display = 'block';
+        if (imgEl) imgEl.style.display = 'none';
+        if (videoEl) {
+            videoEl.style.display = 'none';
+            videoEl.pause();
+        }
+
+        if (videoIdle) {
+            if (videoEl) {
+                videoEl.src = videoIdle.startsWith('http') ? videoIdle : `/${videoIdle.replace(/\\/g, '/')}`;
+                videoEl.style.display = 'block';
+                videoEl.play().catch(() => {});
+                if (fallbackEl) fallbackEl.style.display = 'none';
+            }
+        } else if (idle) {
+            if (imgEl) {
+                imgEl.src = idle.startsWith('http') ? idle : `/${idle.replace(/\\/g, '/')}`;
+                imgEl.style.display = 'block';
+                if (fallbackEl) fallbackEl.style.display = 'none';
+            }
+        }
+    }
+
+    // --- CHARACTER HUB LOGIC (NUEVO) ---
+
+    async openCharacterLibrary() {
+        const modal = document.getElementById('charLibraryModal');
+        const list = document.getElementById('charLibraryList');
+        if (!modal || !list) return;
+
+        modal.style.display = "block";
+        list.innerHTML = `<div style="color:var(--accent); text-align:center; grid-column: 1/-1;">Cargando biblioteca...</div>`;
+
+        try {
+            const resp = await fetch('/v1/characters');
+            const data = await resp.json();
+            const characters = data.characters || [];
+
+            if (characters.length === 0) {
+                list.innerHTML = `<div style="color:#888; text-align:center; grid-column: 1/-1;">No hay personajes registrados.</div>`;
+                return;
+            }
+
+            list.innerHTML = "";
+            characters.forEach(char => {
+                const card = document.createElement('div');
+                card.className = "character-card";
+                card.style = `
+                    background: rgba(40,40,60,0.5);
+                    border: 1px solid rgba(255,255,255,0.1);
+                    border-radius: 12px;
+                    padding: 15px;
+                    cursor: pointer;
+                    transition: all 0.3s ease;
+                    text-align: center;
+                `;
+                
+                const avatarImg = char.avatar && char.avatar.idle_url ? char.avatar.idle_url : '';
+                
+                card.innerHTML = `
+                    <div style="width:70px; height:70px; border-radius:50%; background:#1a1a25; margin:0 auto 10px; overflow:hidden; border:2px solid var(--accent);">
+                        ${avatarImg ? `<img src="${avatarImg}" style="width:100%; height:100%; object-fit:cover;">` : `<span style="font-size:30px; line-height:70px;">👤</span>`}
+                    </div>
+                    <div style="font-weight:bold; color:white; font-size:14px; margin-bottom:5px;">${char.name}</div>
+                    <div style="font-size:11px; color:#aaa; line-height:1.2;">${(char.personality || 'Sin descripción').substring(0, 50)}...</div>
+                `;
+
+                card.onmouseenter = () => card.style.background = "rgba(100,200,180,0.1)";
+                card.onmouseleave = () => card.style.background = "rgba(40,40,60,0.5)";
+                
+                card.onclick = () => this.applyCharacterFromHub(char);
+                
+                list.appendChild(card);
+            });
+
+        } catch (e) {
+            list.innerHTML = `<div style="color:red; text-align:center; grid-column: 1/-1;">Error al cargar: ${e.message}</div>`;
+        }
+    }
+
+    async applyCharacterFromHub(char) {
+        console.log("[CharacterHub] Aplicando personaje:", char.name);
+        
+        // Cerrar modal
+        document.getElementById('charLibraryModal').style.display = "none";
+
+        // Crear/Actualizar memoria con los datos del personaje
+        try {
+            const payload = {
+                thread_id: "New", // Forzar nuevo hilo o usar nombre
+                name: char.name,
+                personality: char.personality,
+                voice_id: char.voice_id || "None",
+                voice_provider: char.voice_provider || "None",
+                avatar: char.avatar || {}
+            };
+
+            const resp = await fetch('/v1/memories', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(payload)
+            });
+
+            if (resp.ok) {
+                // Forzar sincronización total para actualizar HUD y UI
+                await this.syncFullTechnicalState();
+                this._appendSystemMessage(`Personaje "${char.name}" cargado correctamente.`);
+            } else {
+                throw new Error("No se pudo aplicar el personaje");
+            }
+
+        } catch (e) {
+            console.error("[CharacterHub] Error al aplicar:", e);
+            alert("Error al cargar el personaje: " + e.message);
+        }
+    }
+
+    _appendSystemMessage(text) {
+        this.addChatMessage("system", text);
     }
 }
 

@@ -226,11 +226,11 @@ class ChessEngine:
 
     def get_ascii_board(self):
         ascii_str = ""
-        pieces = {'K':'Rey B', 'Q':'Reina B', 'R':'Torre B', 'B':'Alfil B', 'N':'Caballo B', 'P':'Peón B',
-                  'k':'Rey N', 'q':'Reina N', 'r':'Torre N', 'b':'Alfil N', 'n':'Caballo N', 'p':'Peón N', '.': '.'}
+        pieces = {'K':'♔K', 'Q':'♕Q', 'R':'♖R', 'B':'♗B', 'N':'♘N', 'P':'♙P',
+                  'k':'♚k', 'q':'♛q', 'r':'♜r', 'b':'♝b', 'n':'♞n', 'p':'♟p', '.': ' . '}
         for i, row in enumerate(self.board):
-            ascii_str += str(8-i) + "  " + " | ".join([pieces[p] for p in row]) + "\n"
-        ascii_str += "    a         b         c         d         e         f         g         h\n"
+            ascii_str += str(8-i) + " [" + "][".join([pieces[p] for p in row]) + "]\n"
+        ascii_str += "    a   b   c   d   e   f   g   h\n"
         return ascii_str
 
     def get_fen(self):
@@ -365,13 +365,18 @@ class CapturedPieces(tk.Frame):
         self.label.config(text=txt)
 
 class ChessBoard(tk.Canvas):
-    def __init__(self, parent, engine, ai, **kwargs):
+    def __init__(self, parent, engine, ai, style_service=None, **kwargs):
         super().__init__(parent, **kwargs)
         self.engine, self.ai = engine, ai
+        self.style = style_service
         self.selected, self.valid = None, []
+        self.game_over_res = None
         self.difficulty = 2
         self.mode = "ia" # "ia" o "local"
         self.pcs = {'K':'♔','Q':'♕','R':'♖','B':'♗','N':'♘','P':'♙','k':'♚','q':'♛','r':'♜','b':'♝','n':'♞','p':'♟'}
+        self.bg_photo = None
+        self._bg_img_cache = None
+        self._last_bg_size = (0, 0)
         self.bind("<Button-1>", self._click)
         self.bind("<Configure>", lambda e: self.draw())
 
@@ -383,19 +388,44 @@ class ChessBoard(tk.Canvas):
         ox, oy = (w-sq*8)//2, (h-sq*8)//2
         accent = "#00d9ff"
         
+        # Dibujar imagen de fondo si hay estilo
+        if self.style:
+            bg_path = self.style.get_background("chat") or self.style.get_background("center")
+            if bg_path and __import__('os').path.exists(bg_path):
+                try:
+                    from PIL import Image, ImageTk
+                    curr_size = (w, h)
+                    # Solo redimensionar si el tamaño ha cambiado o no hay caché
+                    if self._bg_img_cache is None or self._last_bg_size != curr_size:
+                        img_orig = Image.open(bg_path)
+                        img_resized = img_orig.resize(curr_size, Image.Resampling.LANCZOS)
+                        self._bg_img_cache = ImageTk.PhotoImage(img_resized)
+                        self._last_bg_size = curr_size
+                    
+                    self.create_image(0, 0, anchor="nw", image=self._bg_img_cache)
+                except Exception as e:
+                    print(f"Error cargando fondo de tablero: {e}")
+
         for r in range(8):
             for c in range(8):
                 x1, y1 = ox+c*sq, oy+r*sq
-                # Usar colores más oscuros y 'glassy'
                 cl = "#16213e" if (r+c)%2==0 else "#0f0f1a"
-                if self.selected == (r,c): cl = "#1e3a5f"
-                elif (r,c) in self.valid: cl = "#1a4a4a"
+                stipple = "gray50" # Transparencia parcial para dejar ver el fondo
+                
+                if self.selected == (r,c): 
+                    cl = "#1e3a5f"
+                    stipple = "gray75"
+                elif (r,c) in self.valid: 
+                    cl = "#00d9ff"
+                    stipple = "gray25"
                 
                 # Resaltado de último movimiento
                 if self.engine.last_move and (r,c) in [(self.engine.last_move[0], self.engine.last_move[1]), (self.engine.last_move[2], self.engine.last_move[3])]:
                     cl = "#223344"
+                    stipple = "gray75"
                 
-                self.create_rectangle(x1, y1, x1+sq, y1+sq, fill=cl, outline="#1a2a4a", width=1)
+                # En Windows, stipple fusiona el color con el fondo
+                self.create_rectangle(x1, y1, x1+sq, y1+sq, fill=cl, outline="#1a2a4a", width=1, stipple=stipple)
                 
                 # Check alert
                 if self.engine.is_in_check(self.engine.turn):
@@ -414,13 +444,33 @@ class ChessBoard(tk.Canvas):
                 if r == 7:
                     self.create_text(x1+sq-5, y1+sq-5, anchor=tk.SE, text="abcdefgh"[c], font=("Courier New", max(8, int(sq*0.15)), "bold"), fill=TEXT_DIM)
 
+        # OVERLAY DE VICTORIA / FIN DE PARTIDA
+        if self.game_over_res:
+            # Fondo semi-transparente (usando stipple)
+            self.create_rectangle(0, 0, w, h, fill="#000", outline="", stipple="gray50")
+            # Texto principal con brillo
+            self.create_text(w/2, h/2-20, text=self.game_over_res, font=("Courier New", int(sq*0.8), "bold"), fill="#fff")
+            self.create_text(w/2, h/2+40, text="PARTIDA FINALIZADA", font=("Helvetica", int(sq*0.3), "bold"), fill=ACCENT_CYAN)
+            self.create_text(w/2, h-40, text="HAZ CLIC PARA NUEVA PARTIDA", font=("Helvetica", 10, "italic"), fill=TEXT_DIM)
+
     def _click(self, e):
         sq = min(self.winfo_width(), self.winfo_height()) // 8
         ox, oy = (self.winfo_width()-sq*8)//2, (self.winfo_height()-sq*8)//2
         c, r = (e.x-ox)//sq, (e.y-oy)//sq
         if 0<=r<8 and 0<=c<8:
+            if self.game_over_res:
+                self.game_over_res = None
+                self.engine.reset()
+                self.master_master.update_ui()
+                self.draw()
+                return
+
             if self.selected and (r,c) in self.valid:
-                self.engine.move(self.selected[0], self.selected[1], r, c)
+                r1, c1 = self.selected
+                self.engine.move(r1, c1, r, c)
+                # Locución del movimiento del oponente
+                self.master_master.announce_move_voice(r1, c1, r, c)
+                
                 self.selected, self.valid = None, []
                 self.master_master.update_ui()
                 self.master_master.check_auto_turn()
@@ -431,16 +481,32 @@ class ChessBoard(tk.Canvas):
     def ia(self):
         if self.engine.turn == 'b':
             m = self.ai.get_move(self.difficulty)
-            if m: self.engine.move(*m)
+            if m: 
+                self.engine.move(*m)
+                # Locución del movimiento de la IA Local
+                if hasattr(self, 'master_master'):
+                    self.master_master.announce_move_voice(*m)
+                    
             self.master_master.update_ui()
             self.master_master.check_auto_turn()
             self._check()
 
     def _check(self):
         if not self.engine.get_all_valid_moves(self.engine.turn):
-            res = "JAQUE MATE" if self.engine.is_in_check(self.engine.turn) else "TABLAS"
-            messagebox.showinfo("ASIMOD CHESS", res)
-            self.engine.reset(); self.master_master.update_ui()
+            is_check = self.engine.is_in_check(self.engine.turn)
+            if is_check:
+                winner = "¡GANAN BLANCAS!" if self.engine.turn == 'b' else "¡GANAN NEGRAS!"
+                self.game_over_res = winner
+                # Sonido de triunfo
+                import winsound, threading
+                def play_victory():
+                    melody = [(523, 200), (659, 200), (783, 200), (1046, 600)]
+                    for f, d in melody: winsound.Beep(f, d)
+                threading.Thread(target=play_victory, daemon=True).start()
+            else:
+                self.game_over_res = "¡TABLAS!"
+            
+            self.draw()
 
 # --- MÓDULO PRINCIPAL ---
 
@@ -450,42 +516,74 @@ class AjedrezModule(StandardModule):
         self.name, self.id, self.icon = "Ajedrez", "ajedrez", "♟️"
         self.engine = ChessEngine()
         self.ai = ChessAI(self.engine)
-        self.game_file = os.path.join(os.path.dirname(__file__), "saved_games.json")
+        self.game_file = os.path.join(os.path.dirname(__file__), "chess_history.json")
         self.player1_name = "Jugador 1"
         self.player2_name = "Jugador 2"
         self.asimod_thinking = False
+        self.agent_running = False # Lock para evitar recursión de hilos del agente
+        self.ai_retries = 0
+        self.asimod_steroids_var = tk.BooleanVar(value=False)
+        self.asimod_steroids_level_var = tk.IntVar(value=2)
+        self.opponent_voice_id = "es-ES-AlvaroNeural" # Voz masculina seria
+        self.sidebar_visible = True
 
     def render_workspace(self, parent):
+        from ui.background_frame import BackgroundFrame
+        from modules.widgets.image_button import ImageButton
+        
+        # Capturamos el fondo del padre para 'mimetizarnos'
+        ghost_bg = parent.cget("bg")
         has_bg = self.style.get_background("center") is not None
-        pad = 20 if has_bg else 0
-        ghost_bg = self.style.get_color("bg_main")
         accent = self.style.get_color("accent")
 
-        self.root_f = tk.Frame(parent, bg=ghost_bg)
-        self.root_f.pack(fill=tk.BOTH, expand=True, padx=pad, pady=pad)
+        # Root frame del espacio de trabajo
+        if has_bg:
+            self.root_f = BackgroundFrame(parent, self.style, "center")
+        else:
+            self.root_f = tk.Frame(parent, bg=ghost_bg)
+            
+        self.root_f.pack(fill=tk.BOTH, expand=True)
 
         # Header
-        head = tk.Frame(self.root_f, bg=ghost_bg, pady=10)
+        if has_bg:
+            head = BackgroundFrame(self.root_f, self.style, "center")
+            head.config(height=45)
+            head.pack_propagate(False)
+        else:
+            head = tk.Frame(self.root_f, bg=ghost_bg, pady=5)
+            
         head.pack(fill=tk.X)
-        tk.Label(head, text="♔ CHESS MASTER TACTICAL BOARD", font=("Courier New", 18, "bold"), bg=ghost_bg, fg=accent).pack()
+        
+        # Botón para colapsar panel
+        self.toggle_btn = ImageButton(head, text=" ☰ PANELES ", style=self.style, callback=self.toggle_sidebar, 
+                                     font=("Helvetica", 9, "bold"), pady=5)
+        self.toggle_btn.pack(side=tk.LEFT, padx=10, pady=5)
+        
+        tk.Label(head, text="♔ CHESS MASTER TACTICAL BOARD", font=("Courier New", 18, "bold"), bg=ghost_bg, fg=accent).pack(side=tk.LEFT, expand=True, pady=5)
 
-        # Main Layout
-        main_f = tk.Frame(self.root_f, bg=ghost_bg)
-        main_f.pack(fill=tk.BOTH, expand=True)
+        # En lugar de usar un main_f opaco que tapa el root_f, empaquetaremos directamente en root_f
+        # Sidebar textura
+        side_color = self.style.get_color("bg_sidebar") if not has_bg else ghost_bg
+        panel_bd = 1 if has_bg else 0
+        
+        if has_bg:
+            self.side_panel = BackgroundFrame(self.root_f, self.style, "module_box", width=250)
+            self.side_panel.config(highlightthickness=panel_bd, highlightbackground="#333")
+            # Padding interno manual ya que canvas ignora padx de init
+            self.side_panel._padx, self.side_panel._pady = 15, 15
+        else:
+            self.side_panel = tk.Frame(self.root_f, bg=side_color, width=250, padx=15, pady=15, highlightthickness=panel_bd)
+            
+        self.side_panel.pack(side=tk.LEFT, fill=tk.Y, padx=0)
+        self.side_panel.pack_propagate(False)
 
-        # Sidebar
-        side_color = self.style.get_color("bg_sidebar")
-        side = tk.Frame(main_f, bg=side_color, width=220, padx=15, pady=15)
-        side.pack(side=tk.LEFT, fill=tk.Y, padx=(0, pad))
-        side.pack_propagate(False)
-
-        tk.Label(side, text="CONFIGURACIÓN", bg=side_color, fg=ACCENT_GOLD, font=("Helvetica", 9, "bold")).pack(anchor="w")
+        tk.Label(self.side_panel, text="CONFIGURACIÓN", bg=side_color, fg=ACCENT_GOLD, font=("Helvetica", 9, "bold")).pack(anchor="w")
         
         # Modo de Juego
         self.mode_var = tk.StringVar(value="ia")
         
         # Player names UI
-        self.players_frame = tk.Frame(side, bg=side_color)
+        self.players_frame = tk.Frame(self.side_panel, bg=side_color)
         
         tk.Label(self.players_frame, text="JUGADOR 1 (Blancas)", bg=side_color, fg=TEXT_DIM, font=("Helvetica", 8)).pack(anchor="w", pady=(5,0))
         self.p1_entry = tk.Entry(self.players_frame, bg=ghost_bg, fg=TEXT_MAIN, bd=0, insertbackground=TEXT_MAIN)
@@ -509,89 +607,116 @@ class AjedrezModule(StandardModule):
                 self.diff_slider.pack(fill=tk.X, after=self.diff_lbl)
             self.reset(ask=False)
 
-        self.mode_radio1 = tk.Radiobutton(side, text="Vs IA", variable=self.mode_var, value="ia", bg=side_color, fg=TEXT_MAIN, 
+        self.mode_radio1 = tk.Radiobutton(self.side_panel, text="Vs IA", variable=self.mode_var, value="ia", bg=side_color, fg=TEXT_MAIN, 
                        selectcolor=ghost_bg, activebackground=side_color, command=switch_mode)
         self.mode_radio1.pack(anchor="w", pady=2)
-        self.mode_radio2 = tk.Radiobutton(side, text="Vs Jugador", variable=self.mode_var, value="local", bg=side_color, fg=TEXT_MAIN, 
+        self.mode_radio2 = tk.Radiobutton(self.side_panel, text="Vs Jugador", variable=self.mode_var, value="local", bg=side_color, fg=TEXT_MAIN, 
                        selectcolor=ghost_bg, activebackground=side_color, command=switch_mode)
         self.mode_radio2.pack(anchor="w", pady=2)
 
-        tk.Frame(side, bg="#333", height=1).pack(fill=tk.X, pady=10)
+        tk.Frame(self.side_panel, bg="#333", height=1).pack(fill=tk.X, pady=10)
 
-        self.turn_lbl = tk.Label(side, text="TURNO: BLANCAS", bg=side_color, fg=TEXT_MAIN, font=("Courier New", 11, "bold"))
+        self.turn_lbl = tk.Label(self.side_panel, text="TURNO: BLANCAS", bg=side_color, fg=TEXT_MAIN, font=("Courier New", 11, "bold"))
         self.turn_lbl.pack(anchor="w", pady=(5, 10))
 
-        self.diff_lbl = tk.Label(side, text="DIFICULTAD IA", bg=BG_CARD, fg=TEXT_DIM, font=("Helvetica", 9))
+        self.diff_lbl = tk.Label(self.side_panel, text="DIFICULTAD IA", bg=BG_CARD, fg=TEXT_DIM, font=("Helvetica", 9))
         self.diff_lbl.pack(anchor="w")
         self.diff_var = tk.IntVar(value=2)
-        self.diff_slider = tk.Scale(side, from_=1, to=4, orient=tk.HORIZONTAL, variable=self.diff_var, bg=side_color, fg=accent, highlightthickness=0, bd=0)
+        self.diff_slider = tk.Scale(self.side_panel, from_=1, to=4, orient=tk.HORIZONTAL, variable=self.diff_var, bg=side_color, fg=accent, highlightthickness=0, bd=0)
         self.diff_slider.pack(fill=tk.X)
 
-        tk.Frame(side, bg="#333", height=1).pack(fill=tk.X, pady=10)
+        tk.Frame(self.side_panel, bg="#333", height=1).pack(fill=tk.X, pady=10)
         
         # Opciones Agente ASIMOD
-        tk.Label(side, text="CONTROL ASIMOD (AGENTE)", bg=side_color, fg=ACCENT_GOLD, font=("Helvetica", 8, "bold")).pack(anchor="w")
+        tk.Label(self.side_panel, text="CONTROL ASIMOD (AGENTE)", bg=side_color, fg=ACCENT_GOLD, font=("Helvetica", 8, "bold")).pack(anchor="w")
         self.asimod_w_var = tk.BooleanVar(value=False)
         self.asimod_b_var = tk.BooleanVar(value=False)
         
         def on_agent_toggle():
             self.check_auto_turn()
             
-        tk.Checkbutton(side, text="Asimod juega Blancas", variable=self.asimod_w_var, command=on_agent_toggle, bg=side_color, fg=TEXT_MAIN, selectcolor=ghost_bg, activebackground=side_color).pack(anchor="w")
-        tk.Checkbutton(side, text="Asimod juega Negras", variable=self.asimod_b_var, command=on_agent_toggle, bg=side_color, fg=TEXT_MAIN, selectcolor=ghost_bg, activebackground=side_color).pack(anchor="w")
+        tk.Checkbutton(self.side_panel, text="Asimod juega Blancas", variable=self.asimod_w_var, command=on_agent_toggle, bg=side_color, fg=TEXT_MAIN, selectcolor=ghost_bg, activebackground=side_color).pack(anchor="w")
+        tk.Checkbutton(self.side_panel, text="Asimod juega Negras", variable=self.asimod_b_var, command=on_agent_toggle, bg=side_color, fg=TEXT_MAIN, selectcolor=ghost_bg, activebackground=side_color).pack(anchor="w")
         
         # Max AI Retries Config
-        retry_f = tk.Frame(side, bg=side_color)
+        retry_f = tk.Frame(self.side_panel, bg=side_color)
         retry_f.pack(fill=tk.X, pady=(10, 0))
         tk.Label(retry_f, text="Fallos Máx. IA:", bg=side_color, fg=TEXT_DIM, font=("Helvetica", 8)).pack(side=tk.LEFT)
         self.ai_max_retries_var = tk.IntVar(value=5)
         tk.Spinbox(retry_f, from_=1, to=50, textvariable=self.ai_max_retries_var, width=5, bg=ghost_bg, fg=TEXT_MAIN, bd=0, buttonbackground=side_color).pack(side=tk.RIGHT)
 
-        tk.Frame(side, bg="#333", height=1).pack(fill=tk.X, pady=10)
+        tk.Frame(self.side_panel, bg="#333", height=1).pack(fill=tk.X, pady=10)
 
-        tk.Frame(side, bg="#333", height=1).pack(fill=tk.X, pady=10)
+        # ASIMOD Esteroides
+        tk.Label(self.side_panel, text="ASIMOD ESTEROIDES (TACTICAL HINT)", bg=side_color, fg=ACCENT_GOLD, font=("Helvetica", 8, "bold")).pack(anchor="w")
+        tk.Checkbutton(self.side_panel, text="Activar Esteroides", variable=self.asimod_steroids_var, bg=side_color, fg=ACCENT_CYAN, selectcolor=ghost_bg, activebackground=side_color, font=("Helvetica", 8, "bold")).pack(anchor="w")
+        
+        steroid_f = tk.Frame(self.side_panel, bg=side_color)
+        steroid_f.pack(fill=tk.X, pady=(2, 0))
+        tk.Label(steroid_f, text="Nivel Táctico:", bg=side_color, fg=TEXT_DIM, font=("Helvetica", 8)).pack(side=tk.LEFT)
+        self.steroid_slider = tk.Scale(steroid_f, from_=1, to=5, orient=tk.HORIZONTAL, variable=self.asimod_steroids_level_var, bg=side_color, fg=ACCENT_CYAN, highlightthickness=0, bd=0, showvalue=0, length=80)
+        self.steroid_slider.pack(side=tk.RIGHT)
+
+        tk.Frame(self.side_panel, bg="#333", height=1).pack(fill=tk.X, pady=10)
+
 
         # Captured
-        tk.Label(side, text="CAPTURADAS", bg=side_color, fg=TEXT_DIM, font=("Helvetica", 9)).pack(anchor="w")
-        self.cap_w = CapturedPieces(side, side_color)
+        tk.Label(self.side_panel, text="CAPTURADAS", bg=side_color, fg=TEXT_DIM, font=("Helvetica", 9)).pack(anchor="w")
+        self.cap_w = CapturedPieces(self.side_panel, side_color)
         self.cap_w.pack(fill=tk.X, pady=2)
-        self.cap_b = CapturedPieces(side, side_color)
+        self.cap_b = CapturedPieces(self.side_panel, side_color)
         self.cap_b.pack(fill=tk.X, pady=2)
 
         # Ghost Buttons para el módulo
-        btn_style = {"bg": side_color, "fg": TEXT_MAIN, "relief": "flat", "bd": 1, "font": ("Helvetica", 10)}
-        
-        tk.Button(side, text="REINICIAR", command=self.reset, bg=accent, fg=self.style.get_color("bg_dark"), font=("Helvetica", 10, "bold"), bd=0, pady=10).pack(fill=tk.X, side=tk.BOTTOM, pady=5)
-        tk.Button(side, text="DESHACER", command=self.undo, cursor="hand2", **btn_style).pack(fill=tk.X, side=tk.BOTTOM, pady=5)
+        ImageButton(self.side_panel, text="REINICIAR", callback=self.reset, style=self.style, font=("Helvetica", 10, "bold"), pady=10).pack(fill=tk.X, side=tk.BOTTOM, pady=5)
+        ImageButton(self.side_panel, text="DESHACER", callback=self.undo, style=self.style, font=("Helvetica", 10)).pack(fill=tk.X, side=tk.BOTTOM, pady=5)
 
         # Guardar/Cargar
-        tk.Frame(side, bg="#333", height=1).pack(fill=tk.X, side=tk.BOTTOM, pady=5)
-        tk.Button(side, text="CARGAR PARTIDA", command=self.load_game, cursor="hand2", **btn_style).pack(fill=tk.X, side=tk.BOTTOM, pady=5)
-        self.game_combo = ttk.Combobox(side, state="readonly")
-        self.game_combo.pack(fill=tk.X, side=tk.BOTTOM, pady=5)
-        tk.Button(side, text="GUARDAR PARTIDA", command=self.save_game, cursor="hand2", bg="#2a3a5a", fg=TEXT_MAIN, relief="flat", bd=0, font=("Helvetica", 9, "bold")).pack(fill=tk.X, side=tk.BOTTOM, pady=5)
-        tk.Label(side, text="PARTIDAS", bg=side_color, fg=ACCENT_GOLD, font=("Helvetica", 9, "bold")).pack(anchor="w", side=tk.BOTTOM)
+        tk.Frame(self.side_panel, bg="#333", height=1).pack(fill=tk.X, side=tk.BOTTOM, pady=5)
+        ImageButton(self.side_panel, text="CARGAR PARTIDA", callback=self.load_game, style=self.style, font=("Helvetica", 10)).pack(fill=tk.X, side=tk.BOTTOM, pady=5)
+        self.game_combo = ttk.Combobox(self.side_panel, state="readonly", width=18)
+        self.game_combo.pack(fill=tk.X, side=tk.BOTTOM, pady=5, padx=5)
+        ImageButton(self.side_panel, text="GUARDAR PARTIDA", callback=self.save_game, style=self.style, font=("Helvetica", 9, "bold")).pack(fill=tk.X, side=tk.BOTTOM, pady=5)
+        tk.Label(self.side_panel, text="PARTIDAS", bg=side_color, fg=ACCENT_GOLD, font=("Helvetica", 9, "bold")).pack(anchor="w", side=tk.BOTTOM)
 
         self.update_saved_games_list()
 
         # Eval Bar
-        self.ebar = EvalBar(main_f, bg="#000", width=12, highlightthickness=0)
+        self.ebar = EvalBar(self.root_f, bg="#000", width=12, highlightthickness=0)
         self.ebar.pack(side=tk.LEFT, fill=tk.Y, padx=10, pady=20)
 
         # Board
-        self.board_ui = ChessBoard(main_f, self.engine, self.ai, bg=ghost_bg, highlightthickness=0)
+        self.board_ui = ChessBoard(self.root_f, self.engine, self.ai, style_service=self.style, bg=ghost_bg, highlightthickness=0)
         self.board_ui.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=10, pady=10)
         self.board_ui.master_master = self
 
         # History
-        hist_f = tk.Frame(main_f, bg=side_color, width=150, padx=10, pady=15)
-        hist_f.pack(side=tk.LEFT, fill=tk.Y)
-        hist_f.pack_propagate(False)
-        tk.Label(hist_f, text="LOG", bg=side_color, fg=TEXT_DIM, font=("Helvetica", 9, "bold")).pack(anchor="w")
-        self.hist_box = tk.Text(hist_f, bg=ghost_bg, fg=accent, font=("Courier New", 9), bd=0, state=tk.DISABLED)
-        self.hist_box.pack(fill=tk.BOTH, expand=True, pady=5)
+        hist_color = ghost_bg
+        if has_bg:
+            self.hist_f = BackgroundFrame(self.root_f, self.style, "module_box", width=150)
+            self.hist_f.config(highlightthickness=panel_bd, highlightbackground="#333")
+        else:
+            self.hist_f = tk.Frame(self.root_f, bg=hist_color, width=150, padx=10, pady=15, highlightthickness=panel_bd)
+        self.hist_f.pack(side=tk.LEFT, fill=tk.Y)
+        self.hist_f.pack_propagate(False)
+        tk.Label(self.hist_f, text="LOG", bg=ghost_bg, fg=TEXT_DIM, font=("Helvetica", 9, "bold")).pack(anchor="w", pady=(15,0), padx=10)
+        self.hist_box = tk.Text(self.hist_f, bg=ghost_bg, fg=accent, font=("Courier New", 9), bd=0, state=tk.DISABLED)
+        self.hist_box.pack(fill=tk.BOTH, expand=True, pady=5, padx=10)
 
         self.update_ui()
+
+    def toggle_sidebar(self):
+        pad = 20 if self.style.get_background("center") is not None else 0
+        if self.sidebar_visible:
+            self.side_panel.pack_forget()
+            self.hist_f.pack_forget() # También ocultamos el log para máxima limpieza
+            self.sidebar_visible = False
+            self.toggle_btn.config(text="☰ MOSTRAR PANELES")
+        else:
+            self.side_panel.pack(side=tk.LEFT, fill=tk.Y, padx=(0, pad), before=self.ebar)
+            self.hist_f.pack(side=tk.LEFT, fill=tk.Y, after=self.board_ui)
+            self.sidebar_visible = True
+            self.toggle_btn.config(text="☰ OCULTAR PANELES")
 
     def update_ui(self):
         # Update Turn
@@ -622,6 +747,9 @@ class AjedrezModule(StandardModule):
     def reset(self, ask=True):
         if not ask or messagebox.askyesno("CHESS MASTER", "¿Reiniciar partida táctica?"):
             self.engine.reset()
+            self.ai_retries = 0
+            self.agent_running = False
+            self.asimod_thinking = False
             self.update_ui()
             self.check_auto_turn()
 
@@ -648,6 +776,10 @@ class AjedrezModule(StandardModule):
             self.root_f.after(400, self.board_ui.ia)
             
     def ask_asimod_agent(self, turn, error_msg=None):
+        if self.agent_running:
+            print("[Ajedrez] Ignorando trigger: Ya hay un agente en ejecución.")
+            return
+            
         color_str = "Blancas" if turn == 'w' else "Negras"
         moves = self.engine.get_all_valid_moves(turn)
         legal_mapped = []
@@ -690,7 +822,7 @@ class AjedrezModule(StandardModule):
                     if self.engine.is_sq_att(r, c, opp_color):
                         threatened_pieces.append(f"{piece_names[p]}({cols[c]}{rows[r]})")
                 
-                # Piezas del rival que puedo capturar
+        # Piezas del rival que puedo capturar
                 elif (turn == 'w' and p.islower()) or (turn == 'b' and p.isupper()):
                     if self.engine.is_sq_att(r, c, turn):
                         is_defended = self.engine.is_sq_att(r, c, opp_color)
@@ -707,56 +839,97 @@ class AjedrezModule(StandardModule):
                 cap_name = piece_names.get(cap_p, "Pieza")
                 last_move_info += f" (¡CAPTURÓ tu {cap_name}!)"
 
+        sys_prompt = (
+            "Eres ASIMOD, el Gran Maestro de Ajedrez más avanzado. Tu pensamiento es una mezcla de táctica profunda y estrategia a largo plazo.\n"
+            "INSTRUCCIONES CRÍTICAS:\n"
+            "1. Analiza el tablero basándote únicamente en la posición de las piezas.\n"
+            "2. Responde SIEMPRE con un objeto JSON válido.\n"
+            "3. NUNCA uses notación algebraica (ej: Nf3). Usa exclusivamente coordenadas (ej: g1 f3).\n"
+            "4. Tu razonamiento ('thought') debe ser profesional, técnico y ÚNICO para esta posición. Evita frases genéricas o repetitivas.\n"
+            "5. NO incluyas introducciones como 'ASIMOD:' o 'Pensamiento:'."
+        )
+
         prompt = (
-            f"[CONTEXTO DE AJEDREZ - Juegas con {color_str}]\n"
+            f"[SITUACIÓN ACTUAL - Juegas con {color_str}]\n"
+            f"Historial de la partida: {hist_str}\n" 
             f"Último movimiento rival: {last_move_info}\n"
-            f"Historial PGN:\n{hist_str}\n\n"
-            f"Estado FEN:\n{fen_str}\n\n"
+            f"Posición FEN: {fen_str}\n\n"
+            "[TABLERO VISUAL (ASCII)]:\n"
+            f"{ascii_board}\n\n"
         )
         
         if self.engine.is_in_check(turn):
-            prompt += "¡ADVERTENCIA!: TU REY ESTÁ EN JAQUE. Debes elegir un movimiento que proteja a tu rey.\n\n"
+            prompt += "¡URGENTE!: TU REY ESTÁ EN JAQUE. Debes moverlo o protegerlo de inmediato.\n\n"
         
         if threatened_pieces:
-            prompt += f"[ALERTA TÁCTICA]: Tus siguientes piezas están bajo amenaza: {', '.join(threatened_pieces)}.\n"
+            prompt += f"[AMENAZAS]: Tus siguientes piezas corren peligro: {', '.join(threatened_pieces)}.\n"
         
         if capture_opportunities:
-            prompt += f"[OPORTUNIDADES TÁCTICAS]: Puedes capturar las siguientes piezas del rival: {', '.join(capture_opportunities)}.\n"
+            prompt += f"[OPORTUNIDADES]: Puedes capturar: {', '.join(capture_opportunities)}.\n"
+            
+        self.last_threats = threatened_pieces
+        self.last_opportunities = capture_opportunities
             
         if threatened_pieces or capture_opportunities:
             prompt += "\n"
             
+        # --- MODO ESTEROIDES (SUGERENCIA DEL MOTOR) ---
+        if self.asimod_steroids_var.get():
+            try:
+                # Obtenemos el mejor movimiento del motor local con la profundidad de esteroides
+                depth = self.asimod_steroids_level_var.get()
+                best_move = self.ai.get_move(depth=depth)
+                if best_move:
+                    r1, c1, r2, c2 = best_move
+                    cols, rows = "abcdefgh", "87654321"
+                    move_txt = f"{cols[c1]}{rows[r1]} {cols[c2]}{rows[r2]}"
+                    prompt += f"\n[CONSEJO EXPERTO]: Considera jugar {move_txt}.\n"
+            except Exception as e:
+                print(f"[Ajedrez-Esteroides] Error obteniendo sugerencia: {e}")
+
         prompt += (
-            f"Opciones legales válidas:\n{', '.join(legal_mapped)}\n\n"
-            "Elige un movimiento de la lista."
-        )
-        
-        if error_msg:
-            prompt += f"\n\n[¡ADVERTENCIA CRÍTICA!]: {error_msg}\nELIGE UNA OPCIÓN TOTALMENTE DISTINTA."
-        
-        prompt += (
-            "\n\nDEVUELVE ÚNICAMENTE EL SIGUIENTE BLOQUE JSON RELLENO (NO agregues absolutamente nada más):\n"
-            "{\n"
-            '  "thought": "Breve análisis",\n'
-            '  "response": "",\n'
-            '  "action": "move_piece",\n'
-            '  "params": "origen-destino"\n'
-            "}"
+            "--- EJEMPLOS DE FORMATO ---\n"
+            "Assistant: {\n"
+            "  \"thought\": \"[Análisis técnico de la posición actual y plan a corto plazo]\",\n"
+            "  \"action\": \"move_piece\",\n"
+            "  \"params\": \"[origen] [destino]\"\n"
+            "}\n\n"
+            "--- TU TURNO ---\n"
+            f"MOVIMIENTOS LEGALES: {', '.join(legal_mapped)}\n"
+            "Responde con el JSON de 'move_piece' usando SOLO coordenadas."
         )
         
         import threading
         import asyncio
         import time
         def run_agent():
+            self.agent_running = True
             self.asimod_thinking = True
             try:
                 time.sleep(1.6) # Bypass global ASIMOD cooldown
                 max_retries = self.ai_max_retries_var.get() if hasattr(self, 'ai_max_retries_var') else 5
-                result = asyncio.run(self.chat_service.send_message(prompt, system_prompt=sys_prompt, silent=True, skip_tts=True, mode="AGENT", isolated=True, temperature=0.1, agent_retries=max_retries))
+                result = asyncio.run(self.chat_service.send_message(prompt, system_prompt=sys_prompt, silent=True, skip_tts=True, mode="AGENT", isolated=True, temperature=0.3, agent_retries=max_retries))
+                
+                # Obtener pensamiento
+                thought = result.get("thought", "")
+                
+                # Limpiar prefijos de forma agresiva
+                import re
+                thought = re.sub(r'(?i)^(ASIMOD|PENSAMIENTO|ANALISIS|EXAMPLE|EJEMPLO):\s*', '', thought).strip()
+                thought = re.sub(r'\(?FEN:?\s*[a-zA-Z0-9/]+\s+[wb]\s+[KQkq-]+\s*[a-h0-1\-]*\s*\d*\s*\d*\)?', '', thought).strip()
+                # Eliminar cualquier residuo de corchetes de ejemplo (ej: [Breve análisis...])
+                thought = re.sub(r'\[.*?\]', '', thought).strip() 
+                thought = re.sub(r'\s+', ' ', thought).strip()
+                
+                # NOTIFICACIÓN ÚNICA (Solo aquí, sin repetir el nombre del agente)
+                if thought:
+                    self.chat_service.notify_system_msg(thought, "#4ade80", beep=False)
                 
                 # Watchdog: Solo reintentar si el sistema NO estaba ocupado y la IA evadió la acción
                 if result.get("status") == "success" and not result.get("agent_action"):
-                    self.on_voice_command("move_piece", "vacio_ilegal")
+                    # Si no hay acción, esperamos 2 segundos antes de permitir que el loop de error actúe
+                    time.sleep(1.0)
+                    self.on_voice_command("move_piece", "formato_json_incorrecto")
                 elif result.get("status") == "busy":
                     # Si estaba ocupado, esperar un poco más y reintentar silenciosamente sin error_msg
                     time.sleep(2.0)
@@ -765,6 +938,7 @@ class AjedrezModule(StandardModule):
                 print("[Ajedrez] Error en agente:", e)
             finally:
                 self.asimod_thinking = False
+                self.agent_running = False
                 # Re-comprobar turno para dar paso al siguiente jugador (IA local o humano)
                 self.root_f.after(100, self.check_auto_turn)
                 
@@ -818,12 +992,10 @@ class AjedrezModule(StandardModule):
                 self._waiting_for_game_number = False
                 return
 
-        # Detección de movimiento por coordenadas
-        if action_slug == "move_piece":
-            text_lower = text_lower.replace("-", " ") # Normalizar e2-e4
-            # Continúa cayendo al analizador de coordenadas existente
-            
-        pattern = r'\b(a|b|v|c|d|e|f|g|h|be|ve|ce|se|de|efe|ge|je|hache)\s*([1-8]|uno|un|dos|tres|cuatro|cinco|seis|siete|ocho)\b|\b([a-h])([1-8])\b'
+        # Normalizar texto para ayudar al parser
+        text_lower = text_lower.replace("x", " ").replace("-", " ").replace("+", " ").replace("#", " ")
+        
+        pattern = r'(?i)\b(a|b|v|c|d|e|f|g|h|be|ve|ce|se|de|efe|ge|je|hache)\s*([1-8]|uno|un|dos|tres|cuatro|cinco|seis|siete|ocho)\b|([a-h])([1-8])'
         matches = re.findall(pattern, text_lower)
         if len(matches) >= 2:
             letter_map = {
@@ -860,18 +1032,47 @@ class AjedrezModule(StandardModule):
                 return # Ignorar si la IA está pensando
                 
             # Validar
+            # Procesar el pensamiento antes de ejecutar el movimiento
+            # Para garantizar que se imprime SIEMPRE ANTES de validar o fallar.
+            auto_w = self.engine.turn == 'w' and getattr(self, 'asimod_w_var', None) and self.asimod_w_var.get()
+            auto_b = self.engine.turn == 'b' and getattr(self, 'asimod_b_var', None) and self.asimod_b_var.get()
+            
+            raw_thought = getattr(self.chat_service, 'current_agent_thought', "") or ""
+            parsed_thought = ""
+            if raw_thought and (auto_w or auto_b):
+                # No notificamos aquí para evitar duplicados, 
+                # pero limpiamos para la locución si es necesario
+                import re
+                parsed_thought = re.sub(r'^(?i)(ASIMOD:\s*)+', '', raw_thought).strip()
+                parsed_thought = re.sub(r'\(?FEN:?\s*[a-zA-Z0-9/]+\s+[wb]\s+[KQkq-]+\s*[a-h0-1\-]*\s*\d*\s*\d*\)?', '', parsed_thought).strip()
+                parsed_thought = re.sub(r'\s+', ' ', parsed_thought).strip()
+                
             p = self.engine.board[r1][c1]
             correct_color = (self.engine.turn == 'w' and p.isupper()) or (self.engine.turn == 'b' and p.islower())
             
+            # DIAGNÓSTICO:
+            print(f"[Ajedrez DEBUG] Recibido: {text_lower} -> ({r1},{c1}) a ({r2},{c2})")
+            print(f"[Ajedrez DEBUG] Pieza en origen: '{p}', Turno motor: '{self.engine.turn}', Color correcto: {correct_color}")
+            
             if p != '.' and correct_color and (r2, c2) in self.engine.get_valid_moves(r1, c1):
+                # Locución SOLO si es un agente y ha acertado el movimiento
+                if parsed_thought and self.config_service.get("audio_agent", True) and getattr(self.chat_service, 'voice_service', None):
+                    import threading
+                    v_srv = self.chat_service.voice_service
+                    # Ejecutamos la locución en un hilo independiente para que no sea destruida por el cierre del loop actual
+                    threading.Thread(target=lambda: v_srv.speak_text(parsed_thought), daemon=True).start()
+                    
                 self.ai_retries = 0 # Reiniciar contador de fallos
                 self.engine.move(r1, c1, r2, c2)
+                
+                # Si NO es un agente moviendo (es el humano por voz), anunciar el movimiento
+                if not parsed_thought:
+                    self.announce_move_voice(r1, c1, r2, c2)
+                    
                 self.update_ui()
                 self.check_auto_turn()
             else:
-                import winsound
-                winsound.MessageBeep(winsound.MB_ICONHAND)
-                self.chat_service.notify_system_msg(f"Ajedrez: Movimiento {text_lower} no válido.", "#f54242")
+                self.chat_service.notify_system_msg(f"Ajedrez: Movimiento {text_lower} no válido.", "#f54242", beep=False)
                 
                 # Reintentar o abortar si ASIMOD está jugando
                 auto_w = self.engine.turn == 'w' and getattr(self, 'asimod_w_var', None) and self.asimod_w_var.get()
@@ -883,33 +1084,52 @@ class AjedrezModule(StandardModule):
                     max_allowed = self.ai_max_retries_var.get() if hasattr(self, 'ai_max_retries_var') else 5
                     
                     if self.ai_retries > max_allowed:
-                        self.chat_service.notify_system_msg(f"Ajedrez: ASIMOD desconectado ({self.ai_retries} fallos continuos).", "#f54242")
+                        import threading
+                        def triple_beep():
+                            import winsound, time
+                            for _ in range(3):
+                                winsound.Beep(400, 150)
+                                time.sleep(0.05)
+                        threading.Thread(target=triple_beep, daemon=True).start()
+                        
+                        self.chat_service.notify_system_msg(f"Ajedrez: ASIMOD desconectado ({self.ai_retries} fallos continuos).", "#f54242", beep=False)
                         if auto_w: self.asimod_w_var.set(False)
                         if auto_b: self.asimod_b_var.set(False)
                         self.ai_retries = 0
                     else:
-                        error_txt = f"PROHIBIDO REPETIR '{text_lower}'. ESE MOVIMIENTO ES INVÁLIDO. ELIGE OTRO COMPLETO DE LA LISTA."
-                        self.check_auto_turn(error_msg=error_txt)
+                        error_txt = f"ERROR: El movimiento '{text_lower}' NO está permitido en esta posición. Revisa los MOVIMIENTOS LEGALES."
+                        # Añadimos un delay más largo para romper el frenesí de errores
+                        self.root_f.after(1500, lambda: self.check_auto_turn(error_msg=error_txt))
         else:
             if action_slug == "move_piece":
-                import winsound
-                winsound.MessageBeep(winsound.MB_ICONHAND)
-                self.chat_service.notify_system_msg(f"Ajedrez: Formato incompleto '{text_lower}'.", "#f54242")
-                
                 auto_w = self.engine.turn == 'w' and getattr(self, 'asimod_w_var', None) and self.asimod_w_var.get()
                 auto_b = self.engine.turn == 'b' and getattr(self, 'asimod_b_var', None) and self.asimod_b_var.get()
+                
+                # No volvemos a mostrar el pensamiento aquí
+
+                self.chat_service.notify_system_msg(f"Ajedrez: Formato incompleto '{text_lower}'.", "#f54242", beep=False)
+                
                 if auto_w or auto_b:
                     if not hasattr(self, 'ai_retries'): self.ai_retries = 0
                     self.ai_retries += 1
                     max_allowed = self.ai_max_retries_var.get() if hasattr(self, 'ai_max_retries_var') else 5
                     if self.ai_retries > max_allowed:
-                        self.chat_service.notify_system_msg(f"Ajedrez: ASIMOD desconectado ({self.ai_retries} fallos de formato).", "#f54242")
+                        import threading
+                        def triple_beep():
+                            import winsound, time
+                            for _ in range(3):
+                                winsound.Beep(400, 150)
+                                time.sleep(0.05)
+                        threading.Thread(target=triple_beep, daemon=True).start()
+                        
+                        self.chat_service.notify_system_msg(f"Ajedrez: ASIMOD desconectado ({self.ai_retries} fallos de formato).", "#f54242", beep=False)
                         if auto_w: self.asimod_w_var.set(False)
                         if auto_b: self.asimod_b_var.set(False)
                         self.ai_retries = 0
                     else:
-                        error_txt = f"FORMATO INVÁLIDO. Tu output fue '{text_lower}'. DEBES DAR EXACTAMENTE DOS COORDENADAS (origen destino), ej: 'b1 c3'."
-                        self.check_auto_turn(error_msg=error_txt)
+                        error_txt = f"FORMATO INVÁLIDO. Tu respuesta fue '{text_lower}'. Debes dar exactamente dos coordenadas (ej: 'b1 c3')."
+                        # Usar root.after para permitir que el hilo actual termine y libere el lock agent_running
+                        self.root_f.after(800, lambda: self.check_auto_turn(error_msg=error_txt))
     def load_saved_games_data(self):
         if not os.path.exists(self.game_file):
             return {}
@@ -1001,6 +1221,13 @@ class AjedrezModule(StandardModule):
             p1 = self.p1_entry.get().strip() or "Jugador 1"
             p2 = self.p2_entry.get().strip() or "Jugador 2"
             
+            # Formatear el último movimiento como coordenadas de texto (e2 e4)
+            last_move_coords = None
+            if hasattr(self.engine, 'last_move') and self.engine.last_move:
+                r1, c1, r2, c2 = self.engine.last_move
+                cols, rows = "abcdefgh", "87654321"
+                last_move_coords = f"{cols[c1]}{rows[r1]} {cols[c2]}{rows[r2]}"
+
             return {
                 "history_san": [h['san'] for h in self.engine.history],
                 "turn": self.engine.turn,
@@ -1013,7 +1240,13 @@ class AjedrezModule(StandardModule):
                 "is_game_over": not bool(self.engine.get_all_valid_moves(self.engine.turn)),
                 "asimod_w": self.asimod_w_var.get(),
                 "asimod_b": self.asimod_b_var.get(),
-                "ai_max_retries": self.ai_max_retries_var.get()
+                "asimod_steroids": self.asimod_steroids_var.get(),
+                "steroids_level": self.asimod_steroids_level_var.get(),
+                "ai_max_retries": self.ai_max_retries_var.get(),
+                "last_thought": self.last_thought,
+                "last_move": last_move_coords,
+                "threats": getattr(self, 'last_threats', []),
+                "opportunities": getattr(self, 'last_opportunities', [])
             }
         except Exception as e:
             return {"error": str(e)}
@@ -1071,11 +1304,36 @@ class AjedrezModule(StandardModule):
         self.undo()
         return {"success": True}
 
-    def api_update_agent_config(self, asimod_w, asimod_b, max_retries):
+    def api_update_agent_config(self, asimod_w, asimod_b, max_retries, steroids=None, steroids_level=None):
         self.asimod_w_var.set(asimod_w)
         self.asimod_b_var.set(asimod_b)
         if max_retries: self.ai_max_retries_var.set(int(max_retries))
+        if steroids is not None: self.asimod_steroids_var.set(bool(steroids))
+        if steroids_level is not None: self.asimod_steroids_level_var.set(int(steroids_level))
         self.check_auto_turn()
         return {"success": True}
+
+    def announce_move_voice(self, r1, c1, r2, c2):
+        """Genera una locución corta del movimiento en voz masculina (OPONENTE)."""
+        if not self.config_service.get("audio_agent", True):
+            return
+            
+        cols, rows = "abcdefgh", "87654321"
+        move_text = f"{cols[c1]} {rows[r1]} a {cols[c2]} {rows[r2]}"
+        
+        v_srv = getattr(self.chat_service, 'voice_service', None)
+        if not v_srv: return
+
+        import threading
+        # Lanzar en hilo inmediatamente para no bloquear el hilo de UI de Tkinter
+        def run_announcement():
+            try:
+                import time
+                time.sleep(0.35) # Delay ajustado
+                v_srv.speak_text(move_text, voice_id=self.opponent_voice_id)
+            except Exception as e:
+                print(f"[Ajedrez-Voice] Error en hilo: {e}")
+        
+        threading.Thread(target=run_announcement, daemon=True).start()
 
 def get_module_class(): return AjedrezModule

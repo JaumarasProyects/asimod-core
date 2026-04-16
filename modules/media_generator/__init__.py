@@ -1388,6 +1388,56 @@ class MediaGeneratorModule(StandardModule):
                             
                             piece_data["multimedia"]["hoja_diseno"] = multi_list
 
+                    # --- EXPORTACIÓN AL REPOSITORIO GLOBAL (NUEVO) ---
+                    if category == "Personaje":
+                        try:
+                            import shutil
+                            char_name = piece_data.get("titulo", piece_data.get("id"))
+                            reg_path = os.path.join("Resources", "Characters", char_name)
+                            if not os.path.exists(reg_path):
+                                os.makedirs(reg_path, exist_ok=True)
+                            
+                            # Extraer descripción si existe el JSON interno
+                            personality = ""
+                            if "descripcion_generada" in piece_data:
+                                desc = piece_data["descripcion_generada"]
+                                if "```json" in desc:
+                                    try:
+                                        inner = json.loads(desc.split("```json")[1].split("```")[0])
+                                        personality = f"Arquetipo: {inner.get('archetype')}. Personalidad: {', '.join(inner.get('personality_and_traits', {}).get('personality_traits', []))}"
+                                    except: pass
+                            
+                            # Generar JSON simplificado para el Core
+                            reg_data = {
+                                "id": piece_data["id"],
+                                "name": char_name,
+                                "personality": personality,
+                                "avatar": piece_data.get("avatar", {}),
+                                "voice_id": piece_data.get("voice_config", {}).get("voice_id"),
+                                "voice_provider": piece_data.get("voice_config", {}).get("voice_provider")
+                            }
+                            
+                            # Copiar Assets a la carpeta del personaje
+                            multimedia = piece_data.get("multimedia", {})
+                            output_img_dir = os.path.join(os.path.dirname(__file__), "output", "imagen")
+                            
+                            for key in ["imagen_principal"]:
+                                img_name = multimedia.get(key)
+                                if img_name:
+                                    src = os.path.join(output_img_dir, img_name)
+                                    if os.path.exists(src):
+                                        shutil.copy(src, os.path.join(reg_path, "idle.png"))
+                                        reg_data["avatar"]["idle"] = f"Resources/Characters/{char_name}/idle.png"
+                                        reg_data["avatar"]["talking"] = f"Resources/Characters/{char_name}/idle.png"
+
+                            # Guardar JSON en el Hub
+                            with open(os.path.join(reg_path, "character.json"), "w", encoding="utf-8") as f:
+                                json.dump(reg_data, f, indent=4, ensure_ascii=False)
+                                
+                            print(f"[CharacterHub] Personaje '{char_name}' exportado con éxito.")
+                        except Exception as e:
+                            print(f"[CharacterHub] Error exportando: {e}")
+
             piece_data["grado_desarrollo"] = 2
 
         elif target_grade == 3:

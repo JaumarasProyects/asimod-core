@@ -7,14 +7,19 @@ class EdgeVoiceAdapter(VoicePort):
     """
     Adaptador para Microsoft Edge TTS (Neural).
     """
-    # Voces neurales curadas en español
+    # Voces neurales curadas (Español e Internacionales)
     _VOICES = [
-        {"id": "es-MX-DaliaNeural", "name": "Dalia (México)"},
-        {"id": "es-MX-JorgeNeural", "name": "Jorge (México)"},
-        {"id": "es-ES-ElviraNeural", "name": "Elvira (España)"},
-        {"id": "es-ES-AlvaroNeural", "name": "Álvaro (España)"},
-        {"id": "es-US-PalomaNeural", "name": "Paloma (USA)"},
-        {"id": "es-US-AlonsoNeural", "name": "Alonso (USA)"}
+        {"id": "es-MX-DaliaNeural", "name": "Dalia (México) - Femenina"},
+        {"id": "es-MX-JorgeNeural", "name": "Jorge (México) - Masculina"},
+        {"id": "es-ES-ElviraNeural", "name": "Elvira (España) - Femenina"},
+        {"id": "es-ES-AlvaroNeural", "name": "Álvaro (España) - Masculina"},
+        {"id": "es-US-PalomaNeural", "name": "Paloma (USA Español) - Femenina"},
+        {"id": "es-US-AlonsoNeural", "name": "Alonso (USA Español) - Masculina"},
+        {"id": "en-GB-SoniaNeural", "name": "Sonia (UK) - Femenina (Recomendada Lea)"},
+        {"id": "en-GB-RyanNeural", "name": "Ryan (UK) - Masculina"},
+        {"id": "en-US-AvaNeural", "name": "Ava (USA) - Femenina"},
+        {"id": "en-US-AndrewNeural", "name": "Andrew (USA) - Masculina"},
+        {"id": "fr-FR-DeniseNeural", "name": "Denise (Francia) - Femenina"}
     ]
 
     def __init__(self):

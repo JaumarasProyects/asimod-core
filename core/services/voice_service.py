@@ -57,18 +57,29 @@ class VoiceService:
         return []
     def speak_text(self, text: str, voice_id: str = None, voice_provider: str = None):
         clean_text = (text or "").strip()
+        print(f"[VoiceService] speak_text called for: \"{clean_text[:50]}...\"")
         if not clean_text:
             return
 
         import asyncio
-        try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                loop.create_task(self.process_text(clean_text, voice_id, voice_provider))
-            else:
-                loop.run_until_complete(self.process_text(clean_text, voice_id, voice_provider))
-        except RuntimeError:
-            asyncio.run(self.process_text(clean_text, voice_id, voice_provider))
+        import threading
+
+        def _run_async_task():
+            print("[VoiceService] Starting async task in background thread")
+            new_loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(new_loop)
+            try:
+                new_loop.run_until_complete(self.process_text(clean_text, voice_id, voice_provider))
+                print("[VoiceService] async task finished successfully")
+            except Exception as e:
+                print(f"[VoiceService] Error in async background task: {e}")
+            finally:
+                new_loop.close()
+
+        # Siempre ejecutamos en un hilo separado para evitar conflictos de event loop
+        # con FastAPI/Uvicorn cuando se llama desde un endpoint síncrono.
+        thread = threading.Thread(target=_run_async_task, daemon=True)
+        thread.start()
 
     async def process_text(self, text: str, voice_id: str = None, voice_provider: str = None):
         """

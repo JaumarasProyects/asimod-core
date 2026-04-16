@@ -110,11 +110,15 @@
             box-shadow: var(--shadow);
             position: relative;
             min-height: 520px;
+            flex-grow: 1;
+            display: flex;
+            justify-content: center;
+            transition: all 0.4s ease;
         }
 
         #board {
-            width: 480px;
-            max-width: 100%;
+            width: 100%;
+            max-width: 600px;
         }
 
         #board .white-1e1d7 {
@@ -127,15 +131,79 @@
             border: 1px solid #1a2a4a;
         }
 
+        .thought-panel {
+            background: rgba(0, 0, 0, 0.4);
+            border: 1px solid rgba(0, 217, 255, 0.3);
+            border-radius: 8px;
+            padding: 12px;
+            font-family: 'Roboto Mono', monospace;
+            font-size: 0.85rem;
+            color: #4ade80; /* Terminal green */
+            min-height: 80px;
+            max-height: 150px;
+            overflow-y: auto;
+            margin-top: 5px;
+            line-height: 1.4;
+            position: relative;
+        }
+
+        .thought-panel::before {
+            content: ">_ ANALIZANDO TÁCTICA...";
+            display: block;
+            font-size: 0.7rem;
+            color: var(--accent-cyan);
+            margin-bottom: 5px;
+            opacity: 0.7;
+        }
+
         .piece-417db {
             z-index: 10;
         }
 
         .side-panel {
-            width: 280px;
+            width: 320px;
             display: flex;
             flex-direction: column;
             gap: 15px;
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            transform-origin: right;
+        }
+
+        .side-panel.collapsed {
+            width: 0;
+            padding: 0;
+            margin-left: 0;
+            margin-right: -20px;
+            opacity: 0;
+            pointer-events: none;
+            overflow: hidden;
+            transform: scaleX(0);
+        }
+
+        .toggle-panel-btn {
+            position: absolute;
+            left: -32px;
+            top: 20px;
+            width: 32px;
+            height: 60px;
+            background: var(--bg-panel);
+            border: 1px solid var(--accent-cyan);
+            border-right: none;
+            border-radius: 8px 0 0 8px;
+            color: var(--accent-cyan);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 100;
+            transition: all 0.3s ease;
+            box-shadow: -5px 0 15px rgba(0, 0, 0, 0.3);
+        }
+
+        .toggle-panel-btn:hover {
+            background: var(--accent-cyan);
+            color: var(--bg-primary);
         }
 
         .panel {
@@ -550,7 +618,16 @@
 
         .highlight-selected { background-color: #1e3a5f !important; }
         .highlight-valid { background-color: #1a4a4a !important; }
-        .highlight-last { background-color: #223344 !important; }
+        .highlight-last { background-color: rgba(255, 215, 0, 0.4) !important; }
+        .highlight-check { box-shadow: inset 0 0 25px rgba(255, 107, 107, 0.8) !important; }
+        
+        .tactical-feed {
+            margin-top: 5px;
+            font-size: 0.8rem;
+        }
+        .threat-item { color: var(--accent-coral); margin-bottom: 2px; }
+        .opportunity-item { color: #4ade80; margin-bottom: 2px; }
+        .tactical-empty { color: var(--text-secondary); font-style: italic; }
 </style>
 </head>
 <body>
@@ -568,7 +645,10 @@
                 <div id="board"></div>
             </div>
 
-            <div class="side-panel">
+            <div class="side-panel" id="sidePanel">
+                <div class="toggle-panel-btn" id="togglePanelBtn" title="Contraer/Expandir Panel">
+                    <span id="toggleIcon">◀</span>
+                </div>
                 <div class="panel">
                     <h3>Estado</h3>
                     <div class="game-status status-playing" id="gameStatus">Juego en progreso</div>
@@ -645,6 +725,18 @@
                 <div class="panel">
                     <h3>Movimientos</h3>
                     <div class="moves-list" id="movesList"></div>
+                </div>
+
+                <div class="panel">
+                    <h3>CEREBRO ASIMOD</h3>
+                    <div class="thought-panel" id="asimodThought">Esperando primer movimiento...</div>
+                </div>
+
+                <div class="panel">
+                    <h3>Visión Táctica</h3>
+                    <div class="tactical-feed" id="tacticalFeed">
+                        <div class="tactical-empty">Ninguna amenaza detectada</div>
+                    </div>
                 </div>
 
                 <div class="panel">
@@ -757,10 +849,28 @@
                     this.syncWithBackend(); // init
                 }
                 
+                playBeep(freq = 800, duration = 80) {
+                    try {
+                        const AudioContext = window.AudioContext || window.webkitAudioContext;
+                        if (!AudioContext) return;
+                        const ctx = new AudioContext();
+                        const osc = ctx.createOscillator();
+                        const gain = ctx.createGain();
+                        osc.type = "sine";
+                        osc.frequency.setValueAtTime(freq, ctx.currentTime);
+                        gain.gain.setValueAtTime(0.1, ctx.currentTime);
+                        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + duration/1000);
+                        osc.connect(gain);
+                        gain.connect(ctx.destination);
+                        osc.start();
+                        osc.stop(ctx.currentTime + duration/1000);
+                    } catch(e) { console.warn("Audio blocked:", e); }
+                }
+                
                 clearHighlights() {
                     this.selectedSquare = null;
                     this.validMoves = [];
-                    $('#board .square-55d63').removeClass('highlight-selected highlight-valid');
+                    $('#board .square-55d63').removeClass('highlight-selected highlight-valid highlight-last highlight-check');
                 }
 
                 setupListeners() {
@@ -792,6 +902,18 @@
                     document.getElementById('asimodW').addEventListener('change', () => this.syncAgentConfig());
                     document.getElementById('asimodB').addEventListener('change', () => this.syncAgentConfig());
                     document.getElementById('asimodRetries').addEventListener('change', () => this.syncAgentConfig());
+
+                    document.getElementById('togglePanelBtn').addEventListener('click', () => {
+                        const panel = document.getElementById('sidePanel');
+                        const icon = document.getElementById('toggleIcon');
+                        const isCollapsed = panel.classList.toggle('collapsed');
+                        icon.textContent = isCollapsed ? '▶' : '◀';
+                        
+                        // Esperar a que la transición termine para redimensionar el tablero
+                        setTimeout(() => {
+                            this.board.resize();
+                        }, 410);
+                    });
                 }
 
                 syncAgentConfig() {
@@ -894,16 +1016,72 @@
                     document.getElementById('blackTurn').classList.toggle('active', !isWhite);
                     document.getElementById('turnText').textContent = isWhite ? 'Blancas' : 'Negras';
                     
+                    // Actualizar pensamiento del agente
+                    const thoughtBox = document.getElementById('asimodThought');
+                    const newThought = state.last_thought || "";
+                    if (newThought !== thoughtBox.getAttribute('data-last')) {
+                        thoughtBox.textContent = newThought || "Esperando siguiente jugada...";
+                        thoughtBox.setAttribute('data-last', newThought);
+                        thoughtBox.scrollTop = 0;
+                    }
+                    
+                    // Resaltado de último movimiento
+                    if (state.last_move) {
+                        const parts = state.last_move.split(' ');
+                        $(`#board .square-${parts[0]}`).addClass('highlight-last');
+                        $(`#board .square-${parts[1]}`).addClass('highlight-last');
+                    }
+
+                    // Resaltado de Jaque (King squared)
+                    if (state.is_check) {
+                        const fen = this.game.fen().split(' ')[0];
+                        const rows = fen.split('/');
+                        const turnChar = state.turn === 'w' ? 'K' : 'k';
+                        // Encontrar posición del rey en el FEN
+                        let kingPos = "";
+                        for (let r=0; r<8; r++) {
+                            let c = 0;
+                            for (let char of rows[r]) {
+                                if (char === turnChar) {
+                                    kingPos = String.fromCharCode(97+c) + (8-r);
+                                    break;
+                                }
+                                if (/\d/.test(char)) c += parseInt(char);
+                                else c++;
+                            }
+                            if (kingPos) break;
+                        }
+                        if (kingPos) $(`#board .square-${kingPos}`).addClass('highlight-check');
+                    }
+
+                    // Feed Táctico
+                    const feed = document.getElementById('tacticalFeed');
+                    let feedHtml = '';
+                    if (state.threats && state.threats.length) {
+                        state.threats.forEach(t => feedHtml += `<div class="threat-item">⚠️ Amenaza: ${t}</div>`);
+                    }
+                    if (state.opportunities && state.opportunities.length) {
+                        state.opportunities.forEach(o => feedHtml += `<div class="opportunity-item">🎯 Captura: ${o}</div>`);
+                    }
+                    if (!feedHtml) feedHtml = '<div class="tactical-empty">Ninguna amenaza detectada</div>';
+                    feed.innerHTML = feedHtml;
+
                     const stat = document.getElementById('gameStatus');
+                    const wasCheck = stat.dataset.wasCheck === "true";
+                    
                     if (state.is_game_over) {
                         stat.textContent = 'JUEGO TERMINADO';
                         stat.className = 'game-status status-checkmate';
+                        if (!wasCheck) this.playBeep(400, 200);
                     } else if (state.is_check) {
                         stat.textContent = '¡JAQUE!';
                         stat.className = 'game-status status-check';
+                        if (!wasCheck) this.playBeep(800, 80);
+                        stat.dataset.wasCheck = "true";
                     } else {
                         stat.textContent = 'Juego en progreso';
                         stat.className = 'game-status status-playing';
+                        stat.dataset.wasCheck = "false";
                     }
                 }
 

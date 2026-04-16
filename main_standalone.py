@@ -10,6 +10,7 @@ from core.services.style_service import StyleService
 from core.chat_service import ChatService
 from core.api_server import APIServer
 from core.services.data_service import DataService
+from core.services.character_service import CharacterService
 from ui.chat_widget import ChatWidget
 from ui.background_frame import BackgroundFrame
 from modules.widgets import ImageButton
@@ -29,6 +30,7 @@ def main():
     config_service = ConfigService(filename="settings.json")
     data_service = DataService(config_service=config_service)
     style_service = StyleService(config_service=config_service)
+    character_service = CharacterService()
     modular_active = config_service.get("modules_enabled", True)
     
     if modular_active:
@@ -121,12 +123,13 @@ def main():
                 chat_collapsed_bar.pack(side=tk.RIGHT, fill=tk.Y)
                 chat_collapsed_bar.pack_propagate(False)
 
-        tk.Button(chat_collapsed_bar, text="💬", bg=style_service.get_color("bg_header"), 
+        tk.Button(chat_collapsed_bar, text="◀", bg=style_service.get_color("bg_header"), 
                   fg=style_service.get_color("accent"), bd=0, font=("Arial", 12), cursor="hand2",
                   command=lambda: toggle_chat(True)).pack(fill=tk.X, pady=10)
 
         chat_ui = ChatWidget(chat_frame, chat_engine=chat_engine, config_service=config_service, 
-                             style_service=style_service, on_collapse_cmd=lambda: toggle_chat(False))
+                             style_service=style_service, character_service=character_service,
+                             on_collapse_cmd=lambda: toggle_chat(False))
         chat_ui.pack(fill=tk.BOTH, expand=True)
 
         # --- Lógica de navegación de módulos ---
@@ -243,7 +246,8 @@ def main():
         update_module_ui(None)
     else:
         # --- LAYOUT ESTÁNDAR (SOLO CHAT) ---
-        chat_ui = ChatWidget(root, chat_engine=chat_engine, config_service=config_service, style_service=style_service)
+        chat_ui = ChatWidget(root, chat_engine=chat_engine, config_service=config_service, 
+                             style_service=style_service, character_service=character_service)
         chat_ui.pack(fill=tk.BOTH, expand=True)
 
     root.mainloop()

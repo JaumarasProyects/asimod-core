@@ -23,21 +23,42 @@ class VisualizerPort(ABC):
         pass
     
     def create(self, parent: tk.Widget) -> tk.Frame:
-        """Crea el frame del visualizador"""
-        self._frame = tk.Frame(parent, bg="#000000", height=self.height)
+        """Crea el frame del visualizador con soporte para texturas de fondo"""
+        # Intentar obtener el style_service desde el parent (algunos widgets lo guardan)
+        style = getattr(parent, 'style', None)
+        
+        from ui.background_frame import BackgroundFrame
+        if style:
+            self._frame = BackgroundFrame(parent, style, "button")
+            self._frame.config(height=self.height)
+        else:
+            bg_color = parent.cget("bg")
+            self._frame = tk.Frame(parent, bg=bg_color, height=self.height)
+            
         self._frame.pack(fill=tk.X)
         self._frame.pack_propagate(False)
         
-        self._canvas = tk.Canvas(
-            self._frame, 
-            width=self.width, 
-            height=self.height, 
-            bg="#000000", 
-            highlightthickness=0
-        )
-        self._canvas.pack(fill=tk.BOTH, expand=True)
+        # El canvas debe ser transparente si el fondo es una imagen
+        # (Tkinter no soporta transparencia real fácil, pero simulamos con el mismo color o intentamos)
+        bg_canvas = self._frame.cget("bg") if not style else "#000000" 
+        # Si hay imagen de fondo en el Frame (Canvas), el canvas hijo tapará. 
+        # En Tkinter, lo ideal es dibujar directamente en el Canvas del BackgroundFrame.
         
-        self._init_canvas()
+        if style and isinstance(self._frame, BackgroundFrame):
+            # Usamos el propio canvas del BackgroundFrame para el visualizador
+            self._canvas = self._frame
+            self._init_canvas()
+        else:
+            self._canvas = tk.Canvas(
+                self._frame, 
+                width=self.width, 
+                height=self.height, 
+                bg=bg_canvas, 
+                highlightthickness=0
+            )
+            self._canvas.pack(fill=tk.BOTH, expand=True)
+            self._init_canvas()
+            
         return self._frame
     
     @abstractmethod
@@ -70,3 +91,10 @@ class VisualizerPort(ABC):
     def on_audio_end(self):
         """Callback cuando termina audio"""
         self.stop()
+
+    def set_character(self, character_data: dict):
+        """
+        Establece los datos del personaje actual para el visualizador.
+        Debe ser implementado por visualizadores que necesiten esta info (ej. Avatares).
+        """
+        pass

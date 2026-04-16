@@ -68,10 +68,10 @@ class ChatService(ChatPort):
         """Asocia el servicio de módulos para el contexto de herramientas."""
         self.module_service = module_service
 
-    def notify_system_msg(self, text: str, color: str = None):
-        """Notifica un mensaje para ser mostrado en la UI de chat sin TTS."""
+    def notify_system_msg(self, text: str, color: str = None, beep: bool = False):
+        """Notifica un mensaje para ser mostrado en la UI de chat sin TTS. El flag beep controla si suena aviso."""
         if self.on_system_msg_cb:
-            self.on_system_msg_cb(text, color)
+            self.on_system_msg_cb(text, color, beep)
 
     def _on_stt_complete(self, text: str):
         """
@@ -156,8 +156,11 @@ class ChatService(ChatPort):
         Permite sobrescribir las instrucciones del sistema con system_prompt y el modo con mode.
         Con isolated=True se omite el historial previo de usuario.
         """
-        if self.busy:
-            print("[ChatService] BUSY: Ignoring concurrent message.")
+        # Permitir peticiones 'silent' (como las del agente) si el sistema solo está ocupado reproduciendo audio
+        is_only_playing = self.voice_service.is_playing and not self.is_processing and not self.voice_service.is_generating
+        
+        if self.busy and not (silent and is_only_playing):
+            print(f"[ChatService] BUSY: Ignoring concurrent message (is_processing={self.is_processing}, is_playing={self.voice_service.is_playing})")
             return {"response": "Error: Sistema ocupado.", "status": "busy"}
 
         self.is_processing = True
@@ -193,9 +196,11 @@ class ChatService(ChatPort):
             # 2. Si NO es silent, guardar mensaje del usuario
             if not silent:
                 self.memory.add_message("user", text)
-                history = self.memory.get_context() if not isolated else [{"role": "user", "content": text}]
-            elif isolated:
-                history.append({"role": "user", "content": text})
+                
+            if isolated:
+                history = [{"role": "user", "content": text}]
+            else:
+                history = self.memory.get_context()
 
             # 3. Generar respuesta de forma asíncrona (con Reintentos para Agente)
             max_attempts = agent_retries if agent_retries is not None else (3 if is_agent_mode else 1)
@@ -304,8 +309,11 @@ class ChatService(ChatPort):
             # --- Ejecutar acción de AGENTE si existe ---
             if agent_action and self.module_service:
                 print(f"[Agente Ejecución]: Accionando herramienta '{agent_action}'...")
+                # Guardar el pensamiento temporalmente en el servicio para que los módulos puedan leerlo síncronamente
+                self.current_agent_thought = thought
                 # Usamos el despachador de comandos existente
                 self.module_service.handle_voice_command(agent_action, agent_params or "")
+                self.current_agent_thought = None
 
             # 5. Si NO es silent, guardar respuesta en memoria
             if not silent:
@@ -335,6 +343,7 @@ class ChatService(ChatPort):
                 "clean_text": clean_response,
                 "emojis": self.last_emojis,
                 "agent_action": agent_action,
+                "thought": thought if is_agent_mode else None,
                 "status": "success"
             }
         finally:

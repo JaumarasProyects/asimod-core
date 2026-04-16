@@ -44,6 +44,11 @@ class APIServer:
         self.chat_service = chat_service
         self.module_service = module_service
         self.style_service = style_service
+        
+        # Nuevo Servicio de Personajes (NUEVO)
+        from core.services.character_service import CharacterService
+        self.character_service = CharacterService()
+        
         self.port = port
         self.host = host
         self.app = FastAPI(title="ASIMOD Core API")
@@ -110,6 +115,13 @@ class APIServer:
                 out_mount = f"/v1/modules/{entry}/output"
                 print(f"[API] Montando Output para módulo '{entry}': {out_mount}")
                 self.app.mount(out_mount, StaticFiles(directory=module_output_path), name=f"module_output_{entry}")
+
+            # --- NUEVO: Montaje de Recursos del Módulo (Imágenes, Audio, etc) ---
+            module_resources_path = os.path.join(modules_dir, entry, "Resources")
+            if os.path.isdir(module_resources_path):
+                res_mount = f"/v1/modules/{entry}/resources"
+                print(f"[API] Montando Recursos para módulo '{entry}': {res_mount}")
+                self.app.mount(res_mount, StaticFiles(directory=module_resources_path), name=f"module_res_{entry}")
 
     # =========================================================
     # ROUTES
@@ -385,8 +397,14 @@ class APIServer:
                 "stt_mode": self.chat_service.config.get("stt_mode", "OFF"),
                 "stt_captured_by_module": getattr(self.chat_service, "stt_captured_by_module", False),
                 "char_name": self.chat_service.memory.data.get("name", ""),
-                "char_personality": self.chat_service.memory.data.get("personality", "")
+                "char_personality": self.chat_service.memory.data.get("personality", ""),
+                "char_avatar": self.chat_service.memory.data.get("avatar", {})
             }
+
+        @self.app.get("/v1/characters")
+        async def list_registry_characters():
+            """Retorna la lista de personajes en el Repositorio Global."""
+            return {"characters": self.character_service.list_characters()}
 
         # =====================================================
         # MEMORY MANAGEMENT
@@ -416,6 +434,7 @@ class APIServer:
             hist = data.get("history")
             voice = data.get("voice_id")
             v_prov = data.get("voice_provider")
+            avatar = data.get("avatar") # NUEVO
 
             if target == "New" or (not target or target == "None"):
                 # Si target es None/New, intentar usar name como ID
@@ -427,13 +446,14 @@ class APIServer:
                 
                 self.chat_service.memory.load_thread(actual_id)
 
-                if name or pers or hist or voice or v_prov:
+                if name or pers or hist or voice or v_prov or avatar:
                     self.chat_service.memory.update_profile(
                         name=name,
                         personality=pers,
                         history=hist,
                         voice_id=voice,
-                        voice_provider=v_prov
+                        voice_provider=v_prov,
+                        avatar=avatar # NUEVO
                     )
 
                 self.chat_service.config.set("active_thread", actual_id)

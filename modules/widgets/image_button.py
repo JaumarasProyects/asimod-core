@@ -22,16 +22,16 @@ class ImageButton(tk.Label):
         bg_color = kwargs.pop("bg", self.style.get_color("btn_bg"))
         fg_color = kwargs.pop("fg", self.text_main)
         
-        # Extraer pady para calcular altura fija y evitar crecimiento infinito
+        # Extraer pady y width para calcular dimensiones fijas
         self.requested_pady = kwargs.pop("pady", 10)
+        self.requested_width = kwargs.pop("width", None)
         
         super().__init__(parent, text=text, bg=bg_color, fg=fg_color, cursor="hand2", compound="center", **kwargs)
         
-        # Crear un placeholder de 1x1 para poder fijar la altura en píxeles desde el inicio
+        # Crear un placeholder de 1x1 para poder fijar el tamaño en píxeles desde el inicio
         self.placeholder = tk.PhotoImage(width=1, height=1)
         
         # Calcular altura fija: aproximación (tamaño fuente + 2 * pady)
-        # Nota: Al tener imagen (aunque sea 1x1), 'height' se interpreta en píxeles.
         try:
             font_size = kwargs.get("font", ("Arial", 10))[1]
             if not isinstance(font_size, int): font_size = 10
@@ -39,7 +39,15 @@ class ImageButton(tk.Label):
             font_size = 10
             
         self.fixed_height = font_size + (2 * self.requested_pady) + 10 # Margen extra
-        self.config(image=self.placeholder, height=self.fixed_height, pady=0)
+        
+        # Configuración inicial de tamaño
+        config_args = {"image": self.placeholder, "height": self.fixed_height, "pady": 0}
+        if self.requested_width:
+            config_args["width"] = self.requested_width
+
+            
+        self.config(**config_args)
+
         
         self.photo = None
         self.pil_img = None

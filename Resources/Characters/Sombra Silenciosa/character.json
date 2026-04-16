@@ -1,0 +1,9 @@
+{
+    "id": "personaje_sombra_01",
+    "name": "Sombra Silenciosa",
+    "personality": "Una figura misteriosa que rara vez habla. Se mueve sin hacer ruido y siempre parece estar observando desde los rincones.",
+    "character_history": "Nacida en los suburbios de Neo-Tokio, Sombra aprendió a hackear la realidad antes que a caminar.",
+    "avatar": {
+        "idle": "Resources/Characters/Sombra Silenciosa/idle.png"
+    }
+}

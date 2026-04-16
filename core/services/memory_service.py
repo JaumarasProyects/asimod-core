@@ -27,6 +27,9 @@ class MemoryService:
             "character_history": "Eres un asistente virtual avanzado diseñado para ayudar al usuario.",
             "voice_provider": "",
             "voice_id": "",
+            "avatar": {
+                "idle": "Resources/logoAzul.png"
+            },
             "history": []
         }
 
@@ -58,10 +61,12 @@ class MemoryService:
         self.data = self._get_empty_thread()
         return self.data
 
-    def create_new_thread(self) -> str:
-        """Crea un hilo nuevo con la fecha y hora actual como nombre."""
-        now = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        thread_id = f"Thread_{now}"
+    def create_new_thread(self, thread_id: str = None) -> str:
+        """Crea un hilo nuevo con un ID específico o basado en la fecha."""
+        if not thread_id:
+            now = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+            thread_id = f"Thread_{now}"
+            
         # Inicializar con valores por defecto
         self.data = self._get_empty_thread()
         self.active_thread = thread_id
@@ -85,13 +90,15 @@ class MemoryService:
         self.data["history"].append({"role": role, "content": content})
         self.save_current()
 
-    def update_profile(self, name: str = None, personality: str = None, history: str = None, voice_id: str = None, voice_provider: str = None):
+    def update_profile(self, name: str = None, personality: str = None, history: str = None, 
+                       voice_id: str = None, voice_provider: str = None, avatar: dict = None):
         """Actualiza el perfil del asistente en la memoria activa."""
         if name is not None: self.data["name"] = name
         if personality is not None: self.data["personality"] = personality
         if history is not None: self.data["character_history"] = history
         if voice_id is not None: self.data["voice_id"] = voice_id
         if voice_provider is not None: self.data["voice_provider"] = voice_provider
+        if avatar is not None: self.data["avatar"] = avatar
         self.save_current()
 
     def get_context(self) -> list:

@@ -67,7 +67,7 @@ class VisualizerService:
         """Retorna una lista de los IDs de los visualizadores disponibles."""
         return list(self.loaded_visualizers.keys())
 
-    def get_instance(self, v_id, parent, width=600, height=60):
+    def get_instance(self, v_id, parent, width=600, height=300):
         """Retorna una instancia del visualizador solicitado."""
         if v_id in self.loaded_visualizers:
             return self.loaded_visualizers[v_id](parent, width, height)
