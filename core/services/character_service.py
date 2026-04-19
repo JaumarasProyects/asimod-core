@@ -29,12 +29,20 @@ class CharacterService:
                     try:
                         with open(json_file, "r", encoding="utf-8") as f:
                             data = json.load(f)
-                            # Asegurar rutas relativas para el frontend
+                            # Asegurar rutas para el frontend (URL Mapping)
+                            def to_url(path):
+                                if not path: return None
+                                if path.startswith("http"): return path
+                                return "/" + path.replace("\\", "/")
+
                             if "avatar" in data:
-                                if data["avatar"].get("idle"):
-                                    data["avatar"]["idle_url"] = f"/Resources/Characters/{entry}/idle.png"
-                                if data["avatar"].get("talking"):
-                                    data["avatar"]["talking_url"] = f"/Resources/Characters/{entry}/idle.png" # Por ahora igual
+                                # Usar list() para evitar RuntimeError al modificar el dict durante la iteración
+                                for k, v in list(data["avatar"].items()):
+                                    data["avatar"][f"{k}_url"] = to_url(v)
+                            
+                            if "video" in data:
+                                for k, v in list(data["video"].items()):
+                                    data["video"][f"{k}_url"] = to_url(v)
                             characters.append(data)
                     except Exception as e:
                         print(f"[CharacterService] Error cargando {entry}: {e}")

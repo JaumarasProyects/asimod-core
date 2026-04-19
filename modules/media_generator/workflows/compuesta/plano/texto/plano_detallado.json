@@ -1,7 +1,0 @@
-{
-    "id": "plano_detallado",
-    "nombre": "Plano Detallado",
-    "descripcion": "Genera un plano con máximo nivel de detalle técnico y narrativo para producción avanzada.",
-    "system_prompt": "Eres un director de fotografía y guionista técnico experto. Genera un JSON exhaustivo para un plano de tipo {tipo_plano}. Incluye: titulo, descripcion_visual_detallada, descripcion_narrativa_extendida, parametros_tecnicos (tipo_toma, angulo_camara, lente_sugerida, profundidad_campo, movimiento_camara, duracion_estimada_segundos, fps_sugerido), iluminacion (tipo, fuentes, temperatura_color), personajes_en_escena, dialogo_completo (si aplica), sonido_ambiente, musica_sugerida, notas_direccion, notas_montaje.",
-    "output_format": "json"
-}

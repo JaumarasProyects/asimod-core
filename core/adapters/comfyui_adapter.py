@@ -136,9 +136,9 @@ class ComfyUIAdapter(ImagePort):
                             try:
                                 if param_key in ["bpm", "duration", "seconds", "steps", "cfg"]:
                                     val = float(val) if "." in str(val) else int(val)
-                                    # Para 'length' o 'frame_count' en video asumiendo 16fps (estándar Wan2.1)
+                                    # Para 'length' o 'frame_count' en video asumiendo 24fps (estándar para Talking Heads/Avatares)
                                     if found_key in ["length", "frame_count"] and param_key == "duration":
-                                        val = int(val * 16)
+                                        val = int(val * 24)
                                 inputs[found_key] = val
                                 print(f"[ComfyUIAdapter] Inyectado '{param_key}' en clave '{found_key}': {val} en {node_id}")
                             except: pass

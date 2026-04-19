@@ -8,7 +8,7 @@
         },
         "2": {
             "panel": "Imagen",
-            "workflow_folder": "workflows/compuesta/prop/imagen",
+            "workflow_folder": "workflows/imagen/compuesta/prop/imagen",
             "default_workflow": "prop_render.json",
             "prompt_template": "Diseño conceptual de {titulo}: {descripcion}. Utilidad: {utilidad}.",
             "narrative_enrichment": false,
@@ -16,13 +16,13 @@
         },
         "3": {
             "panel": "Audio",
-            "workflow_folder": "workflows/compuesta/prop/audio",
+            "workflow_folder": "workflows/Audio/sounds",
             "default_workflow": "prop_sound_fx.json"
         },
         "4": {
             "panel": "Video",
-            "workflow_folder": "workflows/compuesta/prop/video",
-            "default_workflow": "prop_turntable.json"
+            "workflow_folder": "workflows/video/simple/Img+Audio2Video",
+            "default_workflow": "DefaultImg+Audio2Video.json"
         }
     }
 }

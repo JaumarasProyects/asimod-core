@@ -522,8 +522,28 @@ class AjedrezModule(StandardModule):
         self.asimod_thinking = False
         self.agent_running = False # Lock para evitar recursión de hilos del agente
         self.ai_retries = 0
-        self.asimod_steroids_var = tk.BooleanVar(value=False)
-        self.asimod_steroids_level_var = tk.IntVar(value=2)
+        self.last_thought = "" # Asegurar que existe para sync_state
+        self.last_threats = []
+        self.last_opportunities = []
+        
+        # Estados internos compatibles con modo headless
+        self._mode = "ia"
+        self._difficulty = 2
+        self._asimod_w = False
+        self._asimod_b = False
+        self._asimod_steroids = False
+        self._asimod_steroids_level = 2
+        self._ai_max_retries = 5
+        
+        # Variables de Tkinter (se inicializan solo en render_workspace)
+        self.mode_var = None
+        self.diff_var = None
+        self.asimod_w_var = None
+        self.asimod_b_var = None
+        self.asimod_steroids_var = None
+        self.asimod_steroids_level_var = None
+        self.ai_max_retries_var = None
+        
         self.opponent_voice_id = "es-ES-AlvaroNeural" # Voz masculina seria
         self.sidebar_visible = True
 
@@ -562,6 +582,24 @@ class AjedrezModule(StandardModule):
         tk.Label(head, text="♔ CHESS MASTER TACTICAL BOARD", font=("Courier New", 18, "bold"), bg=ghost_bg, fg=accent).pack(side=tk.LEFT, expand=True, pady=5)
 
         # En lugar de usar un main_f opaco que tapa el root_f, empaquetaremos directamente en root_f
+        # Inicializar variables de Tkinter vinculadas a los estados internos
+        self.mode_var = tk.StringVar(value=self._mode)
+        self.diff_var = tk.IntVar(value=self._difficulty)
+        self.asimod_w_var = tk.BooleanVar(value=self._asimod_w)
+        self.asimod_b_var = tk.BooleanVar(value=self._asimod_b)
+        self.asimod_steroids_var = tk.BooleanVar(value=self._asimod_steroids)
+        self.asimod_steroids_level_var = tk.IntVar(value=self._asimod_steroids_level)
+        self.ai_max_retries_var = tk.IntVar(value=self._ai_max_retries)
+
+        # Sincronizar cambios de la UI hacia las variables internas
+        self.mode_var.trace_add("write", lambda *a: setattr(self, "_mode", self.mode_var.get()))
+        self.diff_var.trace_add("write", lambda *a: setattr(self, "_difficulty", self.diff_var.get()))
+        self.asimod_w_var.trace_add("write", lambda *a: setattr(self, "_asimod_w", self.asimod_w_var.get()))
+        self.asimod_b_var.trace_add("write", lambda *a: setattr(self, "_asimod_b", self.asimod_b_var.get()))
+        self.asimod_steroids_var.trace_add("write", lambda *a: setattr(self, "_asimod_steroids", self.asimod_steroids_var.get()))
+        self.asimod_steroids_level_var.trace_add("write", lambda *a: setattr(self, "_asimod_steroids_level", self.asimod_steroids_level_var.get()))
+        self.ai_max_retries_var.trace_add("write", lambda *a: setattr(self, "_ai_max_retries", self.ai_max_retries_var.get()))
+
         # Sidebar textura
         side_color = self.style.get_color("bg_sidebar") if not has_bg else ghost_bg
         panel_bd = 1 if has_bg else 0
@@ -580,7 +618,6 @@ class AjedrezModule(StandardModule):
         tk.Label(self.side_panel, text="CONFIGURACIÓN", bg=side_color, fg=ACCENT_GOLD, font=("Helvetica", 9, "bold")).pack(anchor="w")
         
         # Modo de Juego
-        self.mode_var = tk.StringVar(value="ia")
         
         # Player names UI
         self.players_frame = tk.Frame(self.side_panel, bg=side_color)
@@ -621,7 +658,6 @@ class AjedrezModule(StandardModule):
 
         self.diff_lbl = tk.Label(self.side_panel, text="DIFICULTAD IA", bg=BG_CARD, fg=TEXT_DIM, font=("Helvetica", 9))
         self.diff_lbl.pack(anchor="w")
-        self.diff_var = tk.IntVar(value=2)
         self.diff_slider = tk.Scale(self.side_panel, from_=1, to=4, orient=tk.HORIZONTAL, variable=self.diff_var, bg=side_color, fg=accent, highlightthickness=0, bd=0)
         self.diff_slider.pack(fill=tk.X)
 
@@ -629,8 +665,6 @@ class AjedrezModule(StandardModule):
         
         # Opciones Agente ASIMOD
         tk.Label(self.side_panel, text="CONTROL ASIMOD (AGENTE)", bg=side_color, fg=ACCENT_GOLD, font=("Helvetica", 8, "bold")).pack(anchor="w")
-        self.asimod_w_var = tk.BooleanVar(value=False)
-        self.asimod_b_var = tk.BooleanVar(value=False)
         
         def on_agent_toggle():
             self.check_auto_turn()
@@ -642,7 +676,6 @@ class AjedrezModule(StandardModule):
         retry_f = tk.Frame(self.side_panel, bg=side_color)
         retry_f.pack(fill=tk.X, pady=(10, 0))
         tk.Label(retry_f, text="Fallos Máx. IA:", bg=side_color, fg=TEXT_DIM, font=("Helvetica", 8)).pack(side=tk.LEFT)
-        self.ai_max_retries_var = tk.IntVar(value=5)
         tk.Spinbox(retry_f, from_=1, to=50, textvariable=self.ai_max_retries_var, width=5, bg=ghost_bg, fg=TEXT_MAIN, bd=0, buttonbackground=side_color).pack(side=tk.RIGHT)
 
         tk.Frame(self.side_panel, bg="#333", height=1).pack(fill=tk.X, pady=10)
@@ -705,6 +738,84 @@ class AjedrezModule(StandardModule):
 
         self.update_ui()
 
+    def update_ui(self):
+        """Sincroniza el estado del motor con los componentes de la interfaz."""
+        # Actualizar datos tácticos globales (usados por web y escritorio)
+        self._update_tactical_data()
+        
+        if not hasattr(self, "turn_lbl") or self.turn_lbl is None or not self.turn_lbl.winfo_exists():
+            return
+
+        # 1. Etiqueta de Turno
+        p1 = self.p1_entry.get().strip() or self.player1_name
+        p2 = self.p2_entry.get().strip() or self.player2_name
+        
+        if self.engine.turn == 'w':
+            txt = f"TURNO: {p1.upper()} (Blancas)"
+            cl = ACCENT_CYAN
+        else:
+            txt = f"TURNO: {p2.upper()} (Negras)"
+            cl = ACCENT_CORAL
+        
+        self.turn_lbl.config(text=txt, fg=cl)
+
+        # 2. Piezas Capturadas
+        if hasattr(self, "cap_w"): self.cap_w.update_pieces(self.engine.captured_w)
+        if hasattr(self, "cap_b"): self.cap_b.update_pieces(self.engine.captured_b)
+
+        # 3. Eval Bar (Usamos el evaluador de la IA)
+        if hasattr(self, "ebar"):
+            score = self.ai.eval()
+            self.ebar.update_eval(score)
+
+        # 4. Historial (Text Box)
+        if hasattr(self, "hist_box"):
+            self.hist_box.config(state=tk.NORMAL)
+            self.hist_box.delete("1.0", tk.END)
+            hist_text = ""
+            for i, h in enumerate(self.engine.history):
+                if i % 2 == 0:
+                    hist_text += f"{i//2 + 1}. {h['san']} "
+                else:
+                    hist_text += f"{h['san']}\n"
+            self.hist_box.insert(tk.END, hist_text)
+            self.hist_box.see(tk.END)
+            self.hist_box.config(state=tk.DISABLED)
+
+        # 5. Redibujar Tablero
+        if hasattr(self, 'board_ui') and self.board_ui and hasattr(self.board_ui, 'winfo_exists') and self.board_ui.winfo_exists():
+            self.board_ui.draw()
+
+    def _update_tactical_data(self):
+        """Calcula amenazas y oportunidades actuales para el feed táctico."""
+        threats = []
+        opportunities = []
+        turn = self.engine.turn
+        opp_color = 'b' if turn == 'w' else 'w'
+        piece_names = {'K':'Rey', 'Q':'Reina', 'R':'Torre', 'B':'Alfil', 'N':'Caballo', 'P':'Peón',
+                       'k':'Rey', 'q':'Reina', 'r':'Torre', 'b':'Alfil', 'n':'Caballo', 'p':'Peón'}
+        cols, rows = "abcdefgh", "87654321"
+
+        for r in range(8):
+            for c in range(8):
+                p = self.engine.board[r][c]
+                if p == '.': continue
+                
+                # Mis piezas bajo amenaza directa
+                if (turn == 'w' and p.isupper()) or (turn == 'b' and p.islower()):
+                    if self.engine.is_sq_att(r, c, opp_color):
+                        threats.append(f"{piece_names[p]}({cols[c]}{rows[r]})")
+                
+                # Piezas del rival que puedo capturar
+                elif (turn == 'w' and p.islower()) or (turn == 'b' and p.isupper()):
+                    if self.engine.is_sq_att(r, c, turn):
+                        # Nota: Aquí podríamos añadir lógica de si está defendida o no
+                        opportunities.append(f"{piece_names[p]}({cols[c]}{rows[r]})")
+        
+        self.last_threats = threats
+        self.last_opportunities = opportunities
+
+
     def toggle_sidebar(self):
         pad = 20 if self.style.get_background("center") is not None else 0
         if self.sidebar_visible:
@@ -718,30 +829,7 @@ class AjedrezModule(StandardModule):
             self.sidebar_visible = True
             self.toggle_btn.config(text="☰ OCULTAR PANELES")
 
-    def update_ui(self):
-        # Update Turn
-        t_str = "BLANCAS" if self.engine.turn == 'w' else "NEGRAS"
-        clr = ACCENT_CYAN if self.engine.turn == 'w' else ACCENT_CORAL
-        self.turn_lbl.config(text=f"TURNO: {t_str}", fg=clr)
-        
-        # Update Captured
-        self.cap_w.update_pieces(self.engine.captured_w)
-        self.cap_b.update_pieces(self.engine.captured_b)
-        
-        # Update Eval
-        score = self.ai.eval()
-        self.ebar.update_eval(score)
-        
-        # Update History
-        self.hist_box.config(state=tk.NORMAL)
-        self.hist_box.delete("1.0", tk.END)
-        for i, h in enumerate(self.engine.history):
-            if i % 2 == 0: self.hist_box.insert(tk.END, f"{i//2+1}. {h['san']} ")
-            else: self.hist_box.insert(tk.END, f"{h['san']}\n")
-        self.hist_box.see(tk.END)
-        self.hist_box.config(state=tk.DISABLED)
-        
-        self.board_ui.difficulty = self.diff_var.get()
+        self.board_ui.difficulty = self.diff_var.get() if self.diff_var else self._difficulty
         self.board_ui.draw()
 
     def reset(self, ask=True):
@@ -765,16 +853,33 @@ class AjedrezModule(StandardModule):
             return # Game over
         
         turn = self.engine.turn
-        if turn == 'w' and getattr(self, 'asimod_w_var', None) and self.asimod_w_var.get():
+        asimod_w = self.asimod_w_var.get() if self.asimod_w_var else self._asimod_w
+        asimod_b = self.asimod_b_var.get() if self.asimod_b_var else self._asimod_b
+        
+        if turn == 'w' and asimod_w:
             self.ask_asimod_agent(turn, error_msg)
             return
-        if turn == 'b' and getattr(self, 'asimod_b_var', None) and self.asimod_b_var.get():
+        if turn == 'b' and asimod_b:
             self.ask_asimod_agent(turn, error_msg)
             return
             
-        if self.mode_var.get() == "ia" and turn == 'b':
-            self.root_f.after(400, self.board_ui.ia)
-            
+        mode = self.mode_var.get() if self.mode_var else self._mode
+        if mode == "ia" and turn == 'b':
+            if hasattr(self, 'board_ui') and self.board_ui and self.board_ui.winfo_exists():
+                self.root_f.after(400, self.board_ui.ia)
+            else:
+                # Simular delay de la IA en modo headless/web
+                import threading
+                threading.Timer(0.4, self.board_ui_ia_headless).start()
+
+    def board_ui_ia_headless(self):
+        """Ejecuta el movimiento de la IA local sin depender de widgets de tablero."""
+        m = self.ai.get_move(self._difficulty)
+        if m:
+            self.engine.move(*m)
+            self.update_ui()
+            self.check_auto_turn()
+
     def ask_asimod_agent(self, turn, error_msg=None):
         if self.agent_running:
             print("[Ajedrez] Ignorando trigger: Ya hay un agente en ejecución.")
@@ -874,10 +979,11 @@ class AjedrezModule(StandardModule):
             prompt += "\n"
             
         # --- MODO ESTEROIDES (SUGERENCIA DEL MOTOR) ---
-        if self.asimod_steroids_var.get():
+        asimod_steroids = self.asimod_steroids_var.get() if self.asimod_steroids_var else self._asimod_steroids
+        if asimod_steroids:
             try:
                 # Obtenemos el mejor movimiento del motor local con la profundidad de esteroides
-                depth = self.asimod_steroids_level_var.get()
+                depth = self.asimod_steroids_level_var.get() if self.asimod_steroids_level_var else self._asimod_steroids_level
                 best_move = self.ai.get_move(depth=depth)
                 if best_move:
                     r1, c1, r2, c2 = best_move
@@ -907,7 +1013,10 @@ class AjedrezModule(StandardModule):
             self.asimod_thinking = True
             try:
                 time.sleep(1.6) # Bypass global ASIMOD cooldown
-                max_retries = self.ai_max_retries_var.get() if hasattr(self, 'ai_max_retries_var') else 5
+                max_retries = self._ai_max_retries
+                if hasattr(self, 'ai_max_retries_var') and self.ai_max_retries_var:
+                    max_retries = self.ai_max_retries_var.get()
+                
                 result = asyncio.run(self.chat_service.send_message(prompt, system_prompt=sys_prompt, silent=True, skip_tts=True, mode="AGENT", isolated=True, temperature=0.3, agent_retries=max_retries))
                 
                 # Obtener pensamiento
@@ -923,6 +1032,7 @@ class AjedrezModule(StandardModule):
                 
                 # NOTIFICACIÓN ÚNICA (Solo aquí, sin repetir el nombre del agente)
                 if thought:
+                    self.last_thought = thought
                     self.chat_service.notify_system_msg(thought, "#4ade80", beep=False)
                 
                 # Watchdog: Solo reintentar si el sistema NO estaba ocupado y la IA evadió la acción
@@ -939,8 +1049,11 @@ class AjedrezModule(StandardModule):
             finally:
                 self.asimod_thinking = False
                 self.agent_running = False
-                # Re-comprobar turno para dar paso al siguiente jugador (IA local o humano)
-                self.root_f.after(100, self.check_auto_turn)
+                # Re-comprobar turno de forma segura
+                if hasattr(self, 'root_f') and self.root_f and self.root_f.winfo_exists():
+                    self.root_f.after(100, self.check_auto_turn)
+                else:
+                    self.check_auto_turn()
                 
         threading.Thread(target=run_agent, daemon=True).start()
 
@@ -1034,8 +1147,11 @@ class AjedrezModule(StandardModule):
             # Validar
             # Procesar el pensamiento antes de ejecutar el movimiento
             # Para garantizar que se imprime SIEMPRE ANTES de validar o fallar.
-            auto_w = self.engine.turn == 'w' and getattr(self, 'asimod_w_var', None) and self.asimod_w_var.get()
-            auto_b = self.engine.turn == 'b' and getattr(self, 'asimod_b_var', None) and self.asimod_b_var.get()
+            asimod_w = self.asimod_w_var.get() if self.asimod_w_var else self._asimod_w
+            asimod_b = self.asimod_b_var.get() if self.asimod_b_var else self._asimod_b
+            
+            auto_w = self.engine.turn == 'w' and asimod_w
+            auto_b = self.engine.turn == 'b' and asimod_b
             
             raw_thought = getattr(self.chat_service, 'current_agent_thought', "") or ""
             parsed_thought = ""
@@ -1081,7 +1197,7 @@ class AjedrezModule(StandardModule):
                     if not hasattr(self, 'ai_retries'): self.ai_retries = 0
                     self.ai_retries += 1
                     
-                    max_allowed = self.ai_max_retries_var.get() if hasattr(self, 'ai_max_retries_var') else 5
+                    max_allowed = self.ai_max_retries_var.get() if (hasattr(self, 'ai_max_retries_var') and self.ai_max_retries_var) else self._ai_max_retries
                     
                     if self.ai_retries > max_allowed:
                         import threading
@@ -1112,7 +1228,7 @@ class AjedrezModule(StandardModule):
                 if auto_w or auto_b:
                     if not hasattr(self, 'ai_retries'): self.ai_retries = 0
                     self.ai_retries += 1
-                    max_allowed = self.ai_max_retries_var.get() if hasattr(self, 'ai_max_retries_var') else 5
+                    max_allowed = self.ai_max_retries_var.get() if (hasattr(self, 'ai_max_retries_var') and self.ai_max_retries_var) else self._ai_max_retries
                     if self.ai_retries > max_allowed:
                         import threading
                         def triple_beep():
@@ -1238,11 +1354,11 @@ class AjedrezModule(StandardModule):
                 "difficulty": self.diff_var.get(),
                 "is_check": self.engine.is_in_check(self.engine.turn),
                 "is_game_over": not bool(self.engine.get_all_valid_moves(self.engine.turn)),
-                "asimod_w": self.asimod_w_var.get(),
-                "asimod_b": self.asimod_b_var.get(),
-                "asimod_steroids": self.asimod_steroids_var.get(),
-                "steroids_level": self.asimod_steroids_level_var.get(),
-                "ai_max_retries": self.ai_max_retries_var.get(),
+                "asimod_w": self.asimod_w_var.get() if self.asimod_w_var else self._asimod_w,
+                "asimod_b": self.asimod_b_var.get() if self.asimod_b_var else self._asimod_b,
+                "asimod_steroids": self.asimod_steroids_var.get() if self.asimod_steroids_var else self._asimod_steroids,
+                "steroids_level": self.asimod_steroids_level_var.get() if self.asimod_steroids_level_var else self._asimod_steroids_level,
+                "ai_max_retries": self.ai_max_retries_var.get() if self.ai_max_retries_var else self._ai_max_retries,
                 "last_thought": self.last_thought,
                 "last_move": last_move_coords,
                 "threats": getattr(self, 'last_threats', []),
@@ -1305,11 +1421,24 @@ class AjedrezModule(StandardModule):
         return {"success": True}
 
     def api_update_agent_config(self, asimod_w, asimod_b, max_retries, steroids=None, steroids_level=None):
-        self.asimod_w_var.set(asimod_w)
-        self.asimod_b_var.set(asimod_b)
-        if max_retries: self.ai_max_retries_var.set(int(max_retries))
-        if steroids is not None: self.asimod_steroids_var.set(bool(steroids))
-        if steroids_level is not None: self.asimod_steroids_level_var.set(int(steroids_level))
+        if self.asimod_w_var: self.asimod_w_var.set(asimod_w)
+        else: self._asimod_w = bool(asimod_w)
+        
+        if self.asimod_b_var: self.asimod_b_var.set(asimod_b)
+        else: self._asimod_b = bool(asimod_b)
+        
+        if max_retries: 
+            if self.ai_max_retries_var: self.ai_max_retries_var.set(int(max_retries))
+            else: self._ai_max_retries = int(max_retries)
+            
+        if steroids is not None: 
+            if self.asimod_steroids_var: self.asimod_steroids_var.set(bool(steroids))
+            else: self._asimod_steroids = bool(steroids)
+            
+        if steroids_level is not None: 
+            if self.asimod_steroids_level_var: self.asimod_steroids_level_var.set(int(steroids_level))
+            else: self._asimod_steroids_level = int(steroids_level)
+            
         self.check_auto_turn()
         return {"success": True}
 

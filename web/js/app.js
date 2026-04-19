@@ -8,6 +8,10 @@ class AsimodApp {
         this.modules = [];
         this.activeModule = null;
         this.style = null;
+        
+        // --- Motores de Audio (Web Audio API para Móviles) ---
+        this.audioCtx = null;
+        this.currentBufferSource = null;
 
         // Elementos DOM Principales
         this.sidebarNav = document.getElementById('sidebarNav');
@@ -63,12 +67,19 @@ class AsimodApp {
         this.previewImg = document.getElementById('previewImg');
         this.removeImg = document.getElementById('removeImg');
         this.closeChatBtn = document.getElementById('closeChat');
+        this.chatMic = document.getElementById('chatMic'); // NUEVO
+        
+        // --- PROPIEDADES DE AUDIO WEB ---
+        this.mediaRecorder = null;
+        this.audioChunks = [];
+        this.isRecording = false;
         // Mobile chat trigger variable eliminada
         this.galleryToggle = document.getElementById('galleryToggle');
         this.currentGalleryPath = ''; // Track folder navigation
         this.currentImageBase64 = null;
-        this.currentAudio = null;
         this.currentAudio = null; // Rastrear audio en reproducción
+        this.currentCharVideo = {}; // Guardar configuración de video del personaje (NUEVO)
+        this.mediaObjectURLs = new Set(); // Rastrear URLs para limpieza (NUEVO)
 
         // Si estamos en móvil, el chat y la librería empiezan ocultos por defecto
         if (window.innerWidth < 1024) {
@@ -146,21 +157,37 @@ class AsimodApp {
     }
 
     async loadModules() {
+        console.log("[ASIMOD] Iniciando carga de módulos desde /v1/modules...");
         try {
             const resp = await fetch('/v1/modules');
-            if (!resp.ok) return;
+            if (!resp.ok) {
+                console.error("[ASIMOD] Error HTTP al cargar módulos. Status:", resp.status);
+                return;
+            }
             const data = await resp.json();
+            console.log("[ASIMOD] Respuesta de módulos recibida:", data);
+            
             this.modules = data.modules || [];
+            console.log(`[ASIMOD] Se han detectado ${this.modules.length} módulos.`);
+            
             this.renderSidebar();
             
+            // Auto-activar el primer módulo (o home si existe)
             const home = this.modules.find(m => m.id === 'home');
-            if (home) this.activateModule(home.id);
-            else if (this.modules.length > 0) this.activateModule(this.modules[0].id);
+            if (home) {
+                console.log("[ASIMOD] Activando módulo de inicio.");
+                this.activateModule(home.id);
+            } else if (this.modules.length > 0) {
+                console.log(`[ASIMOD] Activando primer módulo disponible: ${this.modules[0].id}`);
+                this.activateModule(this.modules[0].id);
+            } else {
+                console.warn("[ASIMOD] La lista de módulos está vacía.");
+            }
             
             this.loadGallery(); // Cargar galería al inicio
             setInterval(() => this.syncQuickStatus(), 3000);
         } catch (e) {
-            console.error("[ASIMOD] Error al enlazar módulos.");
+            console.error("[ASIMOD] Error de excepción al cargar módulos:", e);
         }
     }
 
@@ -234,6 +261,9 @@ class AsimodApp {
                 this.micToggle.classList.toggle('active', isActive);
                 this.micToggle.innerText = isActive ? '🎤' : '🎙️';
             }
+            
+            // Sincronizar Avatar HUD (NUEVO: para paridad con escritorio)
+            this.updateAvatarHUD(data);
         } catch (e) {}
     }
 
@@ -368,19 +398,18 @@ class AsimodApp {
             return;
         }
 
-        // --- Otros módulos: Carga Modular Dinámica ---
+        // --- Otros módulos: Carga Modular Dinámica via IFRAME (Aisla estilos y scripts) ---
         if (mod.has_web_ui) {
-            try {
-                const assetPath = `/v1/modules/${mod.id}/assets/index.html?t=${Date.now()}`;
-                const resp = await fetch(assetPath);
-                if (!resp.ok) throw new Error("Fallo al cargar visualizador");
-                const htmlText = await resp.text();
-                this.workspace.innerHTML = htmlText;
-                this.scanAndExecuteScripts(this.workspace);
-                return;
-            } catch (e) {
-                console.error(`[ASIMOD] Error cargando UI de ${mod.id}:`, e);
-            }
+            const assetPath = `/modules/${mod.id}/index.html?t=${Date.now()}`;
+            console.log(`[ASIMOD] Cargando iframe para ${mod.id}: ${assetPath}`);
+            this.workspace.innerHTML = `
+                <iframe src="${assetPath}" 
+                        style="width:100%; height:100%; border:none; background:transparent;" 
+                        title="ASIMOD Module: ${mod.name}"
+                        allow="camera; microphone; display-capture; clipboard-read; clipboard-write;">
+                </iframe>
+            `;
+            return;
         }
 
         // Fallback: Placeholder estándar
@@ -452,11 +481,14 @@ class AsimodApp {
 
         // Reproductor de audio si existe
         if (audioFilename) {
-            const player = document.createElement('audio');
-            player.controls = true;
-            player.className = 'message-audio';
-            player.src = `/v1/audio/file/${audioFilename}`;
-            msg.appendChild(player);
+            const audioUrl = `/v1/audio/file/${audioFilename}`;
+            const playBtn = document.createElement('button');
+            playBtn.className = 'icon-btn';
+            playBtn.innerHTML = '▶ Reproducir';
+            playBtn.style.marginTop = '10px';
+            playBtn.style.fontSize = '0.8rem';
+            playBtn.onclick = () => this.playAudioFile(audioUrl, true);
+            msg.appendChild(playBtn);
         }
 
         const container = document.getElementById('chatMessages');
@@ -609,7 +641,6 @@ class AsimodApp {
             };
         }
 
-        // Quick Controls
         if (this.micToggle) {
             this.micToggle.onclick = async () => {
                 const currentMode = this.sttModeSelect ? this.sttModeSelect.value : 'OFF';
@@ -618,8 +649,10 @@ class AsimodApp {
                     method: 'POST', headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({mode: nextMode})
                 });
-                if (this.chatModeSelect) this.chatModeSelect.addEventListener('change', () => this.syncQuickStatus());
-        
+                await this.syncQuickStatus();
+            };
+        }
+
         // Character Library Events (NUEVO)
         const openLibBtn = document.getElementById('avatarVisualizer');
         const libModal = document.getElementById('charLibraryModal');
@@ -630,9 +663,7 @@ class AsimodApp {
         window.onclick = (event) => {
             if (event.target == libModal) libModal.style.display = "none";
         };
-    }
-        };
-        }
+
         // --- NEW Relocated Controls Logic ---
         if (this.audioStopBtn) {
             this.audioStopBtn.onclick = () => {
@@ -693,6 +724,11 @@ class AsimodApp {
             this.removeImg.onclick = () => this.clearVision();
         }
 
+        // --- Voice Recording Logic (NUEVO) ---
+        if (this.chatMic) {
+            this.chatMic.onclick = () => this.toggleVoiceRecording();
+        }
+
         // Chat Logic
         const chatInput = document.getElementById('chatInput');
         const chatSend = document.getElementById('chatSend');
@@ -702,12 +738,15 @@ class AsimodApp {
             
             this.addChatMessage('user', text);
             chatInput.value = '';
+
+            // WAKE UP AUDIO (REQUERIDO PARA MÓVILES): Reiniciar el contexto en la interacción
+            this.initAudioContext();
             
             const typingMsg = this.addChatMessage('assistant', 'Escribiendo...', true);
             
-            // Timeout de 50 segundos (ligeramente más que el del backend)
+            // Timeout de 120 segundos (2 minutos)
             const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 50000);
+            const timeoutId = setTimeout(() => controller.abort(), 120000);
             
             console.log(`[ASIMOD] Enviando petición: "${text.substring(0, 20)}..."`);
             
@@ -745,19 +784,22 @@ class AsimodApp {
                 if (result.status === 'success') {
                     this.addChatMessage('assistant', result.response, false, result.audio_path);
                     
-                    // Reproducir automáticamente si hay audio
-                    if (result.audio_path) {
-                        if (this.currentAudio) this.currentAudio.pause(); // Parar previo
-                        this.currentAudio = new Audio(`/v1/audio/file/${result.audio_path}`);
-                        
-                        // Vincular con Avatar HUD (NUEVO)
-                        const hud = document.getElementById('avatarContainer');
-                        if (hud) {
-                            this.currentAudio.addEventListener('play', () => hud.classList.add('speaking'));
-                            this.currentAudio.addEventListener('ended', () => hud.classList.remove('speaking'));
-                        }
-
-                        this.currentAudio.play().catch(e => console.warn("Auto-playback blocked by browser:", e));
+                    // Mostrar emojis (NUEVO)
+                    if (result.emojis && result.emojis.length > 0) {
+                        this.showAvatarEmojis(result.emojis);
+                    }
+                    
+                    // PRIORIDAD ATÓMICA: Reproducir Base64 si existe para evitar red extra
+                    if (result.audio_b64) {
+                        console.log("[ASIMOD] Reproduciendo audio atómico (Base64)");
+                        const b64Data = result.audio_b64;
+                        const mimeType = result.audio_path?.endsWith('.wav') ? 'audio/wav' : 'audio/mpeg';
+                        this.playAudioFile(`data:${mimeType};base64,${b64Data}`, true);
+                    } 
+                    // Fallback a archivos si no hay B64 (Galerías, etc)
+                    else if (result.audio_path) {
+                        const audioUrl = `/v1/audio/file/${result.audio_path}`;
+                        this.playAudioFile(audioUrl, true);
                     }
                 } else {
                     this.addChatMessage('assistant', `⚠️ ${result.message || 'Error desconocido'}`);
@@ -775,6 +817,7 @@ class AsimodApp {
                 }
             }
         };
+
         if (chatSend && chatInput) {
             chatSend.onclick = sendMessage;
             chatInput.onkeypress = (e) => { if (e.key === 'Enter') sendMessage(); };
@@ -1361,6 +1404,7 @@ class AsimodApp {
     }
 
     // --- Sistema Module Logic ---
+    // --- Sistema Module Logic ---
     async initSistemaPanel() {
         const sisRoots = document.getElementById('sisRoots');
         const sisFileList = document.getElementById('sisFileList');
@@ -1372,72 +1416,48 @@ class AsimodApp {
         let currentPath = '';
 
         const loadGallery = async (path = "") => {
-            sisFileList.innerHTML = '<div style="padding:40px; text-align:center; color:var(--text-dim);">Cargando archivos...</div>';
+            sisFileList.innerHTML = '<div style="padding:40px; text-align:center; color:var(--text-dim);"><span class="loading-spinner"></span></div>';
             try {
-                // Si el path es vacío, el backend del módulo sistema usará el root por defecto (Principal)
-                const resp = await fetch(`/v1/gallery?module_id=sistema&path=${encodeURIComponent(path)}`);
+                const url = `/v1/gallery?module_id=sistema&path=${encodeURIComponent(path)}`;
+                const resp = await fetch(url);
                 const data = await resp.json();
                 if (data.status === 'success') {
                     currentPath = data.current_path;
                     if (sisCurrentPath) sisCurrentPath.innerText = currentPath;
-                    if (sisBtnBack) sisBtnBack.style.opacity = data.is_root ? '0.3' : '1';
+                    if (sisBtnBack) {
+                        sisBtnBack.style.opacity = data.is_root ? '0.3' : '1';
+                        sisBtnBack.style.pointerEvents = data.is_root ? 'none' : 'auto';
+                    }
                     renderItems(data.items, data.is_root);
                 } else {
-                    sisFileList.innerHTML = `<div style="padding:40px; text-align:center; color:red;">${data.message || 'Error'}</div>`;
+                    sisFileList.innerHTML = `<div style="padding:40px; text-align:center; color:var(--accent);">${data.message || 'Error'}</div>`;
                 }
             } catch (e) {
-                sisFileList.innerHTML = `<div style="padding:40px; text-align:center; color:red;">Error de conexión</div>`;
+                sisFileList.innerHTML = `<div style="padding:40px; text-align:center; color:red;">Fallo de conexión al sistema</div>`;
             }
         };
 
         const renderItems = (items, isRoot) => {
             if (!items || items.length === 0) {
-                sisFileList.innerHTML = '<div style="padding:40px; text-align:center; color:var(--text-dim);">Carpeta vacía</div>';
-                if (!isRoot) {
-                    sisFileList.insertAdjacentHTML('afterbegin', `
-                        <div class="sis-item is-back" style="grid-column: 1 / -1;">
-                            <span class="icon">⬅</span>
-                            <span class="name">Subir un nivel</span>
-                        </div>
-                    `);
-                    sisFileList.querySelector('.is-back').onclick = () => {
-                        const parts = currentPath.split(/[/\\]/);
-                        parts.pop();
-                        loadGallery(parts.join('/') || '/');
-                    };
-                }
+                sisFileList.innerHTML = '<div style="padding:40px; text-align:center; color:var(--text-dim); opacity:0.5;">VACÍO</div>';
                 return;
             }
 
             let html = '';
-            if (!isRoot) {
-                html += `
-                    <div class="sis-item is-back" style="grid-column: 1 / -1; background: rgba(0, 163, 255, 0.05);">
-                        <span class="icon">⬅</span>
-                        <span class="name">SUBIR UN NIVEL (ATRÁS)</span>
-                    </div>
-                `;
-            }
-
             html += items.map(item => `
-                <div class="sis-item ${item.type === 'folder' ? 'is-folder' : 'is-file'}" data-path="${item.path}" data-type="${item.type}" data-url="${item.url || ''}">
-                    <span class="icon">${this.getIconForType(item.type)}</span>
-                    <span class="name">${item.name}</span>
+                <div class="sis-item ${item.type === 'folder' ? 'is-folder' : 'is-file'}" 
+                     data-path="${item.path}" 
+                     data-type="${item.type}" 
+                     data-url="${item.url || ''}"
+                     title="${item.name}">
+                    <div class="sis-icon">${this.getIconForType(item.type)}</div>
+                    <div class="sis-name">${item.name}</div>
                 </div>
             `).join('');
 
             sisFileList.innerHTML = html;
 
-            const backBtn = sisFileList.querySelector('.is-back');
-            if (backBtn) {
-                backBtn.onclick = () => {
-                    const parts = currentPath.split(/[/\\]/);
-                    parts.pop();
-                    loadGallery(parts.join('/') || '/');
-                };
-            }
-
-            sisFileList.querySelectorAll('.sis-item:not(.is-back)').forEach(el => {
+            sisFileList.querySelectorAll('.sis-item').forEach(el => {
                 el.onclick = () => {
                     const type = el.getAttribute('data-type');
                     const path = el.getAttribute('data-path');
@@ -1450,7 +1470,7 @@ class AsimodApp {
                         sisFileList.querySelectorAll('.sis-item').forEach(i => i.classList.remove('selected'));
                         el.classList.add('selected');
                         this.previewSistemaMedia({
-                            name: el.querySelector('.name').innerText,
+                            name: el.querySelector('.sis-name').innerText,
                             type: type,
                             url: url,
                             path: path
@@ -1460,24 +1480,21 @@ class AsimodApp {
             });
         };
 
-        // Eventos de Navegación
+        // Eventos de Navegación (Tabs de Raíz)
         sisRoots.querySelectorAll('.sis-tab').forEach(btn => {
-            btn.onclick = () => {
+            btn.onclick = async () => {
                 sisRoots.querySelectorAll('.sis-tab').forEach(t => t.classList.remove('active'));
                 btn.classList.add('active');
-                // Al cambiar de raíz en la web, mandamos una acción al módulo si fuera necesario, 
-                // pero aquí simplemente forzamos el on_menu_change vía una petición de galería vacía con el modo
-                // En este caso, el SistemaModule.handle_get_gallery usará el modo activo del backend si no pasamos path.
-                // O mejor, implementamos una acción de cambio de raíz.
-                this.executeModuleAction('on_menu_change', {mode: btn.getAttribute('data-root')}).then(() => {
-                    loadGallery("");
-                });
+                const rootMode = btn.getAttribute('data-root');
+                console.log(`[Sistema] Cambiando raíz a: ${rootMode}`);
+                // Disparar acción en el backend para que el módulo actualice su estado interno
+                await this.executeModuleAction('on_menu_change', {mode: rootMode});
+                loadGallery(""); // Cargar la nueva raíz enviada por el backend
             };
         });
 
         if (sisBtnBack) {
             sisBtnBack.onclick = () => {
-                // Navegación hacia arriba: cortamos el último segmento
                 const parts = currentPath.split(/[/\\]/);
                 if (parts.length > 1) {
                     parts.pop();
@@ -1489,7 +1506,7 @@ class AsimodApp {
 
         if (sisBtnRefresh) sisBtnRefresh.onclick = () => loadGallery(currentPath);
 
-        // Carga inicial
+        // Carga inicial (Usar la raíz activa por defecto)
         await loadGallery("");
     }
 
@@ -1505,80 +1522,381 @@ class AsimodApp {
         }
     }
 
-    previewSistemaMedia(item) {
+    async previewSistemaMedia(item) {
         const viewer = document.getElementById('sisViewer');
         if (!viewer) return;
 
-        let html = `
-            <div class="media-viewer-premium">
-                <h3 style="margin-bottom:20px; color:var(--text-dim); font-size:0.8rem;">ARCHIVO: ${item.name}</h3>
+        viewer.innerHTML = `
+            <div style="height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; opacity:0.5;">
+                <span class="loading-spinner"></span>
+                <p style="margin-top:10px; font-size:0.8rem;">Procesando archivo...</p>
+            </div>
         `;
 
-        if (item.type === 'image') {
-            html += `<img src="${item.url}" alt="${item.name}" style="max-height: 80vh;">`;
-        } else if (item.type === 'video') {
-            html += `<video src="${item.url}" controls autoplay loop style="width:100%;"></video>`;
-        } else if (item.type === 'audio') {
-            html += `
-                <div class="audio-player-premium">
-                    <span style="font-size:2rem;">🔊</span>
-                    <div style="flex:1; text-align:left;">
-                        <div style="font-weight:700; margin-bottom:5px;">Reproduciendo Audio</div>
-                        <div style="font-size:0.7rem; color:var(--text-dim);">${item.name}</div>
+        let contentHtml = '';
+        const title = `<h3 style="margin-bottom:20px; color:var(--text-dim); font-size:0.75rem; letter-spacing:1px; text-transform:uppercase;">ARCHIVO: ${item.name}</h3>`;
+
+        try {
+            if (item.type === 'image') {
+                contentHtml = `<img src="${item.url}" alt="${item.name}" style="max-height:80vh; border-radius:10px; box-shadow:0 10px 40px rgba(0,0,0,0.4);">`;
+            } else if (item.type === 'video') {
+                contentHtml = `<video src="${item.url}" controls autoplay loop style="max-width:100%; max-height:80vh; border-radius:10px;"></video>`;
+            } else if (item.type === 'audio') {
+                contentHtml = `
+                    <div class="audio-player-premium" style="width:100%; max-width:500px;">
+                        <span style="font-size:3rem; margin-bottom:20px;">🔊</span>
+                        <div style="width:100%; text-align:center;">
+                            <div style="font-weight:700; margin-bottom:5px; color:var(--accent);">${item.name}</div>
+                            <audio src="${item.url}" controls autoplay style="width:100%; margin-top:20px;"></audio>
+                        </div>
                     </div>
-                </div>
-                <audio src="${item.url}" controls autoplay style="width:100%; margin-top:20px;"></audio>
-            `;
-        } else if (item.type === 'pdf') {
-            html += `<iframe src="${item.url}" style="width:100%; height:70vh; border:none; border-radius:10px;"></iframe>`;
-        } else {
-            html += `
-                <div class="card" style="padding:100px; text-align:center;">
-                    <div style="font-size:4rem; margin-bottom:20px;">📄</div>
-                    <h3>${item.name}</h3>
-                    <p style="color:var(--text-dim);">Este formato se previsualiza mejor en la aplicación de escritorio.</p>
-                </div>
-            `;
+                `;
+            } else if (item.type === 'pdf') {
+                contentHtml = `<iframe src="${item.url}" style="width:100%; height:75vh; border:none; border-radius:10px; background:white;"></iframe>`;
+            } else {
+                // Intentar leer como texto si no es una de las anteriores
+                try {
+                    const resp = await fetch(item.url);
+                    const head = resp.headers.get('content-type') || '';
+                    if (head.includes('text') || head.includes('json') || head.includes('javascript') || item.name.endsWith('.md') || item.name.endsWith('.log')) {
+                        const text = await resp.text();
+                        contentHtml = `
+                            <div style="width:100%; height:100%; background:rgba(0,0,0,0.3); padding:30px; border-radius:15px; overflow:auto; text-align:left; border: 1px solid rgba(255,255,255,0.05);">
+                                <pre style="margin:0; font-family:'Consolas', monospace; font-size:0.85rem; color:var(--accent); line-height:1.6;">${text.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</pre>
+                            </div>
+                        `;
+                    } else {
+                        throw new Error("Generic file");
+                    }
+                } catch (e) {
+                    // Fallback para archivos binarios o desconocidos
+                    contentHtml = `
+                        <div class="card" style="padding:100px; text-align:center; background:rgba(255,255,255,0.02); border-radius:30px; border:1px dashed rgba(255,255,255,0.1);">
+                            <div style="font-size:4.5rem; margin-bottom:25px; filter: grayscale(1);">📄</div>
+                            <h3 style="margin-bottom:10px;">${item.name}</h3>
+                            <p style="color:var(--text-dim); margin-bottom:30px; font-size:0.9rem;">Formato de visualización directa no soportado en web.</p>
+                            <a href="${item.url}" download="${item.name}" class="btn-primary" style="display:inline-block; padding:12px 30px; text-decoration:none; border-radius:10px; font-weight:700;">DESCARGAR ARCHIVO</a>
+                        </div>
+                    `;
+                }
+            }
+        } catch (e) {
+            contentHtml = `<div style="color:var(--accent);">Error al previsualizar el archivo.</div>`;
         }
         
-        html += '</div>';
-        viewer.innerHTML = html;
+        viewer.innerHTML = `
+            <div class="media-viewer-premium" style="width:100%; height:100%; display:flex; flex-direction:column; padding:20px;">
+                ${title}
+                <div style="flex:1; display:flex; align-items:center; justify-content:center; min-height:0;">
+                    ${contentHtml}
+                </div>
+            </div>
+        `;
     }
 
     updateAvatarHUD(status) {
         const nameEl = document.getElementById('avatarName');
-        const fallbackEl = document.getElementById('avatarFallback');
-        const imgEl = document.getElementById('avatarImage');
-        const videoEl = document.getElementById('avatarVideo');
-        
         if (nameEl) nameEl.innerText = status.char_name || "Sistema";
         
-        const avatar = status.char_avatar || {};
-        const idle = avatar.idle || (status.char_avatar ? status.char_avatar.imagen_principal : null);
-        const videoIdle = avatar.video_idle || avatar.video_loop;
+        // Guardar configuración actual para cambios de estado (hablando/quieto)
+        this.currentCharAvatar = status.char_avatar || {};
+        this.currentCharVideo = status.char_video || {};
+        
+        this.updateAvatarHUDState();
+    }
+
+    updateAvatarHUDState() {
+        const hud = document.getElementById('avatarContainer');
+        const fallbackEl = document.getElementById('avatarFallback');
+        const imgEl = document.getElementById('avatarImage');
+        const videoIdle = document.getElementById('avatarVideoIdle');
+        const videoTalking = document.getElementById('avatarVideoTalking');
+        
+        if (!hud || !imgEl || !videoIdle || !videoTalking) return;
+
+        const isSpeaking = hud.classList.contains('speaking');
+        const avatar = this.currentCharAvatar || {};
+        const videoCfg = this.currentCharVideo || {};
+
+        // Prioridad Video -> Imagen -> Fallback
+        const idleVideo = videoCfg.idle_url || videoCfg.idle || videoCfg.video_idle || videoCfg.video_loop;
+        const talkingVideo = videoCfg.talking_url || videoCfg.talking || videoCfg.video_talking;
+        
+        const idleImg = avatar.idle_url || avatar.idle || avatar.imagen_principal;
+        const talkingImg = avatar.talking_url || avatar.talking || avatar.imagen_hablando;
 
         // Reset visibility
         if (fallbackEl) fallbackEl.style.display = 'block';
-        if (imgEl) imgEl.style.display = 'none';
-        if (videoEl) {
-            videoEl.style.display = 'none';
-            videoEl.pause();
+        imgEl.style.display = 'none';
+        videoIdle.style.display = 'none';
+        videoTalking.style.display = 'none';
+
+        // Función interna para limpiar y normalizar URLs con caché bust (NUEVO)
+        const toWebUrl = (path) => {
+            if (!path) return null;
+            if (path.startsWith('http')) return path;
+            const cleanPath = path.replace(/\\/g, '/');
+            const url = cleanPath.startsWith('/') ? cleanPath : `/${cleanPath}`;
+            // Añadir timestamp para evitar caché si el archivo ha sido reemplazado con el mismo nombre
+            return `${url}?t=${Date.now()}`;
+        };
+
+        // Determinar recurso de imagen (proceso redundante pero necesario para fallback)
+        const currentImg = isSpeaking ? (talkingImg || idleImg) : idleImg;
+
+        const idleVideoUrl = toWebUrl(idleVideo);
+        const talkingVideoUrl = toWebUrl(talkingVideo || idleVideo);
+
+        if (idleVideoUrl || talkingVideoUrl) {
+            if (idleVideoUrl) {
+                const currentIdlePath = videoIdle.src ? new URL(videoIdle.src).pathname : '';
+                if (currentIdlePath !== idleVideoUrl.split('?')[0]) {
+                    videoIdle.src = idleVideoUrl;
+                    videoIdle.load();
+                }
+            }
+            if (talkingVideoUrl) {
+                const currentTalkingPath = videoTalking.src ? new URL(videoTalking.src).pathname : '';
+                if (currentTalkingPath !== talkingVideoUrl.split('?')[0]) {
+                    videoTalking.src = talkingVideoUrl;
+                    videoTalking.load();
+                }
+            }
+
+            // Gestión de visibilidad (Swap instantáneo)
+            if (isSpeaking) {
+                videoTalking.style.display = 'block';
+                videoTalking.muted = true; // Asegurar silencio absoluto para el vídeo
+                videoTalking.playsInline = true; 
+                videoTalking.play().catch(() => {});
+            } else {
+                videoIdle.style.display = 'block';
+                videoIdle.muted = true;
+                videoIdle.playsInline = true;
+                videoIdle.play().catch(() => {});
+                videoTalking.pause();
+            }
+            if (fallbackEl) fallbackEl.style.display = 'none';
+        } else if (currentImg) {
+            const imgUrl = toWebUrl(currentImg);
+            const baseUrl = imgUrl.split('?')[0];
+            const currentImgBase = imgEl.src ? new URL(imgEl.src).pathname : '';
+
+            if (currentImgBase !== baseUrl) {
+                imgEl.src = imgUrl;
+            }
+            imgEl.style.display = 'block';
+            if (fallbackEl) fallbackEl.style.display = 'none';
+        }
+    }
+
+    /**
+     * Reproduce un archivo de audio mediante Fetch + Blob para máxima estabilidad
+     * e incluye un monitor de diagnósticos avanzado para detectar cortes.
+     */
+    // Inicializa el motor de audio de bajo nivel
+    initAudioContext() {
+        if (!this.audioCtx) {
+            this.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        if (this.audioCtx.state === 'suspended') {
+            this.audioCtx.resume();
+        }
+    }
+
+    // Convierte Base64 a ArrayBuffer (para Web Audio API)
+    base64ToArrayBuffer(base64) {
+        const binaryString = window.atob(base64.split(',')[1] || base64);
+        const len = binaryString.length;
+        const bytes = new Uint8Array(len);
+        for (let i = 0; i < len; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
+        }
+        return bytes.buffer;
+    }
+
+    /**
+     * Reproduce un archivo de audio.
+     * Si es Base64 (data:), usa el motor de bajo nivel Web Audio API para estabilidad móvil.
+     * Si es una URL, usa el elemento <audio> con reintentos (para galerías).
+     */
+    async playAudioFile(url, linkToAvatar = false) {
+        if (!url) return;
+        console.log(`[Audio-Monitor] Playback solicitado: ${url.startsWith('data:') ? 'DATA_URI' : url}`);
+        
+        // 1. Limpieza de reproducciones anteriores
+        if (this.currentAudio) {
+            this.currentAudio.pause();
+            this.currentAudio = null;
+        }
+        if (this.currentBufferSource) {
+            try { this.currentBufferSource.stop(); } catch(e) {}
+            this.currentBufferSource = null;
         }
 
-        if (videoIdle) {
-            if (videoEl) {
-                videoEl.src = videoIdle.startsWith('http') ? videoIdle : `/${videoIdle.replace(/\\/g, '/')}`;
-                videoEl.style.display = 'block';
-                videoEl.play().catch(() => {});
-                if (fallbackEl) fallbackEl.style.display = 'none';
-            }
-        } else if (idle) {
-            if (imgEl) {
-                imgEl.src = idle.startsWith('http') ? idle : `/${idle.replace(/\\/g, '/')}`;
-                imgEl.style.display = 'block';
-                if (fallbackEl) fallbackEl.style.display = 'none';
+        // --- CAMINO A: MOTOR WEB AUDIO API (Para Base64 / Chat) ---
+        if (url.startsWith('data:')) {
+            try {
+                this.initAudioContext();
+                const arrayBuffer = this.base64ToArrayBuffer(url);
+                const audioBuffer = await this.audioCtx.decodeAudioData(arrayBuffer);
+                
+                const source = this.audioCtx.createBufferSource();
+                source.buffer = audioBuffer;
+                source.connect(this.audioCtx.destination);
+                
+                this.currentBufferSource = source;
+                
+                // Sincronización Avatar
+                if (linkToAvatar) {
+                    source.onended = () => {
+                        const hud = document.getElementById('avatarContainer');
+                        if (hud) {
+                            hud.classList.remove('speaking');
+                            this.updateAvatarHUDState();
+                        }
+                    };
+                    
+                    // Disparar HUD
+                    setTimeout(() => {
+                        const hud = document.getElementById('avatarContainer');
+                        if (hud) {
+                            hud.classList.add('speaking');
+                            this.updateAvatarHUDState();
+                        }
+                    }, 100);
+                }
+
+                source.start(0);
+                console.log("[Audio-Monitor] Motor WebAudio iniciado con éxito.");
+                return;
+            } catch (e) {
+                console.error("[Audio-Monitor] Fallo en motor WebAudio:", e);
+                // Fallback al elemento audio si falla el motorPro
             }
         }
+
+        // --- CAMINO B: REPRODUCTOR ESTÁNDAR (Para URLs externas / Fallback) ---
+        let blob = null;
+        let objectUrl = null;
+        let attempts = 0;
+        const maxAttempts = 3;
+
+        while (attempts < maxAttempts) {
+                try {
+                    attempts++;
+                    // Añadir cache-busting para evitar versiones truncadas en el tunel
+                    const fetchUrl = `${url}${url.includes('?') ? '&' : '?'}t_retry=${Date.now()}`;
+                    console.log(`[Audio-Monitor] Intento ${attempts}/${maxAttempts} para: ${fetchUrl}`);
+                    
+                    const response = await fetch(fetchUrl);
+                    if (!response.ok) throw new Error(`HTTP Error ${response.status}`);
+                    
+                    blob = await response.blob();
+                    
+                    // Validación estricta de integridad
+                    if (blob.size < 100) {
+                        throw new Error("Blob demasiado pequeño, posible truncamiento en túnel.");
+                    }
+                    
+                    // Si llegamos aquí, el blob parece válido
+                    objectUrl = URL.createObjectURL(blob);
+                    this.mediaObjectURLs.add(objectUrl);
+                    break; // Éxito, salimos del bucle
+                    
+                } catch (err) {
+                    console.warn(`[Audio-Monitor] Fallo en intento ${attempts}: ${err.message}`);
+                    if (attempts >= maxAttempts) throw err;
+                    // Espera incremental antes del reintento
+                    await new Promise(r => setTimeout(r, 200 * attempts));
+                }
+            }
+        
+        try {
+            // 3. Configuración del Elemento de Audio
+            const audio = new Audio(objectUrl);
+            audio.preload = "auto";
+            this.currentAudio = audio;
+            
+            // --- Monitor de Eventos (Diagnóstico) ---
+            audio.onplay = () => console.log("[Audio-Monitor] Playback iniciado con éxito.");
+            audio.onpause = () => {
+                if (audio.currentTime > 0 && audio.currentTime < audio.duration) {
+                    console.warn(`[Audio-Monitor] Pausa inesperada en seg ${audio.currentTime}.`);
+                }
+            };
+            audio.onstalled = () => console.warn("[Audio-Monitor] Buffer estancado (stalled).");
+            audio.onwaiting = () => console.log("[Audio-Monitor] Esperando datos (waiting)...");
+            audio.onerror = (e) => {
+                const err = audio.error;
+                let msg = "Error desconocido";
+                if (err) {
+                    if (err.code === 1) msg = "Abortado por el usuario/sistema.";
+                    if (err.code === 2) msg = "Error de red.";
+                    if (err.code === 3) msg = "Error de decodificación (Formato no soportado).";
+                    if (err.code === 4) msg = "Recurso no disponible.";
+                }
+                console.error(`[Audio-Monitor] ERROR CRÍTICO: ${msg}`, err);
+            };
+
+            // 4. Configuración de Sesión y Avatar
+            if (linkToAvatar) {
+                // MediaSession API para prioridad de sistema (Speech)
+                if ('mediaSession' in navigator) {
+                    navigator.mediaSession.metadata = new MediaMetadata({
+                        title: 'Respuesta ASIMOD',
+                        artist: this.charNameInput ? this.charNameInput.value : 'Avatar',
+                        album: 'ASIMOD Core'
+                    });
+                    navigator.mediaSession.playbackState = "playing";
+                }
+
+                audio.addEventListener('play', () => {
+                    // DESACOPLAMIENTO: Retrasamos el inicio del vídeo para no competir por CPU/Red
+                    setTimeout(() => {
+                        const hud = document.getElementById('avatarContainer');
+                        if (hud) {
+                            hud.classList.add('speaking');
+                            this.updateAvatarHUDState();
+                        }
+                    }, 400); // 400ms de "ventaja" para el audio
+                });
+
+                audio.addEventListener('ended', () => {
+                    const hud = document.getElementById('avatarContainer');
+                    if (hud) {
+                        hud.classList.remove('speaking');
+                        this.updateAvatarHUDState();
+                    }
+                    if ('mediaSession' in navigator) navigator.mediaSession.playbackState = "none";
+                    URL.revokeObjectURL(objectUrl);
+                    this.mediaObjectURLs.delete(objectUrl);
+                });
+            }
+
+            // 5. Reproducción
+            await audio.play();
+            
+        } catch (e) {
+            console.error("[Audio-Monitor] Fallo en pipeline estable:", e);
+            // Fallback directo sin HUD si todo lo demás falla
+            this.currentAudio = new Audio(url);
+            this.currentAudio.play().catch(err => console.error("[Audio-Monitor] Fallback fallido también:", err));
+        }
+    }
+
+    showAvatarEmojis(emojis) {
+        const emojiEl = document.getElementById('avatarEmoji');
+        if (!emojiEl) return;
+
+        emojiEl.innerText = emojis.join('');
+        emojiEl.classList.add('visible');
+
+        // Ocultar después de 5 segundos
+        if (this.emojiTimeout) clearTimeout(this.emojiTimeout);
+        this.emojiTimeout = setTimeout(() => {
+            emojiEl.classList.remove('visible');
+        }, 5000);
     }
 
     // --- CHARACTER HUB LOGIC (NUEVO) ---
@@ -1652,7 +1970,8 @@ class AsimodApp {
                 personality: char.personality,
                 voice_id: char.voice_id || "None",
                 voice_provider: char.voice_provider || "None",
-                avatar: char.avatar || {}
+                avatar: char.avatar || {},
+                video: char.video || {}
             };
 
             const resp = await fetch('/v1/memories', {
@@ -1677,6 +1996,86 @@ class AsimodApp {
 
     _appendSystemMessage(text) {
         this.addChatMessage("system", text);
+    }
+
+    // =========================================================
+    // VOICE RECORDING (NUEVO)
+    // =========================================================
+    async toggleVoiceRecording() {
+        if (this.isRecording) {
+            this.stopWebRecording();
+        } else {
+            await this.startWebRecording();
+        }
+    }
+
+    async startWebRecording() {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            this.audioChunks = [];
+            this.mediaRecorder = new MediaRecorder(stream);
+            
+            this.mediaRecorder.ondataavailable = (event) => {
+                this.audioChunks.push(event.data);
+            };
+
+            this.mediaRecorder.onstop = async () => {
+                const audioBlob = new Blob(this.audioChunks, { type: 'audio/webm' });
+                await this.uploadAudioForTranscription(audioBlob);
+                
+                // Cerrar stream para apagar el LED del micro
+                stream.getTracks().forEach(track => track.stop());
+            };
+
+            this.mediaRecorder.start();
+            this.isRecording = true;
+            this.chatMic.classList.add('recording');
+            this.chatMic.innerText = '⏹️'; // Cambiar icono a stop
+            console.log("[ASIMOD] Grabación de voz iniciada...");
+        } catch (err) {
+            console.error("[ASIMOD] Error al acceder al micrófono:", err);
+            alert("No se pudo acceder al micrófono. Por favor, revisa los permisos del navegador.");
+        }
+    }
+
+    stopWebRecording() {
+        if (this.mediaRecorder && this.isRecording) {
+            this.mediaRecorder.stop();
+            this.isRecording = false;
+            this.chatMic.classList.remove('recording');
+            this.chatMic.innerText = '🎤'; // Restaurar icono
+            console.log("[ASIMOD] Grabación de voz detenida.");
+        }
+    }
+
+    async uploadAudioForTranscription(blob) {
+        const formData = new FormData();
+        formData.append('file', blob, 'web_audio.webm');
+
+        try {
+            console.log("[ASIMOD] Enviando audio para transcripción...");
+            const resp = await fetch('/v1/stt/transcribe', {
+                method: 'POST',
+                body: formData
+            });
+
+            const result = await resp.json();
+            if (result.status === 'success' && result.text) {
+                console.log("[ASIMOD] Transcripción recibida:", result.text);
+                
+                const chatInput = document.getElementById('chatInput');
+                if (chatInput) {
+                    chatInput.value = result.text;
+                    // Auto-enviar el mensaje si el usuario lo desea
+                    const chatSend = document.getElementById('chatSend');
+                    if (chatSend) chatSend.click();
+                }
+            } else {
+                console.warn("[ASIMOD] Transcripción fallida o vacía.");
+            }
+        } catch (err) {
+            console.error("[ASIMOD] Error al subir audio:", err);
+        }
     }
 }
 

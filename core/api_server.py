@@ -3,6 +3,7 @@ import uvicorn
 import queue
 import time
 import os
+import uuid
 
 from fastapi import FastAPI, HTTPException, Request, UploadFile, File
 from fastapi.responses import PlainTextResponse, StreamingResponse
@@ -10,8 +11,12 @@ import json
 from pydantic import BaseModel
 from typing import Optional
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi import Form
+from fastapi import Form, Response
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+from pathlib import Path
+import base64
+import mimetypes
 
 from core.factories.messaging_factory import MessagingFactory
 
@@ -105,9 +110,14 @@ class APIServer:
         for entry in sorted(os.listdir(modules_dir)):
             module_web_path = os.path.join(modules_dir, entry, "web")
             if os.path.isdir(module_web_path):
-                mount_path = f"/v1/modules/{entry}/assets"
-                print(f"[API] Montando recursos para módulo '{entry}': {mount_path}")
-                self.app.mount(mount_path, StaticFiles(directory=module_web_path), name=f"module_asset_{entry}")
+                # Montamos en la ruta que espera el frontend (/modules/id)
+                mount_path = f"/modules/{entry}"
+                print(f"[API] Montando interfaz web para módulo '{entry}' en {mount_path}")
+                self.app.mount(mount_path, StaticFiles(directory=module_web_path, html=True), name=f"web_{entry}")
+                
+                # Mantenemos compatibilidad con la ruta vieja si es necesario
+                old_mount = f"/v1/modules/{entry}/assets"
+                self.app.mount(old_mount, StaticFiles(directory=module_web_path), name=f"legacy_web_{entry}")
                 
             # --- NUEVO: Montaje de Output del Módulo ---
             module_output_path = os.path.join(modules_dir, entry, "output")
@@ -209,25 +219,33 @@ class APIServer:
                 action = data.get("action")
                 params = data.get("params", {})
                 
-                # Intentar llamar al método dinámicamente
+                # 1. Intentar llamar al método directo (ej: mod.generar_imagen)
                 if hasattr(target_mod, action) and callable(getattr(target_mod, action)):
                     method = getattr(target_mod, action)
                     
-                    # Ejecutar la acción (muchas acciones de módulo son sincrónicas y lanzan hilos)
-                    # o son asincrónicas. Detectamos:
                     import inspect
                     if inspect.iscoroutinefunction(method):
                         result = await method(**params)
                     else:
                         result = method(**params)
-                        
-                    # Si el resultado ya es serializable (dict o list), lo devolvemos tal cual
-                    if isinstance(result, (dict, list)):
-                        return {"status": "success", "result": result}
-                        
-                    return {"status": "success", "result": str(result) if result else "Ejecutado"}
+                
+                # 2. Fallback: Usar dispatcher handle_action si existe
+                elif hasattr(target_mod, "handle_action") and callable(getattr(target_mod, "handle_action")):
+                    method = getattr(target_mod, "handle_action")
+                    
+                    import inspect
+                    if inspect.iscoroutinefunction(method):
+                        result = await method(action=action, params=params)
+                    else:
+                        result = method(action=action, params=params)
                 else:
                     return {"status": "error", "message": f"Acción '{action}' no soportada por el módulo"}
+
+                # Procesar resultado
+                if isinstance(result, (dict, list)):
+                    return {"status": "success", "result": result}
+                    
+                return {"status": "success", "result": str(result) if result else "Ejecutado"}
             except Exception as e:
                 return {"status": "error", "message": str(e)}
 
@@ -398,8 +416,24 @@ class APIServer:
                 "stt_captured_by_module": getattr(self.chat_service, "stt_captured_by_module", False),
                 "char_name": self.chat_service.memory.data.get("name", ""),
                 "char_personality": self.chat_service.memory.data.get("personality", ""),
-                "char_avatar": self.chat_service.memory.data.get("avatar", {})
+                "char_avatar": self.chat_service.memory.data.get("avatar", {}),
+                "char_video": self.chat_service.memory.data.get("video", {})
             }
+
+        @self.app.get("/v1/fs/get")
+        async def get_filesystem_file(path: str):
+            """Sirve un archivo local desde cualquier ruta (Usado por SistemaModule)."""
+            from fastapi.responses import FileResponse
+            import mimetypes
+            
+            if not os.path.exists(path):
+                raise HTTPException(status_code=404, detail="Archivo no encontrado")
+            
+            if os.path.isdir(path):
+                raise HTTPException(status_code=400, detail="La ruta es un directorio")
+                
+            mime_type, _ = mimetypes.guess_type(path)
+            return FileResponse(path, media_type=mime_type or "application/octet-stream")
 
         @self.app.get("/v1/characters")
         async def list_registry_characters():
@@ -435,6 +469,7 @@ class APIServer:
             voice = data.get("voice_id")
             v_prov = data.get("voice_provider")
             avatar = data.get("avatar") # NUEVO
+            video = data.get("video") # NUEVO
 
             if target == "New" or (not target or target == "None"):
                 # Si target es None/New, intentar usar name como ID
@@ -453,7 +488,8 @@ class APIServer:
                         history=hist,
                         voice_id=voice,
                         voice_provider=v_prov,
-                        avatar=avatar # NUEVO
+                        avatar=avatar, # NUEVO
+                        video=video # NUEVO
                     )
 
                 self.chat_service.config.set("active_thread", actual_id)
@@ -466,13 +502,15 @@ class APIServer:
 
             self.chat_service.memory.load_thread(target)
 
-            if name or pers or hist or voice or v_prov:
+            if name or pers or hist or voice or v_prov or avatar or video:
                 self.chat_service.memory.update_profile(
                     name=name,
                     personality=pers,
                     history=hist,
                     voice_id=voice,
-                    voice_provider=v_prov
+                    voice_provider=v_prov,
+                    avatar=avatar,
+                    video=video
                 )
 
             self.chat_service.config.set("active_thread", target)
@@ -628,16 +666,15 @@ class APIServer:
 
             # Mimetypes suele resolver bien .png, .jpg, .pdf, .mp4, etc.
             mime, _ = mimetypes.guess_type(path)
-            return FileResponse(str(file_path), media_type=mime or "application/octet-stream")
+            headers = {"Cache-Control": "public, max-age=3600"} # Cache de 1 hora para assets estáticos
+            return FileResponse(str(file_path), media_type=mime or "application/octet-stream", headers=headers)
 
         @self.app.get("/v1/audio/file/{filename}")
         async def get_audio_file(filename: str):
-            from pathlib import Path
             audio_dir = self.chat_service.config.get("voice_save_path", "audio")
             file_path = Path(audio_dir) / filename
             
             if file_path.exists() and file_path.is_file():
-                from starlette.responses import FileResponse
                 media_type = "audio/mpeg" if filename.endswith(".mp3") else "audio/wav"
                 return FileResponse(str(file_path), media_type=media_type)
             return {"error": "File not found"}
@@ -947,7 +984,7 @@ class APIServer:
                 if image_b64:
                     images.append(image_b64)
 
-                # 1. GENERAR TEXTO (TIMEOUT 45s)
+                # 1. GENERAR TEXTO (TIMEOUT 90s)
                 print(f"[API] 1/3 Generando respuesta de texto (Modelo: {model})...")
                 try:
                     result = await asyncio.wait_for(
@@ -961,7 +998,7 @@ class APIServer:
                             skip_tts=True,
                             mode=stt_mode
                         ),
-                        timeout=45.0
+                        timeout=90.0
                     )
                     print(f"[API] 2/3 Texto generado con éxito.")
                 except asyncio.TimeoutError:
@@ -975,7 +1012,7 @@ class APIServer:
                     "status": "success"
                 }
 
-                # 2. GENERAR AUDIO (TIMEOUT 15s)
+                # 2. GENERAR AUDIO (TIMEOUT 30s)
                 if play_audio_val:
                     print(f"[API] 3/3 Generando audio...")
                     try:
@@ -988,14 +1025,22 @@ class APIServer:
                                 voice_id=char_voice,
                                 voice_provider=char_provider
                             ),
-                            timeout=15.0
+                            timeout=30.0
                         )
                         if audio_path:
+                            # ATOMIC DELIVERY: Codificar audio en Base64 para envío directo
+                            try:
+                                with open(audio_path, "rb") as f:
+                                    response_data["audio_b64"] = base64.b64encode(f.read()).decode('utf-8')
+                                print(f"[API] >>> PROCESO COMPLETADO EXITO (Audio B64 incluido).")
+                            except Exception as be:
+                                print(f"[API] Error codificando B64: {be}")
+                            
                             response_data["audio_path"] = os.path.basename(audio_path)
-                            print(f"[API] >>> PROCESO COMPLETADO EXITO.")
                         else:
                             print(f"[API] --- Audio fallido pero enviando texto.")
                             response_data["audio_path"] = None
+                            response_data["audio_error"] = "Generation failed"
                     except asyncio.TimeoutError:
                         print(f"[API] --- Timeout en audio, enviando solo texto.")
                         response_data["audio_path"] = None
@@ -1074,6 +1119,47 @@ class APIServer:
             except Exception as e:
                 print(f"[API] Direct LLM error: {e}")
                 raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.post("/v1/stt/transcribe")
+        async def stt_transcribe(file: UploadFile = File(...)):
+            """
+            Recibe un archivo de audio desde la web, lo transcribe y devuelve el texto.
+            """
+            if not self.chat_service.stt_service or not self.chat_service.stt_service.adapter:
+                raise HTTPException(status_code=500, detail="Servicio STT no disponible o no configurado.")
+            
+            # 1. Guardar archivo temporalmente
+            temp_id = str(uuid.uuid4())
+            file_ext = os.path.splitext(file.filename)[1] if file.filename else ".wav"
+            temp_path = os.path.join("output", "temp", f"web_stt_{temp_id}{file_ext}")
+            
+            try:
+                # Asegurar que el directorio de destino existe
+                os.makedirs(os.path.dirname(temp_path), exist_ok=True)
+                
+                with open(temp_path, "wb") as buffer:
+                    content = await file.read()
+                    buffer.write(content)
+                
+                # 2. Transcribir
+                print(f"[API][STT] Transcribiendo archivo web: {temp_path}")
+                text = self.chat_service.stt_service.adapter.transcribe(temp_path)
+                
+                return {
+                    "status": "success",
+                    "text": text,
+                    "filename": file.filename
+                }
+                
+            except Exception as e:
+                print(f"[API][STT] Error en transcripción web: {e}")
+                return {"status": "error", "message": str(e)}
+            finally:
+                # 3. Limpieza
+                if os.path.exists(temp_path):
+                    try:
+                        os.remove(temp_path)
+                    except: pass
 
         @self.app.get("/v1/webhook/whatsapp")
         async def whatsapp_verify(request: Request):

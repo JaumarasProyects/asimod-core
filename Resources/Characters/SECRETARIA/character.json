@@ -1,0 +1,12 @@
+{
+    "id": "personaje_1776528463",
+    "name": "SECRETARIA",
+    "personality": "Arquetipo: None. Personalidad: ",
+    "avatar": {},
+    "video": {
+        "idle": "",
+        "talking": ""
+    },
+    "voice_id": null,
+    "voice_provider": "Edge TTS"
+}

@@ -1,0 +1,12 @@
+{
+    "id": "personaje_1776626040",
+    "name": "El Corsario de las Nebulosas",
+    "personality": "",
+    "avatar": {},
+    "video": {
+        "idle": "",
+        "talking": ""
+    },
+    "voice_id": null,
+    "voice_provider": "Edge TTS"
+}

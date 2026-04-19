@@ -1,9 +1,10 @@
 import tkinter as tk
 import os
+import random
 import threading
 import winsound
 import asyncio
-from tkinter import ttk, scrolledtext, filedialog
+from tkinter import ttk, scrolledtext, filedialog, messagebox
 from core.ports.chat_port import ChatPort
 from ui.settings_view import SettingsView
 from ui.api_keys_view import APIKeysView
@@ -25,14 +26,15 @@ class ChatWidget(tk.Frame):
         self.char_service = character_service # Guardar referencia (NUEVO)
         self.on_collapse_cmd = on_collapse_cmd
         self.pending_avatar = None # Para guardar avatar del hub (NUEVO)
+        self.pending_video = None # Para guardar video del hub (NUEVO)
         super().__init__(parent, bg=self.style.get_color("bg_main"))
         self.chat_engine = chat_engine
         self.config = config_service
         self.vision_service = VisionService()
         self.current_images = []
-        self._ui_labels = {}
         self.visualizer = None
         self.toolbar_visible = False
+        self.hub_visible = False # Estado del panel de biblioteca
         self.is_sending = False # Estado de envío actual
         
         # Vincular STT Service del engine con la UI
@@ -144,6 +146,38 @@ class ChatWidget(tk.Frame):
             
         self.chat_components.append(self.top_bar)
 
+        # --- PANEL DE BIBLIOTECA (Hub colapsable debajo del TopBar) ---
+        if has_bg:
+            self.hub_panel = BackgroundFrame(self.container, self.style, header_bg_key)
+        else:
+            self.hub_panel = tk.Frame(self.container, bg=ghost_bg, pady=5)
+        self.chat_components.append(self.hub_panel)
+        
+        # Estructura interna del Hub (Scrollable)
+        hub_header = tk.Frame(self.hub_panel, bg=ghost_bg)
+        hub_header.pack(fill=tk.X, padx=10, pady=(5, 0))
+        
+        tk.Label(hub_header, text="BIBLIOTECA DE IDENTIDADES", bg=ghost_bg, fg=self.style.get_color("accent"), font=("Arial", 8, "bold")).pack(side=tk.LEFT)
+        tk.Button(hub_header, text="🔄 Refrescar", bg="#333", fg="white", relief="flat", font=("Arial", 7), command=self._populate_hub_panel).pack(side=tk.RIGHT)
+
+        hub_inner = tk.Frame(self.hub_panel, bg=ghost_bg)
+        hub_inner.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
+        
+        self.hub_canvas = tk.Canvas(hub_inner, bg=ghost_bg, highlightthickness=0, height=200)
+        self.hub_scroll = ttk.Scrollbar(hub_inner, orient="vertical", command=self.hub_canvas.yview)
+        self.hub_container = tk.Frame(self.hub_canvas, bg=ghost_bg)
+        
+        self.hub_window_id = self.hub_canvas.create_window((0, 0), window=self.hub_container, anchor="nw")
+        self.hub_canvas.configure(yscrollcommand=self.hub_scroll.set)
+        
+        # Ajustar ancho automáticamente cuando el canvas cambie de tamaño
+        self.hub_canvas.bind("<Configure>", self._on_hub_canvas_configure)
+        
+        self.hub_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+        self.hub_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        
+        self.hub_container.bind("<Configure>", lambda e: self.hub_canvas.configure(scrollregion=self.hub_canvas.bbox("all")))
+
         # Botones Fantasma (Outline)
         btn_style = {"bg": ghost_bg, "fg": self.style.get_color("text_dim"), "relief": "flat", "bd": 1, "activebackground": "#222"}
 
@@ -156,7 +190,8 @@ class ChatWidget(tk.Frame):
         self.chat_components.append(self.toolbar)
 
         has_btn_bg = self.style.get_background("button") is not None
-        
+
+        # 1. Botones de Navegación (TRIÁNGULOS)
         if has_btn_bg:
             self.btn_toggle_toolbar = ImageButton(self.top_bar, text="▼", font=("Arial", 9, "bold"),
                                                   style=self.style, callback=self._toggle_toolbar, pady=2, padx=4)
@@ -167,15 +202,6 @@ class ChatWidget(tk.Frame):
         self.btn_toggle_toolbar.config(fg=self.style.get_color("accent"))
         self.btn_toggle_toolbar.pack(side=tk.LEFT, padx=(0, 2))
 
-        # Botón para abrir librería desde el TopBar (SIEMPRE VISIBLE - AL LADO DEL TOGGLE)
-        if has_btn_bg:
-            self.btn_top_hub = ImageButton(self.top_bar, text="📁 BIBLIOTECA", font=("Arial", 7, "bold"),
-                                         style=self.style, callback=self._show_character_library, pady=2, padx=10)
-        else:
-            self.btn_top_hub = tk.Button(self.top_bar, text="📁 BIBLIOTECA", font=("Arial", 7, "bold"), 
-                                        command=self._show_character_library, **btn_style, fg=self.style.get_color("accent"))
-        self.btn_top_hub.pack(side=tk.LEFT, padx=10)
-        
         if self.on_collapse_cmd:
             if has_btn_bg:
                 self.btn_collapse = ImageButton(self.top_bar, text="▶", font=("Arial", 9, "bold"),
@@ -188,33 +214,35 @@ class ChatWidget(tk.Frame):
             self.btn_collapse.config(fg=self.style.get_color("accent"))
             self.btn_collapse.pack(side=tk.LEFT, padx=(0, 2))
 
-        if has_bg:
-            # Replicamos el Label con fondo Canvas
-            lbl_asimod = tk.Label(self.top_bar, text="ASIMOD", bg=ghost_bg, fg=self.style.get_color("accent"), font=("Arial", 10, "bold"))
-            lbl_asimod.pack(side=tk.LEFT)
-            # Intentar transparencia (en windows no es posible al 100%, pero al menos mitigamos si el BackgroundFrame asume color)
-        else:
-            tk.Label(self.top_bar, text="ASIMOD", bg=ghost_bg, fg=self.style.get_color("accent"), font=("Arial", 10, "bold")).pack(side=tk.LEFT)
-        
+        # 2. BOTÓN BIBLIOTECA (EL TERCERO)
         if has_btn_bg:
-            self.btn_api_keys = ImageButton(self.top_bar, text="🔑", font=("Arial", 10),
-                                            style=self.style, callback=self.show_api_keys, pady=2, padx=4)
-            self.btn_api_keys.set_active(True)
+            self.btn_top_hub = ImageButton(self.top_bar, text="📁 BIBLIOTECA", font=("Arial", 7, "bold"),
+                                         style=self.style, callback=self._toggle_hub_panel, pady=2, padx=10)
         else:
-            self.btn_api_keys = tk.Button(self.top_bar, text="🔑",
-                                          cursor="hand2", command=self.show_api_keys, **btn_style)
-            self.btn_api_keys.config(fg="#ffd700", font=("Arial", 10))
-        self.btn_api_keys.pack(side=tk.RIGHT, padx=2)
-        
+            self.btn_top_hub = tk.Button(self.top_bar, text="📁 BIBLIOTECA", font=("Arial", 7, "bold"), 
+                                        command=self._toggle_hub_panel, **btn_style, fg=self.style.get_color("accent"))
+        self.btn_top_hub.pack(side=tk.LEFT, padx=10)
+
+        # 3. BOTONES DE CONFIGURACIÓN (LUEGO DE BIBLIOTECA)
         if has_btn_bg:
-            self.btn_settings = ImageButton(self.top_bar, text="⚙️", font=("Arial", 10),
+            self.btn_settings = ImageButton(self.top_bar, text="⚙️", font=("Arial", 11),
                                             style=self.style, callback=self.show_settings, pady=2, padx=4)
             self.btn_settings.set_active(True)
         else:
             self.btn_settings = tk.Button(self.top_bar, text="⚙️",
                                           cursor="hand2", command=self.show_settings, **btn_style)
-            self.btn_settings.config(fg=self.style.get_color("accent"), font=("Arial", 10))
-        self.btn_settings.pack(side=tk.RIGHT)
+            self.btn_settings.config(fg=self.style.get_color("accent"), font=("Arial", 11))
+        self.btn_settings.pack(side=tk.LEFT, padx=2)
+
+        if has_btn_bg:
+            self.btn_api_keys = ImageButton(self.top_bar, text="🔑", font=("Arial", 11),
+                                            style=self.style, callback=self.show_api_keys, pady=2, padx=4)
+            self.btn_api_keys.set_active(True)
+        else:
+            self.btn_api_keys = tk.Button(self.top_bar, text="🔑",
+                                          cursor="hand2", command=self.show_api_keys, **btn_style)
+            self.btn_api_keys.config(fg="#ffd700", font=("Arial", 11))
+        self.btn_api_keys.pack(side=tk.LEFT, padx=2)
 
         # Visualizer (si está habilitado) - POSICIÓN: ARRIBA
         if self.visualizer:
@@ -347,11 +375,6 @@ class ChatWidget(tk.Frame):
         sep.pack(fill=tk.X, padx=20, pady=5)
         self.chat_components.append(sep)
 
-        # --- CONTENEDOR CENTRAL (Para Chat o Wizard) ---
-        self.middle_container = tk.Frame(self.container, bg=self.style.get_color("bg_main"))
-        self.middle_container.pack(fill=tk.BOTH, expand=True, padx=20, pady=5)
-        self.chat_components.append(self.middle_container)
-
         # --- ÁREA DE ENTRADA (FOOTER - SIEMPRE ABAJO) ---
         has_footer_bg = self.style.get_background("button") is not None
         if has_footer_bg:
@@ -362,6 +385,16 @@ class ChatWidget(tk.Frame):
         self.input_area.pack(side=tk.BOTTOM, padx=20, pady=15, fill=tk.X)
         self.chat_components.append(self.input_area)
 
+        # Línea de archivos seleccionados (También abajo)
+        self.lbl_files = tk.Label(self.container, text="", bg=self.style.get_color("bg_main"), fg="#4EC9B0", font=("Arial", 8, "italic"))
+        self.lbl_files.pack(fill=tk.X, padx=10, side=tk.BOTTOM)
+        self.chat_components.append(self.lbl_files)
+
+        # --- CONTENEDOR CENTRAL (Para Chat o Wizard) ---
+        self.middle_container = tk.Frame(self.container, bg=self.style.get_color("bg_main"))
+        self.middle_container.pack(fill=tk.BOTH, expand=True, padx=20, pady=5)
+        self.chat_components.append(self.middle_container)
+
         # --- WIZAD DE NUEVO HILO (Hijo de middle_container) ---
         self.new_thread_frame = tk.Frame(self.middle_container, bg=self.style.get_color("bg_main"), padx=20, pady=10)
         
@@ -370,7 +403,7 @@ class ChatWidget(tk.Frame):
         
         # Botón para abrir librería (NUEVO)
         self._btn_open_hub = tk.Button(self.new_thread_frame, text="📁 Explorar Biblioteca ASIMOD", bg="#333", fg="white", 
-                                      relief="flat", font=("Arial", 8, "bold"), command=self._show_character_library)
+                                      relief="flat", font=("Arial", 8, "bold"), command=self._toggle_hub_panel)
         self._btn_open_hub.pack(fill=tk.X, pady=(0, 10))
         
         # Campo Nombre
@@ -486,10 +519,7 @@ class ChatWidget(tk.Frame):
 
 
 
-        # Línea de archivos seleccionados
-        self.lbl_files = tk.Label(self.container, text="", bg=self.style.get_color("bg_main"), fg="#4EC9B0", font=("Arial", 8, "italic"))
-        self.lbl_files.pack(fill=tk.X, padx=10, side=tk.BOTTOM)
-        self.chat_components.append(self.lbl_files)
+        # (Ya fueron inicializados y empaquetados arriba para asegurar visibilidad en el layout)
 
         # 2. VISTA DE CONFIGURACIÓN
         self.settings_frame = SettingsView(self.container, self.config, self.chat_engine.locale_service, self.show_chat, self.style)
@@ -596,9 +626,11 @@ class ChatWidget(tk.Frame):
             history=hist if hist else None,
             voice_id=voice_id if voice_id else None,
             voice_provider=motor if motor != "None" else None,
-            avatar=self.pending_avatar # Aplicar avatar del hub (NUEVO)
+            avatar=self.pending_avatar, # Aplicar avatar del hub (NUEVO)
+            video=self.pending_video # Aplicar video del hub (NUEVO)
         )
         self.pending_avatar = None # Limpiar tras aplicar
+        self.pending_video = None # Limpiar tras aplicar
         
         # 3. Finalizar selección
         self.last_valid_thread = new_id
@@ -674,7 +706,9 @@ class ChatWidget(tk.Frame):
             name=name, 
             personality=pers, 
             voice_id=voice_id,
-            voice_provider=motor if motor != "None" else None
+            voice_provider=motor if motor != "None" else None,
+            avatar=self.chat_engine.memory.data.get("avatar"), # Mantener avatar actual
+            video=self.chat_engine.memory.data.get("video") # Mantener video actual
         )
         self.status_label_simulated = "Perfil guardado"
 
@@ -820,6 +854,8 @@ class ChatWidget(tk.Frame):
         
         # Repáquetar componentes en orden original para mantener el diseño
         self.top_bar.pack(fill=tk.X, padx=20, pady=(15, 5))
+        if self.hub_visible:
+            self.hub_panel.pack(fill=tk.X, padx=10)
         if self.toolbar_visible:
             self.toolbar.pack(fill=tk.X, padx=10)
         
@@ -832,9 +868,9 @@ class ChatWidget(tk.Frame):
                 comp.pack(fill=tk.X, padx=20, pady=5)
                 break
                 
-        self.middle_container.pack(fill=tk.BOTH, expand=True, padx=20, pady=5)
-        self.lbl_files.pack(fill=tk.X, padx=10, side=tk.BOTTOM)
         self.input_area.pack(side=tk.BOTTOM, padx=20, pady=15, fill=tk.X)
+        self.lbl_files.pack(fill=tk.X, padx=10, side=tk.BOTTOM)
+        self.middle_container.pack(fill=tk.BOTH, expand=True, padx=20, pady=5)
         
         self._on_provider_change(None)
         self._on_voice_change(None)
@@ -845,6 +881,9 @@ class ChatWidget(tk.Frame):
             self.toolbar.pack_forget()
             self.btn_toggle_toolbar.config(text="▼")
         else:
+            # Interlock: Cerrar Hub si está abierto
+            if self.hub_visible: self._toggle_hub_panel()
+
             if self.visualizer and self.visualizer._frame:
                 self.toolbar.pack(fill=tk.X, padx=10, before=self.visualizer._frame)
             elif hasattr(self, 'middle_container'):
@@ -943,6 +982,10 @@ class ChatWidget(tk.Frame):
         # Mostramos la respuesta original (con emojis/asteriscos) en la UI
         if isinstance(result, dict) and "response" in result:
             self._append_message(self.t("chat.ai"), result["response"], "#ce9178")
+            
+            # Pasar emojis al visualizador (NUEVO)
+            if self.visualizer and "emojis" in result:
+                self.visualizer.set_emojis(result["emojis"])
         else:
             self._append_message(self.t("chat.system"), str(result), "red")
 
@@ -960,57 +1003,88 @@ class ChatWidget(tk.Frame):
 
     # --- CHARACTER HUB LOGIC (NUEVO) ---
 
-    def _show_character_library(self):
-        """Muestra una ventana emergente con los personajes del Repositorio Global."""
-        if not self.char_service:
-            messagebox.showerror("Error", "Servicio de personajes no disponible.")
-            return
+    def _toggle_hub_panel(self):
+        """Muestra u oculta el panel de biblioteca de personajes."""
+        if self.hub_visible:
+            self.hub_panel.pack_forget()
+        else:
+            # Interlock: Cerrar toolbar si está abierta
+            if self.toolbar_visible: self._toggle_toolbar()
 
+            self._populate_hub_panel()
+            if self.visualizer and self.visualizer._frame:
+                self.hub_panel.pack(fill=tk.X, padx=10, before=self.visualizer._frame)
+            else:
+                self.hub_panel.pack(fill=tk.X, padx=10, before=self.middle_container)
+        
+        self.hub_visible = not self.hub_visible
+
+    def _populate_hub_panel(self):
+        """Llena el panel horizontal con los personajes disponibles."""
+        if not self.char_service: return
+        
+        for widget in self.hub_container.winfo_children():
+            widget.destroy()
+            
         characters = self.char_service.list_characters()
         if not characters:
-            messagebox.showinfo("Biblioteca Vacía", "No hay personajes registrados en Resources/Characters/")
+            tk.Label(self.hub_container, text="Biblioteca Vacía", bg=self.hub_container["bg"], fg="#555").pack(padx=20)
             return
 
-        # Ventana de selección
-        top = tk.Toplevel(self)
-        top.title("Biblioteca de Personajes ASIMOD")
-        top.geometry("400x500")
-        top.configure(bg=self.style.get_color("bg_main"))
-        top.transient(self.winfo_toplevel())
-        top.grab_set()
-
-        lbl = tk.Label(top, text="Selecciona un personaje para importar:", 
-                       bg=self.style.get_color("bg_main"), fg=self.style.get_color("accent"), font=("Arial", 10, "bold"))
-        lbl.pack(pady=10)
-
-        # Contenedor de lista
-        list_frame = tk.Frame(top, bg=self.style.get_color("bg_dark"), padx=10, pady=10)
-        list_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=10)
+        # NUEVO: Ordenar alfabéticamente por nombre
+        characters.sort(key=lambda x: x.get("name", "").lower())
 
         for char in characters:
-            btn_char = tk.Button(list_frame, text=f"👤 {char['name']}\n{char.get('personality', '')[:60]}...", 
-                                bg="#2a2a35", fg="white", relief="flat", padx=10, pady=10, 
-                                anchor="w", justify=tk.LEFT,
-                                command=lambda c=char, t=top: self._apply_registry_character(c, t))
-            btn_char.pack(fill=tk.X, pady=2)
+            # Botón de personaje estilo tarjeta vertical
+            btn = tk.Button(self.hub_container, text=f"👤 {char['name']}", 
+                           bg="#2a2a35", fg="white", relief="flat", padx=10, pady=8,
+                           font=("Arial", 9, "bold"), anchor="w",
+                           command=lambda c=char: self._apply_registry_character(c))
+            btn.pack(fill=tk.X, pady=2, padx=5)
 
-    def _apply_registry_character(self, char_data, window):
+        # Ajustar ancho del contenedor al canvas tras poblar (Ahora se maneja via evento o forzado)
+        self.hub_canvas.update_idletasks()
+        self._on_hub_canvas_configure(None)
+
+    def _on_hub_canvas_configure(self, event):
+        """Asegura que el contenedor interno ocupe todo el ancho del canvas."""
+        canvas_width = self.hub_canvas.winfo_width()
+        if canvas_width > 1:
+            self.hub_canvas.itemconfig(self.hub_window_id, width=canvas_width)
+
+    def _apply_registry_character(self, char_data):
         """Aplica los datos de un personaje del registro con soporte para hilos persistentes."""
+        # Si el hub está visible, lo cerramos tras seleccionar
+        if self.hub_visible:
+            self._toggle_hub_panel()
+
         name = char_data.get("name", "")
         personality = char_data.get("personality", "")
         avatar = char_data.get("avatar")
+        video = char_data.get("video")
         gender = char_data.get("gender", "male").lower()
         voice_id = char_data.get("voice_id")
         char_thread_id = char_data.get("active_thread")
 
-        # Lógica de voz por género si no hay voice_id definido
+        # Lógica de voz por género si no hay voice_id definido (NUEVO: Selección aleatoria dinámica)
         if not voice_id:
-            gender_map = {
-                "female": "es-ES-ElviraNeural",
-                "male": "es-ES-AlvaroNeural",
-                "non-binary": "es-MX-DaliaNeural"
-            }
-            voice_id = gender_map.get(gender, "en-US-GuyNeural")
+            from core.factories.voice_factory import VoiceFactory
+            adapter = VoiceFactory.get_adapter("Edge TTS")
+            if adapter:
+                all_voices = adapter.list_voices()
+                # Filtrar según género (Mapeo: male -> Masculina, female -> Femenina)
+                search_term = "Masculina" if gender == "male" else "Femenina" if gender == "female" else None
+                
+                matching_voices = []
+                if search_term:
+                    matching_voices = [v["id"] for v in all_voices if search_term in v["name"]]
+                
+                if matching_voices:
+                    voice_id = random.choice(matching_voices)
+                    print(f"[ChatWidget] Voz aleatoria seleccionada para género '{gender}': {voice_id}")
+                else:
+                    # Fallback si no hay coincidencias o es non-binary
+                    voice_id = "es-MX-DaliaNeural" if gender == "non-binary" else "es-ES-AlvaroNeural"
 
         # 1. ACTUALIZACIÓN DE HILO PERSISTENTE (MODO IDENTIDAD)
         if char_thread_id and self.chat_engine:
@@ -1027,6 +1101,7 @@ class ChatWidget(tk.Frame):
                     name=name,
                     personality=personality,
                     avatar=avatar,
+                    video=video,
                     voice_id=voice_id,
                     voice_provider="Edge TTS"
                 )
@@ -1036,23 +1111,53 @@ class ChatWidget(tk.Frame):
             self.combo_memory.set(char_thread_id)
             self.config.set("active_thread", char_thread_id)
             
+            # ACTUALIZAR PERFIL (NUEVO: Asegurar que video y avatar estén al día)
+            self.chat_engine.memory.update_profile(
+                name=name,
+                personality=personality,
+                avatar=avatar,
+                video=video,
+                voice_id=voice_id
+            )
+            
             # Cargar los datos del hilo recién seleccionado en los campos de la UI
             self._load_current_thread_data()
         
         else:
-            # MODO LEGACY: Solo actualizar campos del Wizard
-            self.ent_new_name.delete(0, tk.END)
-            self.ent_new_name.insert(0, name)
-            self.ent_new_pers.delete(0, tk.END)
-            self.ent_new_pers.insert(0, personality)
-            self.pending_avatar = avatar
+            # MODO DINÁMICO: Si el Wizard está abierto, preparar campos para nuevo hilo.
+            # Si no, sobreescribir identidad del hilo actual.
+            is_wizard = self.new_thread_frame.winfo_ismapped()
+            
+            if is_wizard:
+                print(f"[ChatWidget] Aplicando '{name}' como plantilla para nuevo hilo.")
+                self.ent_new_name.delete(0, tk.END)
+                self.ent_new_name.insert(0, name)
+                self.ent_new_pers.delete(0, tk.END)
+                self.ent_new_pers.insert(0, personality)
+                self.pending_avatar = avatar
+                self.pending_video = video
+            else:
+                print(f"[ChatWidget] Intercambiando identidad actual por '{name}'.")
+                self.chat_engine.memory.update_profile(
+                    name=name,
+                    personality=personality,
+                    avatar=avatar,
+                    video=video,
+                    voice_id=voice_id,
+                    voice_provider="Edge TTS"
+                )
+                self._load_current_thread_data()
 
-        # Refrescar Visualizador independientemente del modo
+        # Refrescar Visualizador inmediatamente con los datos del personaje seleccionado
         if self.visualizer:
-            self.visualizer.set_character(self.chat_engine.memory.data)
+            if self.new_thread_frame.winfo_ismapped():
+                # En modo Wizard mostramos char_data como preview
+                self.visualizer.set_character(char_data)
+            else:
+                # En modo chat usamos los datos sincronizados en memoria
+                self.visualizer.set_character(self.chat_engine.memory.data)
 
         print(f"[ChatWidget] Personaje '{name}' activado desde el Hub.")
-        window.destroy()
 
     def _load_current_thread_data(self):
         """Carga los datos de la memoria activa en todos los controles de la UI."""
@@ -1063,6 +1168,10 @@ class ChatWidget(tk.Frame):
         self.ent_char_name.insert(0, data.get("name", ""))
         self.ent_char_pers.delete(0, tk.END)
         self.ent_char_pers.insert(0, data.get("personality", ""))
+        
+        # Sincronizar Visualizador (NUEVO)
+        if self.visualizer:
+            self.visualizer.set_character(data)
         
         # 2. Configuración de Voz
         voice_id = data.get("voice_id", "")
@@ -1080,8 +1189,28 @@ class ChatWidget(tk.Frame):
                     self.combo_char_voice.current(i)
                     break
 
-        # 3. Limpiar chat y mostrar historial si fuera necesario (opcional)
+        # 4. Auto-sincronizar metadatos (NUEVO: Asegurar que video y avatar estén al día si es personaje conocido)
+        self._sync_metadata_from_registry()
         # self.chat_display.config(state='normal')
         # self.chat_display.delete('1.0', tk.END)
         # self.chat_display.config(state='disabled')
         # self._refresh_history_display() # Implementar si se quiere ver el historial
+    def _sync_metadata_from_registry(self):
+        """Si el personaje tiene un nombre que coincide con uno del registro, asegura que tiene video/avatar."""
+        data = self.chat_engine.memory.data
+        name = data.get("name")
+        if not name or not self.char_service:
+            return
+            
+        # Solo sincronizar si falta el video
+        if not data.get("video") or not data.get("video").get("idle"):
+            registry_char = self.char_service.get_character(name)
+            if registry_char:
+                print(f"[ChatWidget] Sincronizando metadatos faltantes para {name}...")
+                self.chat_engine.memory.update_profile(
+                    avatar=registry_char.get("avatar"),
+                    video=registry_char.get("video")
+                )
+                # Refrescar visualizador con los nuevos datos
+                if self.visualizer:
+                    self.visualizer.set_character(self.chat_engine.memory.data)

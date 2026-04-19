@@ -1,0 +1,15 @@
+{
+    "id": "personaje_1776629527",
+    "name": "El Lobo de las Nieves Eternas",
+    "personality": "",
+    "avatar": {
+        "idle": "Resources/Characters/El Lobo de las Nieves Eternas/idle.png",
+        "talking": "Resources/Characters/El Lobo de las Nieves Eternas/idle.png"
+    },
+    "video": {
+        "idle": "Resources/Characters/El Lobo de las Nieves Eternas/idle.mp4",
+        "talking": "Resources/Characters/El Lobo de las Nieves Eternas/talking.mp4"
+    },
+    "voice_id": "es-ES-ElviraNeural",
+    "voice_provider": "Edge TTS"
+}

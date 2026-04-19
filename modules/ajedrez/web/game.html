@@ -175,10 +175,25 @@
             padding: 0;
             margin-left: 0;
             margin-right: -20px;
+            /* No ocultamos el panel del todo para que el botón hijo sea visible */
+            overflow: visible; 
+            transform: none; 
+            opacity: 1;
+            pointer-events: none; /* Desactivar clics en el panel, pero el botón lo sobreescribe */
+        }
+
+        .side-panel.collapsed .side-panel-content {
             opacity: 0;
+            visibility: hidden;
             pointer-events: none;
-            overflow: hidden;
-            transform: scaleX(0);
+        }
+
+        .side-panel-content {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            width: 320px;
+            transition: all 0.3s ease;
         }
 
         .toggle-panel-btn {
@@ -204,6 +219,11 @@
         .toggle-panel-btn:hover {
             background: var(--accent-cyan);
             color: var(--bg-primary);
+        }
+
+        /* Asegurar que el botón siempre sea interactuable */
+        .toggle-panel-btn {
+            pointer-events: auto !important;
         }
 
         .panel {
@@ -649,103 +669,106 @@
                 <div class="toggle-panel-btn" id="togglePanelBtn" title="Contraer/Expandir Panel">
                     <span id="toggleIcon">◀</span>
                 </div>
-                <div class="panel">
-                    <h3>Estado</h3>
-                    <div class="game-status status-playing" id="gameStatus">Juego en progreso</div>
-                </div>
-
-                <div class="panel">
-                    <h3>Turno</h3>
-                    <div class="turn-indicator">
-                        <div class="turn-piece white active" id="whiteTurn">♔</div>
-                        <span id="turnText">Blancas</span>
-                        <div class="turn-piece black" id="blackTurn">♚</div>
+                
+                <div class="side-panel-content">
+                    <div class="panel">
+                        <h3>Estado</h3>
+                        <div class="game-status status-playing" id="gameStatus">Juego en progreso</div>
                     </div>
-                </div>
 
-                <div class="panel">
-                    <h3>Capturadas</h3>
-                    <div class="captured-pieces" id="capturedWhite"></div>
-                    <div class="captured-pieces" id="capturedBlack"></div>
-                </div>
+                    <div class="panel">
+                        <h3>Turno</h3>
+                        <div class="turn-indicator">
+                            <div class="turn-piece white active" id="whiteTurn">♔</div>
+                            <span id="turnText">Blancas</span>
+                            <div class="turn-piece black" id="blackTurn">♚</div>
+                        </div>
+                    </div>
 
-                <div class="panel" id="asimodAgentPanel">
-                    <h3>Control ASIMOD (Agente)</h3>
-                    <div class="agent-config-row">
-                        <span>Asimod juega Blancas</span>
-                        <label class="switch">
-                            <input type="checkbox" id="asimodW">
-                            <span class="slider"></span>
-                        </label>
+                    <div class="panel">
+                        <h3>Capturadas</h3>
+                        <div class="captured-pieces" id="capturedWhite"></div>
+                        <div class="captured-pieces" id="capturedBlack"></div>
                     </div>
-                    <div class="agent-config-row">
-                        <span>Asimod juega Negras</span>
-                        <label class="switch">
-                            <input type="checkbox" id="asimodB">
-                            <span class="slider"></span>
-                        </label>
-                    </div>
-                    <div class="agent-config-row">
-                        <span>Fallos Máx. IA</span>
-                        <input type="number" id="asimodRetries" value="5" min="1" max="50" style="width: 50px; background: var(--bg-secondary); color: white; border: 1px solid var(--text-secondary); border-radius: 4px; text-align: center;">
-                    </div>
-                </div>
 
-                <div class="panel" id="aiPanel">
-                    <h3>Dificultad IA Motor</h3>
-                    <div class="ai-level">
-                        <select id="aiDifficulty" disabled>
-                            <option value="1">1 - Principiante</option>
-                            <option value="2" selected>2 - Medio</option>
-                            <option value="3">3 - Avanzado</option>
-                            <option value="4">4 - MAESTRO</option>
-                        </select>
-                        <p style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 5px;">Gestionado por servidor PC</p>
+                    <div class="panel" id="asimodAgentPanel">
+                        <h3>Control ASIMOD (Agente)</h3>
+                        <div class="agent-config-row">
+                            <span>Asimod juega Blancas</span>
+                            <label class="switch">
+                                <input type="checkbox" id="asimodW">
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                        <div class="agent-config-row">
+                            <span>Asimod juega Negras</span>
+                            <label class="switch">
+                                <input type="checkbox" id="asimodB">
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                        <div class="agent-config-row">
+                            <span>Fallos Máx. IA</span>
+                            <input type="number" id="asimodRetries" value="5" min="1" max="50" style="width: 50px; background: var(--bg-secondary); color: white; border: 1px solid var(--text-secondary); border-radius: 4px; text-align: center;">
+                        </div>
                     </div>
-                </div>
 
-                <div class="panel">
-                    <h3>JUGADORES</h3>
-                    <div style="margin-bottom: 10px;">
-                        <input type="text" id="p1Name" value="Jugador 1" style="width: 100%; padding: 8px; background: var(--bg-secondary); color: white; border: 1px solid var(--text-secondary); margin-bottom: 5px; border-radius: 4px; font-family: 'Rajdhani', sans-serif;">
-                        <input type="text" id="p2Name" value="Jugador 2" style="width: 100%; padding: 8px; background: var(--bg-secondary); color: white; border: 1px solid var(--text-secondary); border-radius: 4px; font-family: 'Rajdhani', sans-serif;">
+                    <div class="panel" id="aiPanel">
+                        <h3>Dificultad IA Motor</h3>
+                        <div class="ai-level">
+                            <select id="aiDifficulty" disabled>
+                                <option value="1">1 - Principiante</option>
+                                <option value="2" selected>2 - Medio</option>
+                                <option value="3">3 - Avanzado</option>
+                                <option value="4">4 - MAESTRO</option>
+                            </select>
+                            <p style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 5px;">Gestionado por servidor PC</p>
+                        </div>
                     </div>
-                    <button class="control-btn btn-secondary" id="saveBtn" style="width:100%; margin-bottom:15px; padding: 5px;">💾 Guardar Partida</button>
-                    
-                    <h3 style="margin-top: 10px; font-size: 1rem; color: var(--accent-cyan); text-transform: uppercase; letter-spacing: 2px; border-bottom: 1px solid rgba(0, 217, 255, 0.3); padding-bottom: 8px;">PARTIDAS</h3>
-                    <select id="gameCombo" style="width: 100%; padding: 8px; background: var(--bg-secondary); color: white; border: 1px solid var(--text-secondary); margin-bottom: 5px; border-radius: 4px; font-family: 'Rajdhani', sans-serif;"></select>
-                    <button class="control-btn btn-primary" id="loadBtn" style="width:100%; padding: 5px;">📂 Cargar</button>
-                    
-                    <div class="connection-status" style="margin-top: 15px;">
-                        <div class="status-dot" id="connStatus"></div>
-                        <span id="connText">Sincronizando...</span>
+
+                    <div class="panel">
+                        <h3>JUGADORES</h3>
+                        <div style="margin-bottom: 10px;">
+                            <input type="text" id="p1Name" value="Jugador 1" style="width: 100%; padding: 8px; background: var(--bg-secondary); color: white; border: 1px solid var(--text-secondary); margin-bottom: 5px; border-radius: 4px; font-family: 'Rajdhani', sans-serif;">
+                            <input type="text" id="p2Name" value="Jugador 2" style="width: 100%; padding: 8px; background: var(--bg-secondary); color: white; border: 1px solid var(--text-secondary); border-radius: 4px; font-family: 'Rajdhani', sans-serif;">
+                        </div>
+                        <button class="control-btn btn-secondary" id="saveBtn" style="width:100%; margin-bottom:15px; padding: 5px;">💾 Guardar Partida</button>
+                        
+                        <h3 style="margin-top: 10px; font-size: 1rem; color: var(--accent-cyan); text-transform: uppercase; letter-spacing: 2px; border-bottom: 1px solid rgba(0, 217, 255, 0.3); padding-bottom: 8px;">PARTIDAS</h3>
+                        <select id="gameCombo" style="width: 100%; padding: 8px; background: var(--bg-secondary); color: white; border: 1px solid var(--text-secondary); margin-bottom: 5px; border-radius: 4px; font-family: 'Rajdhani', sans-serif;"></select>
+                        <button class="control-btn btn-primary" id="loadBtn" style="width:100%; padding: 5px;">📂 Cargar</button>
+                        
+                        <div class="connection-status" style="margin-top: 15px;">
+                            <div class="status-dot" id="connStatus"></div>
+                            <span id="connText">Sincronizando...</span>
+                        </div>
                     </div>
-                </div>
 
-                <div class="panel">
-                    <h3>Movimientos</h3>
-                    <div class="moves-list" id="movesList"></div>
-                </div>
-
-                <div class="panel">
-                    <h3>CEREBRO ASIMOD</h3>
-                    <div class="thought-panel" id="asimodThought">Esperando primer movimiento...</div>
-                </div>
-
-                <div class="panel">
-                    <h3>Visión Táctica</h3>
-                    <div class="tactical-feed" id="tacticalFeed">
-                        <div class="tactical-empty">Ninguna amenaza detectada</div>
+                    <div class="panel">
+                        <h3>Movimientos</h3>
+                        <div class="moves-list" id="movesList"></div>
                     </div>
-                </div>
 
-                <div class="panel">
-                    <h3>Controles</h3>
-                    <div class="controls">
-                        <button class="control-btn btn-primary" id="newGameBtn">Nuevo</button>
-                        <button class="control-btn btn-secondary" id="undoBtn">Deshacer</button>
+                    <div class="panel">
+                        <h3>CEREBRO ASIMOD</h3>
+                        <div class="thought-panel" id="asimodThought">Esperando primer movimiento...</div>
                     </div>
-                </div>
+
+                    <div class="panel">
+                        <h3>Visión Táctica</h3>
+                        <div class="tactical-feed" id="tacticalFeed">
+                            <div class="tactical-empty">Ninguna amenaza detectada</div>
+                        </div>
+                    </div>
+
+                    <div class="panel">
+                        <h3>Controles</h3>
+                        <div class="controls">
+                            <button class="control-btn btn-primary" id="newGameBtn">Nuevo</button>
+                            <button class="control-btn btn-secondary" id="undoBtn">Deshacer</button>
+                        </div>
+                    </div>
+                </div> <!-- /side-panel-content -->
             </div>
         </div>
     </div>

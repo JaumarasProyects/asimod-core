@@ -1,0 +1,15 @@
+{
+    "id": "personaje_1776625008",
+    "name": "El Corazón de la Mansión",
+    "personality": "",
+    "avatar": {
+        "idle": "Resources/Characters/El Corazón de la Mansión/idle.png",
+        "talking": "Resources/Characters/El Corazón de la Mansión/idle.png"
+    },
+    "video": {
+        "idle": "",
+        "talking": ""
+    },
+    "voice_id": "es-ES-ElviraNeural",
+    "voice_provider": "Edge TTS"
+}

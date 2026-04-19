@@ -8,7 +8,7 @@
         },
         "2": {
             "panel": "Imagen",
-            "workflow_folder": "workflows/compuesta/plano/imagen",
+            "workflow_folder": "workflows/imagen/compuesta/plano/imagen",
             "default_workflow": "shot_composition.json",
             "prompt_template": "Composición de plano: {tipo_plano}, {tipo_toma}. Cámara: {movimiento_camara}. Elementos: {referencias_ingredientes}.",
             "narrative_enrichment": true,
@@ -16,13 +16,13 @@
         },
         "3": {
             "panel": "Audio",
-            "workflow_folder": "workflows/compuesta/plano/audio",
+            "workflow_folder": "workflows/Audio/sounds",
             "default_workflow": "shot_audio.json"
         },
         "4": {
             "panel": "Video",
-            "workflow_folder": "workflows/compuesta/plano/video",
-            "default_workflow": "shot_render.json"
+            "workflow_folder": "workflows/video/simple/Img+Audio2Video",
+            "default_workflow": "DefaultImg+Audio2Video.json"
         }
     }
 }

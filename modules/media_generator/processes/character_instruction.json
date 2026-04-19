@@ -8,21 +8,28 @@
         },
         "2": {
             "panel": "Imagen",
-            "workflow_folder": "workflows/compuesta/personaje/imagen",
-            "default_workflow": "character_sheet.json",
+            "workflow_folder": "workflows/imagen/simple/img2img",
+            "steps": [
+                {
+                    "name": "Retrato",
+                    "workflow_folder": "workflows/imagen/simple/text2img",
+                    "workflow": "DefaultText2Img.json",
+                    "output_key": "imagen_principal"
+                }
+            ],
             "prompt_template": "Crea una hoja de diseño detallada del personaje {nombre}. Rasgos: {historia}. Personalidad: {personalidad}.",
             "narrative_enrichment": true,
             "audio_planning": true
         },
         "3": {
             "panel": "Audio",
-            "workflow_folder": "workflows/compuesta/personaje/audio",
-            "default_workflow": "character_voice.json"
+            "workflow_folder": "workflows/Audio/voices",
+            "default_workflow": "ASIMOD - Edge.json"
         },
         "4": {
             "panel": "Video",
-            "workflow_folder": "workflows/compuesta/personaje/video",
-            "default_workflow": "character_animation.json"
+            "workflow_folder": "workflows/video/simple/Img+Audio2Video",
+            "default_workflow": "DefaultImg+Audio2Video.json"
         }
     }
 }

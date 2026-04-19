@@ -30,6 +30,10 @@ class MemoryService:
             "avatar": {
                 "idle": "Resources/logoAzul.png"
             },
+            "video": {
+                "idle": "",
+                "talking": ""
+            },
             "history": []
         }
 
@@ -91,7 +95,8 @@ class MemoryService:
         self.save_current()
 
     def update_profile(self, name: str = None, personality: str = None, history: str = None, 
-                       voice_id: str = None, voice_provider: str = None, avatar: dict = None):
+                       voice_id: str = None, voice_provider: str = None, avatar: dict = None,
+                       video: dict = None):
         """Actualiza el perfil del asistente en la memoria activa."""
         if name is not None: self.data["name"] = name
         if personality is not None: self.data["personality"] = personality
@@ -99,6 +104,7 @@ class MemoryService:
         if voice_id is not None: self.data["voice_id"] = voice_id
         if voice_provider is not None: self.data["voice_provider"] = voice_provider
         if avatar is not None: self.data["avatar"] = avatar
+        if video is not None: self.data["video"] = video
         self.save_current()
 
     def get_context(self) -> list:

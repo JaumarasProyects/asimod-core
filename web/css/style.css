@@ -476,13 +476,23 @@ body {
 }
 
 .chat-header {
-    height: 50px;
-    padding: 0 20px;
+    height: auto;
+    padding: 15px 20px;
     display: flex;
+    flex-direction: column;
     align-items: center;
-    justify-content: space-between;
+    gap: 10px;
     border-bottom: 1px solid rgba(255,255,255,0.05);
     background: rgba(255,255,255,0.02);
+    position: relative;
+}
+
+.chat-header-actions {
+    width: 100%;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 5px;
 }
 
 .chat-messages {
@@ -530,7 +540,7 @@ body {
 }
 
 .chat-input-area {
-    padding: 15px 20px 130px 20px; /* Elevado otros 40px (total 130px) */
+    padding: 10px 20px 20px 20px; /* Reducido espacio inferior de 130px a 20px */
     background: rgba(0,0,0,0.4);
     border-top: 1px solid rgba(255,255,255,0.08);
     display: flex;
@@ -557,9 +567,37 @@ body {
     color: var(--bg-dark);
     border: none;
     width: 45px; height: 45px;
-    border-radius: 10px;
+    border-radius: 12px;
     cursor: pointer;
     font-size: 1.2rem;
+    transition: all 0.3s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.main-input-row button:hover {
+    transform: scale(1.05);
+    filter: brightness(1.2);
+}
+
+.chat-mic-btn {
+    background: rgba(255, 255, 255, 0.05) !important;
+    color: var(--text-dim) !important;
+    border: 1px solid rgba(255, 255, 255, 0.1) !important;
+}
+
+.chat-mic-btn.recording {
+    background: #ff4444 !important;
+    color: white !important;
+    animation: mic-pulse 1.5s infinite;
+    border-color: #ff6666 !important;
+}
+
+@keyframes mic-pulse {
+    0% { box-shadow: 0 0 0 0 rgba(255, 68, 68, 0.7); }
+    70% { box-shadow: 0 0 0 15px rgba(255, 68, 68, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(255, 68, 68, 0); }
 }
 
 .extra-controls-row { 
@@ -1398,92 +1436,224 @@ body {
     }
 }
 
- / *   A v a t a r   H U D   &   V i s u a l i z e r   * / 
- . a v a t a r - h u d   { 
-         d i s p l a y :   f l e x ; 
-         a l i g n - i t e m s :   c e n t e r ; 
-         g a p :   1 5 p x ; 
-         p a d d i n g :   5 p x ; 
-         b a c k g r o u n d :   r g b a ( 2 5 5 ,   2 5 5 ,   2 5 5 ,   0 . 0 3 ) ; 
-         b o r d e r - r a d i u s :   4 0 p x ; 
-         b o r d e r :   1 p x   s o l i d   r g b a ( 2 5 5 ,   2 5 5 ,   2 5 5 ,   0 . 0 5 ) ; 
-         m a r g i n - r i g h t :   1 5 p x ; 
- } 
- 
- . a v a t a r - c i r c l e   { 
-         w i d t h :   4 5 p x ; 
-         h e i g h t :   4 5 p x ; 
-         b o r d e r - r a d i u s :   5 0 % ; 
-         b a c k g r o u n d :   v a r ( - - b g - d a r k ) ; 
-         d i s p l a y :   f l e x ; 
-         a l i g n - i t e m s :   c e n t e r ; 
-         j u s t i f y - c o n t e n t :   c e n t e r ; 
-         o v e r f l o w :   h i d d e n ; 
-         p o s i t i o n :   r e l a t i v e ; 
-         b o r d e r :   2 p x   s o l i d   v a r ( - - a c c e n t ) ; 
-         b o x - s h a d o w :   0   0   1 5 p x   r g b a ( 7 8 ,   2 0 1 ,   1 7 6 ,   0 . 2 ) ; 
-         t r a n s i t i o n :   a l l   0 . 3 s   e a s e ; 
- } 
- 
- . a v a t a r - c i r c l e   i m g ,   . a v a t a r - c i r c l e   v i d e o   { 
-         w i d t h :   1 0 0 % ; 
-         h e i g h t :   1 0 0 % ; 
-         o b j e c t - f i t :   c o v e r ; 
- } 
- 
- . a v a t a r - i c o n   { 
-         f o n t - s i z e :   1 . 5 r e m ; 
- } 
- 
- . a v a t a r - r i n g   { 
-         p o s i t i o n :   a b s o l u t e ; 
-         t o p :   - 2 p x ; 
-         l e f t :   - 2 p x ; 
-         r i g h t :   - 2 p x ; 
-         b o t t o m :   - 2 p x ; 
-         b o r d e r - r a d i u s :   5 0 % ; 
-         b o r d e r :   2 p x   s o l i d   v a r ( - - a c c e n t ) ; 
-         o p a c i t y :   0 ; 
-         t r a n s i t i o n :   a l l   0 . 3 s   e a s e ; 
-         p o i n t e r - e v e n t s :   n o n e ; 
- } 
- 
- / *   T a l k i n g   S t a t e   * / 
- . a v a t a r - h u d . s p e a k i n g   . a v a t a r - c i r c l e   { 
-         t r a n s f o r m :   s c a l e ( 1 . 0 5 ) ; 
-         b o x - s h a d o w :   0   0   2 5 p x   v a r ( - - a c c e n t ) ; 
- } 
- 
- . a v a t a r - h u d . s p e a k i n g   . a v a t a r - r i n g   { 
-         o p a c i t y :   1 ; 
-         a n i m a t i o n :   a v a t a r - p u l s e   1 . 5 s   i n f i n i t e ; 
- } 
- 
- @ k e y f r a m e s   a v a t a r - p u l s e   { 
-         0 %   {   t r a n s f o r m :   s c a l e ( 1 ) ;   o p a c i t y :   0 . 8 ;   } 
-         1 0 0 %   {   t r a n s f o r m :   s c a l e ( 1 . 5 ) ;   o p a c i t y :   0 ;   } 
- } 
- 
- . a v a t a r - i n f o   { 
-         d i s p l a y :   f l e x ; 
-         f l e x - d i r e c t i o n :   c o l u m n ; 
-         j u s t i f y - c o n t e n t :   c e n t e r ; 
- } 
- 
- . a v a t a r - n a m e   { 
-         f o n t - s i z e :   0 . 8 5 r e m ; 
-         f o n t - w e i g h t :   7 0 0 ; 
-         c o l o r :   v a r ( - - t e x t - m a i n ) ; 
- } 
- 
- . a v a t a r - s t a t u s   { 
-         f o n t - s i z e :   0 . 6 5 r e m ; 
-         c o l o r :   v a r ( - - a c c e n t ) ; 
-         o p a c i t y :   0 . 8 ; 
- } 
- 
- . h e a d e r - f i l l e r   { 
-         f l e x :   1 ; 
- } 
-  
- 
+/* Avatar HUD & Visualizer */
+.avatar-hud {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    padding: 10px;
+    background: var(--glass-bg);
+    backdrop-filter: var(--glass-blur);
+    border-radius: 20px;
+    border: 1px solid var(--glass-border);
+    margin: 5px 10px;
+    text-align: center;
+}
+
+.avatar-circle {
+    width: 220px;
+    height: 220px;
+    border-radius: 15px;
+    background: var(--bg-dark);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    position: relative;
+    border: 2px solid var(--accent);
+    box-shadow: var(--shadow-premium);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.avatar-circle img, .avatar-circle video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.avatar-icon {
+    font-size: 1.5rem;
+}
+
+.avatar-ring {
+    position: absolute;
+    top: -2px;
+    left: -2px;
+    right: -2px;
+    bottom: -2px;
+    border-radius: 15px;
+    border: 2px solid var(--accent);
+    opacity: 0;
+    transition: all 0.3s ease;
+    pointer-events: none;
+}
+
+/* Talking State */
+.avatar-hud.speaking .avatar-circle {
+    transform: scale(1.05);
+    box-shadow: 0 0 25px var(--accent);
+}
+
+.avatar-hud.speaking .avatar-ring {
+    opacity: 1;
+    animation: avatar-pulse 1.5s infinite;
+}
+
+@keyframes avatar-pulse {
+    0% { transform: scale(1); opacity: 0.8; }
+    100% { transform: scale(1.5); opacity: 0; }
+}
+
+.avatar-info {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}
+
+.avatar-name {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--text-main);
+    display: block;
+    margin-bottom: 2px;
+}
+
+.avatar-status {
+    font-size: 0.75rem;
+    color: var(--accent);
+    opacity: 0.8;
+}
+
+.avatar-emoji {
+    position: absolute;
+    right: 12px;
+    top: 12px;
+    background: rgba(255, 255, 255, 0.15);
+    backdrop-filter: blur(15px);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    border-radius: 10px;
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.2rem;
+    box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+    pointer-events: none;
+    opacity: 0;
+    transform: scale(0.5) translateY(10px);
+    transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    z-index: 10;
+}
+
+.avatar-emoji.visible {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+    animation: emoji-float 2s ease-in-out infinite;
+}
+
+@keyframes emoji-float {
+    0%, 100% { transform: translateY(0) scale(1); }
+    50% { transform: translateY(-5px) scale(1.05); }
+}
+
+.header-filler {
+    flex: 1;
+}
+
+/* =========================================================
+   SISTEMA EXPLORER & UNIVERSAL MEDIA VIEWER
+   ========================================================= */
+
+.sis-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 15px;
+    border-radius: 12px;
+    background: rgba(255,255,255,0.02);
+    border: 1px solid rgba(255,255,255,0.05);
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    text-align: center;
+    min-height: 100px;
+}
+
+.sis-item:hover {
+    background: rgba(78, 201, 176, 0.1);
+    border-color: var(--accent);
+    transform: translateY(-2px);
+}
+
+.sis-item.selected {
+    background: rgba(78, 201, 176, 0.15);
+    border-color: var(--accent);
+    box-shadow: 0 0 15px rgba(78, 201, 176, 0.2);
+}
+
+.sis-icon {
+    font-size: 2.2rem;
+    margin-bottom: 10px;
+}
+
+.sis-name {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text-dim);
+    width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.sis-item:hover .sis-name {
+    color: var(--text-main);
+}
+
+.media-viewer-premium {
+    animation: fadeIn 0.3s ease-out;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* Loading Spinner */
+.loading-spinner {
+    width: 40px;
+    height: 40px;
+    border: 3px solid rgba(255,255,255,0.1);
+    border-radius: 50%;
+    border-top-color: var(--accent);
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+/* Correciones para IFrames de Módulos */
+iframe {
+    background: transparent;
+    color-scheme: dark;
+}
+
+.workspace-content {
+    overflow: hidden; /* Evitar scrollbars dobles cuando se usa iframe */
+}
+
+/* Ajustes para Media Generator en Web */
+.mg-container {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+

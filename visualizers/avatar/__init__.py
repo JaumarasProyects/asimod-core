@@ -23,6 +23,7 @@ class AvatarVisualizer(VisualizerPort):
         self.text_item = None
         self.frame_item = None
         self.dot_item = None
+        self.emoji_item = None # NUEVO
         self.fallback_icon = "👤"
         
         # State
@@ -70,6 +71,12 @@ class AvatarVisualizer(VisualizerPort):
         self.dot_item = self._canvas.create_oval(
             0, 0, 0, 0, fill="#4EC9B0", outline="", state="hidden"
         )
+        
+        # 5. Emojis (NUEVO)
+        self.emoji_item = self._canvas.create_text(
+            self.width / 2, self.height - 40, text="", fill="white", 
+            font=("Segoe UI Emoji", 24), anchor="n", state="hidden"
+        )
 
     def set_character(self, character_data: dict):
         """Recibe los datos del personaje y recarga los assets."""
@@ -92,19 +99,44 @@ class AvatarVisualizer(VisualizerPort):
         self.is_active = False
         self._show_state("idle")
 
+    def set_emojis(self, emojis: list):
+        """Muestra una lista de emojis en el lateral del avatar."""
+        if not self._canvas or not self.emoji_item: return
+        
+        text = "".join(emojis)
+        if not text:
+            self._canvas.itemconfig(self.emoji_item, state="hidden")
+            return
+            
+        self._canvas.itemconfig(self.emoji_item, text=text, state="normal")
+        # Auto-ocultar después de 5 segundos
+        self.parent.after(5000, lambda: self._canvas.itemconfig(self.emoji_item, state="hidden") if self._canvas else None)
+
     def _refresh_assets(self):
-        """Carga imágenes estáticas."""
+        """Carga imágenes estáticas soportando diccionario (moderno) o string (legado)."""
         self.idle_image = None
         self.talking_image = None
         if not self.character_data: return
 
         avatar_cfg = self.character_data.get("avatar", {})
-        idle_path = avatar_cfg.get("idle")
-        talk_path = avatar_cfg.get("talking")
         
-        if idle_path: self.idle_image = self._load_and_resize(idle_path)
-        if talk_path: self.talking_image = self._load_and_resize(talk_path)
-        else: self.talking_image = self.idle_image
+        # Soporte para avatar como string (directamente la ruta)
+        if isinstance(avatar_cfg, str):
+            idle_path = avatar_cfg
+            talk_path = None
+        else:
+            idle_path = avatar_cfg.get("idle")
+            talk_path = avatar_cfg.get("talking")
+        
+        if idle_path: 
+            self.idle_image = self._load_and_resize(idle_path)
+            
+        if talk_path: 
+            self.talking_image = self._load_and_resize(talk_path)
+        
+        # Fallback: si no hay imagen de hablar, usar la de reposo
+        if not self.talking_image:
+            self.talking_image = self.idle_image
 
     def _load_and_resize(self, path):
         try:
@@ -130,17 +162,47 @@ class AvatarVisualizer(VisualizerPort):
 
     def _resolve_path(self, path):
         if not path: return None
-        if os.path.isabs(path): return path
+        if os.path.isabs(path) and os.path.exists(path): return path
+        
+        # Normalización agresiva de separadores para Windows
+        clean_path = path.replace("/", os.sep).replace("\\", os.sep).lstrip(os.sep)
+        
+        # Áreas de búsqueda: Raíz, CWD, Salida de Media Generator
         base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        for r in [base_dir, os.getcwd()]:
-            test_p = os.path.join(r, path.replace("/", os.sep).replace("\\", os.sep))
+        search_roots = [
+            base_dir,
+            os.getcwd(),
+            os.path.join(base_dir, "modules", "media_generator"),
+            os.path.join(base_dir, "modules", "media_generator", "output"),
+            os.path.join(base_dir, "modules", "media_generator", "output", "imagen"),
+            os.path.join(base_dir, "modules", "media_generator", "output", "video")
+        ]
+        
+        for r in search_roots:
+            test_p = os.path.join(r, clean_path)
             if os.path.exists(test_p): return test_p
+            
+            # Re-intento: si la ruta ya incluía 'output/imagen/' y la estamos uniendo a una raíz que ya la tiene
+            # simplemente intentamos con el basename
+            basename = os.path.basename(clean_path)
+            test_b = os.path.join(r, basename)
+            if os.path.exists(test_b): return test_b
+            
+        print(f"[AvatarVisualizer] No se pudo resolver ruta: {path} (Buscado en {len(search_roots)} raíces)")
         return None
 
     def _show_state(self, state):
-        """Gestiona Vídeo vs Imagen."""
+        """Gestiona Vídeo vs Imagen con soporte para esquemas modernos y legados."""
+        # 1. Buscar en diccionario 'video' (moderno)
         video_cfg = self.character_data.get("video", {})
         video_path = video_cfg.get("talking" if state == "talking" else "idle")
+        
+        # 2. Fallback: buscar en diccionario 'avatar' (para los publicados anteriormente)
+        if not video_path:
+            avatar_cfg = self.character_data.get("avatar", {})
+            if isinstance(avatar_cfg, dict):
+                video_path = avatar_cfg.get("talking_video" if state == "talking" else "idle_video")
+        
         full_video_path = self._resolve_path(video_path)
 
         if full_video_path and os.path.exists(full_video_path):
@@ -185,6 +247,11 @@ class AvatarVisualizer(VisualizerPort):
                 self._canvas.itemconfig(self.dot_item, state="normal")
             else:
                 self._canvas.itemconfig(self.dot_item, state="hidden")
+            
+            # Reposicionar emojis debajo del marco
+            if self.emoji_item:
+                emoji_y = center_y + (display_size / 2) + px + 10
+                self._canvas.coords(self.emoji_item, self.width / 2, emoji_y)
         else:
             self._canvas.itemconfig(self.image_item, state="hidden")
             self._canvas.itemconfig(self.frame_item, state="hidden")
@@ -244,6 +311,8 @@ class AvatarVisualizer(VisualizerPort):
             
             # Reposicionar nombre
             if self.text_item: self._canvas.coords(self.text_item, self.width / 2, 20)
+            # Reposicionar emojis (NUEVO: Centrado horizontalmente)
+            if self.emoji_item: self._canvas.coords(self.emoji_item, self.width / 2, self.height - 40)
             
             self._refresh_assets()
             self._show_state("talking" if self.is_active else "idle")

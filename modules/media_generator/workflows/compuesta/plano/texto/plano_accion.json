@@ -1,9 +1,0 @@
-{
-    "id": "plano_accion",
-    "nombre": "Plano de Acción",
-    "descripcion": "Genera un plano de acción: captura movimiento físico intenso, con subtipo de velocidad.",
-    "system_prompt": "Eres un director de fotografía y coordinador de acción experto en cine. Genera un JSON completo y detallado para un PLANO DE ACCIÓN de tipo '{tipo_accion}'. Un plano de acción captura movimiento físico, pelea, persecución u otro momento dinámico. El subtipo '{tipo_accion}' define la velocidad y ritmo del plano. El JSON DEBE contener EXACTAMENTE los siguientes campos:\n{\n  \"titulo\": \"Nombre descriptivo del plano\",\n  \"tipo_plano\": \"Accion\",\n  \"tipo_accion\": \"{tipo_accion}\",\n  \"descripcion_visual\": \"Descripción detallada de lo que ocurre visualmente: movimiento, composición, encuadre, luz\",\n  \"movimiento_camara\": \"Estático | Pan | Tilt | Dolly | Zoom | Travelling | Handheld | Crane (elige el más apropiado para la acción)\",\n  \"intensidad\": \"Descripción de la intensidad y ritmo de la acción en el plano\",\n  \"localizacion\": \"Descripción de la localización donde ocurre la acción\",\n  \"personajes_en_escena\": [\"Lista de nombres de los personajes involucrados en la acción\"],\n  \"props_en_escena\": [\"Lista de objetos o elementos relevantes para la acción, o []\"],\n  \"duracion_estimada_segundos\": 4,\n  \"musica\": \"Descripción breve de la música sugerida (ritmo, género, intensidad), o null si no aplica\",\n  \"efectos\": [\"Lista de efectos de sonido descriptos brevemente: golpes, explosiones, pasos, etc. o []\"]\n}\nResponde SOLO con el JSON válido, sin texto adicional, sin bloques markdown.",
-    "output_format": "json",
-    "required_ingredients": ["Sinopsis", "Escenario"],
-    "optional_ingredients": ["Personaje", "Prop"]
-}

@@ -167,12 +167,19 @@
             <!-- Chat Panel (Permanent below settings) -->
             <div id="chatPanelContainer" class="side-chat-view">
                 <div class="chat-header">
-                    <button id="closeChat" class="icon-btn mobile-only-inline" title="Cerrar Panel">◀</button>
+                    <div class="chat-header-actions">
+                        <button id="closeChat" class="icon-btn mobile-only-inline" title="Cerrar Panel">◀</button>
+                        <div class="header-filler"></div>
+                        <button id="clearChat" class="icon-btn" title="Limpiar Chat">🗑</button>
+                    </div>
+                    
                     <div id="avatarContainer" class="avatar-hud">
-                        <div id="avatarVisualizer" class="avatar-circle" title="Abrir Biblioteca" style="cursor:pointer;" id="openCharacterLibrary">
+                        <div id="avatarVisualizer" class="avatar-circle" title="Abrir Biblioteca" style="cursor:pointer;">
                             <span id="avatarFallback" class="avatar-icon">👤</span>
                             <img id="avatarImage" src="" style="display:none;">
-                            <video id="avatarVideo" src="" style="display:none;" loop muted></video>
+                            <video id="avatarVideoIdle" src="" style="display:none;" loop muted playsinline webkit-playsinline preload="auto"></video>
+                            <video id="avatarVideoTalking" src="" style="display:none;" loop muted playsinline webkit-playsinline preload="auto"></video>
+                            <div id="avatarEmoji" class="avatar-emoji"></div>
                             <div class="avatar-ring"></div>
                         </div>
                         <div class="avatar-info">
@@ -180,8 +187,6 @@
                             <span id="avatarStatus" class="avatar-status">En línea</span>
                         </div>
                     </div>
-                    <div class="header-filler"></div>
-                    <button id="clearChat" class="icon-btn" title="Limpiar Chat">🗑</button>
                 </div>
                 <div class="chat-messages" id="chatMessages"></div>
                 <div class="image-preview" id="imagePreview" style="display:none; padding:10px; border-top:1px solid rgba(255,255,255,0.05); text-align:center;">
@@ -191,6 +196,7 @@
                 <div class="chat-input-area">
                     <div class="main-input-row">
                         <input type="text" id="chatInput" placeholder="Escribe al sistema...">
+                        <button id="chatMic" class="chat-mic-btn" title="Grabar Audio">🎤</button>
                         <button id="chatSend" title="Enviar Mensaje">🚀</button>
                     </div>
                     <div class="extra-controls-row">

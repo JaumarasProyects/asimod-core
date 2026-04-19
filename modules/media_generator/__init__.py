@@ -44,7 +44,7 @@ class MediaGeneratorModule(StandardModule):
         # Estado de modelos LLM para letras
         self.llm_models = []
         
-        # Estado de Generación Compuesta (Escritorio)
+        # Estado de Generación Compuesto (Escritorio)
         self.compound_state = {
             "type": "Simple",
             "subtype": "Ingredientes",
@@ -58,6 +58,56 @@ class MediaGeneratorModule(StandardModule):
         self.doc_map = {} # Mapeo de Título -> Path para Documento Origen
         self.ingredient_panel_visible = False
         
+        # Estados específicos por pestaña (Persistencia real)
+        self.audio_state = {"type": "Voces", "provider": "ASIMOD - Edge"}
+        self.video_state = {"type": "Simple", "subtype": "Img+Audio2Video", "workflow": "DefaultImg+Autio2Video.json"}
+        self.image_state = {"engine": "ComfyUI", "type": "Simple", "subtype": "text2img", "workflow": "DefaultText2Img.json", "count": "1"}
+        
+        # --- SEMILLADO DE DEFAULTS MAESTROS ("Piezas Base" solicitadas por Usuario) ---
+        m_defaults = self.config_service.get("comfyui_defaults", {})
+        dirty = False
+        
+        # [MIGRACIÓN] Si detectamos estructura antigua (keys como 'workflow', 'subtype'), limpiar para normalizar
+        if "workflow" in m_defaults.get("Imagen", {}) or "workflow" in m_defaults.get("Video", {}):
+            print("[MediaGenerator] Migrando configuración de defaults a estructura granular...")
+            m_defaults = {
+                "Imagen": {"text2img": "DefaultText2Img.json", "img2img": "DefaultImg2Img.json"},
+                "Video": {"Img2Video": "DefaultImg2Video.json", "Img+Audio2Video": "DefaultImg+Autio2Video.json"},
+                "Audio": {"voices": "ASIMOD - Edge.json", "music": "Defaulttext2Music.json", "sounds": ""},
+                "3D": {"img_to_3d": "DefaultImg2_3D.json"}
+            }
+            dirty = True
+        
+        # Asegurar que todas las piezas base existan
+        expected = {
+            "Imagen": {"text2img": "DefaultText2Img.json", "img2img": "DefaultImg2Img.json"},
+            "Video": {"Img2Video": "DefaultImg2Video.json", "Img+Audio2Video": "DefaultImg+Autio2Video.json"},
+            "Audio": {"voices": "ASIMOD - Edge.json", "music": "Defaulttext2Music.json", "sounds": ""},
+            "3D": {"img_to_3d": "DefaultImg2_3D.json"}
+        }
+        
+        for cat, subs in expected.items():
+            if cat not in m_defaults:
+                m_defaults[cat] = {}
+                dirty = True
+            for sub, wf in subs.items():
+                if sub not in m_defaults[cat]:
+                    m_defaults[cat][sub] = wf
+                    dirty = True
+            
+        if dirty:
+            self.config_service.set("comfyui_defaults", m_defaults)
+            
+        if dirty:
+            self.config_service.set("comfyui_defaults", m_defaults)
+        
+        # Limpiar restos del sistema anterior si existen (vía set a None o simplemente ignorar)
+        if self.config_service.get("media_master_defaults"):
+            self.config_service.set("media_master_defaults", None)
+        
+        self.web_data = {}
+        self.state_3d = {"type": "Texto a 3D"}
+
         self.CONFIG_COMPUESTA = {
             'Ingredientes': ['Personaje', 'Escenario', 'Prop', 'Sinopsis'],
             'Productos':    ['Plano', 'Escena', 'Secuencia'],
@@ -107,11 +157,13 @@ class MediaGeneratorModule(StandardModule):
         """Callback cuando se cambia de pestaña en el menú superior."""
         if self.current_mode == mode:
             return
-            
+        # 0. Saneamiento: Volver a modo Simple por defecto al cambiar de pestaña
+        self.compound_state["type"] = "Simple"
+        
         self.current_mode = mode
         print(f"[MediaGenerator] Cambiando a modo: {mode}")
 
-        # 1. Actualizar controladores
+        # 1. Actualizar solo la lógica de controladores (SIN redibujar todo el widget)
         self._update_controllers_logic(mode)
         
         # 2. Refrescar el área de trabajo
@@ -128,7 +180,13 @@ class MediaGeneratorModule(StandardModule):
             
         self.ctrl_panel.clear()
         
-        # 1. Proveedor LLM (Fijo arriba si es Texto o Compuesto)
+        # 1. Selector de Tipo (Simple / Compuesto) - prioridad máxima arriba
+        self.ctrl_panel.add_dropdown("Tipo de Generación", "gen_type", 
+                                    ["Simple", "Compuesto"], 
+                                    default=self.compound_state["type"],
+                                    callback=self._on_compound_type_change)
+
+        # 2. Proveedor LLM (Solo si es Texto o Compuesto)
         if mode == "Texto" or self.compound_state["type"] == "Compuesto":
             providers = self.chat_service.get_providers_list()
             current_p = self.chat_service.current_adapter.name if self.chat_service.current_adapter else "Ollama"
@@ -138,42 +196,95 @@ class MediaGeneratorModule(StandardModule):
                                         callback=self._on_provider_change)
             self._fetch_llm_models()
 
-        # 2. Selector de Tipo (Simple / Compuesto) - Siempre disponible
-        self.ctrl_panel.add_dropdown("Tipo de Generación", "gen_type", 
-                                    ["Simple", "Compuesto"], 
-                                    default=self.compound_state["type"],
-                                    callback=self._on_compound_type_change)
-        
-        if self.compound_state["type"] == "Compuesto":
-            self._setup_compound_controllers(mode)
-            return
+        # 3. Delegación a paneles específicos (Siempre necesarios para saber CÓMO generar)
+        # IMPORTANTE: Los sub-paneles YA NO LIMPIAN el panel, solo añaden sus controles.
+        try:
+            if mode == "Audio":
+                self._rebuild_audio_panel(skip_clear=True)
+            elif mode == "Video":
+                self._rebuild_video_panel(skip_clear=True)
+            elif mode == "3D":
+                self._rebuild_3d_panel(skip_clear=True)
+            elif mode == "Imagen":
+                self._rebuild_image_panel(skip_clear=True)
+            elif mode == "Texto":
+                # En Texto Compuesto, el sub-panel se gestiona en _setup_compound_controllers
+                pass
+        except Exception as e:
+            print(f"[MediaGenerator] ERROR regenerando panel {mode}: {e}")
+            self.ctrl_panel.add_label(f"⚠️ Error cargando herramientas de {mode}", color="#ff5555")
 
-        # 3. Controladores originales si es Simple
-        if mode == "Texto":
-            # (Ya añadido arriba como fijo)
-            pass
-                
-        elif mode == "Imagen":
-            engines = self.image_service.get_engines_list()
-            default_engine = "ComfyUI" if "ComfyUI" in engines else (engines[0] if engines else "DALL-E 3")
-            self.ctrl_panel.set_value("engine", default_engine)
-            self._on_image_engine_change(default_engine)
-        elif mode == "Audio":
-            self._rebuild_audio_panel()
-        elif mode == "Video":
-            self._rebuild_video_panel()
-        elif mode == "3D":
-            self._rebuild_3d_panel()
-        else:
-            self.ctrl_panel.add_dropdown("Proveedor", "gen_provider", ["Default Engine"])
+        # 4. Controles adicionales de COMPUESTO (Upgrade path / G2-G4)
+        if self.compound_state["type"] == "Compuesto":
+            self._setup_compound_controllers(mode, skip_clear=True)
+            self._add_reference_management_controls()
+
+        # 5. El botón de generación ya está en el área de prompt (blue button)
+        pass
+
+        # 5. El botón de generación ya está en el área de prompt (blue button), no añadimos otro aquí
+        pass
 
     def _on_compound_type_change(self, val):
         """Callback cuando cambia el tipo de generación (Simple/Compuesto)."""
         self.compound_state["type"] = val
         self._update_controllers_logic(self.current_mode)
 
-    def _setup_compound_controllers(self, mode):
+    def _set_master_default(self, category):
+        """Fija el workflow actual para el CATEGORIA y SUBTIPO específico."""
+        current_subtype = ""
+        wf_key = "workflow"
+        
+        if category == "Audio":
+            wf_key = "audio_workflow"
+            current_subtype = self.audio_state.get("type", "voices").lower() # voices, music, sounds
+        elif category == "Video":
+            current_subtype = self.video_state.get("subtype", "")
+        elif category == "Imagen":
+            current_subtype = self.image_state.get("subtype", "")
+            
+        selected_wf = self.ctrl_panel.get_value(wf_key)
+        if not selected_wf:
+            self.chat_service.notify_system_msg(f"ASIMOD: No hay workflow para fijar en {category}.", "#ff4444")
+            return
+            
+        # Actualizar estructura COMPATIBLE con el panel de Configuración (Multi-Subtipo)
+        m_defaults = self.config_service.get("comfyui_defaults", {})
+        if category not in m_defaults: m_defaults[category] = {}
+        
+        # Guardamos el workflow directamente mapeado al subtipo
+        m_defaults[category][current_subtype] = selected_wf
+        
+        # Sincronizar también el proveedor de voz si es Audio
+        if category == "Audio":
+            self.config_service.set("voice_provider", self.ctrl_panel.get_value("audio_provider"))
+
+        self.config_service.set("comfyui_defaults", m_defaults)
+        self.chat_service.notify_system_msg(f"ASIMOD: {selected_wf} fijado como Default para {category}/{current_subtype}.", "#4EC9B0")
+        self._update_controllers_logic(self.current_mode)
+
+    def _resolve_master_workflow(self, category, subtype=None, recipe_wf=None):
+        """Resuelve el workflow usando la clave unificada con soporte de subtipo."""
+        m_defaults = self.config_service.get("comfyui_defaults", {})
+        cat_config = m_defaults.get(category, {})
+        
+        # 1. Intentar por subtipo exacto (ej: 'faces', 'voices')
+        if subtype and subtype in cat_config:
+            return cat_config[subtype]
+            
+        # 2. Intentar por clave genérica 'workflow' en esa categoría
+        if "workflow" in cat_config:
+            return cat_config["workflow"]
+            
+        # 3. Fallback final a la receta
+        return recipe_wf
+
+    def _setup_compound_controllers(self, mode, skip_clear=False):
         """Configura los controles específicos de composición."""
+        if not self.ctrl_panel: return
+        
+        # --- SE HA ELIMINADO EL CLEAR INTERNO ---
+        
         if mode == "Texto":
             # G1: Creación de piezas
             subtypes = list(self.CONFIG_COMPUESTA.keys())
@@ -247,27 +358,84 @@ class MediaGeneratorModule(StandardModule):
                     else:
                         self.ctrl_panel.add_label("⚠️ Sin workflows en compuesta/escena/texto", color="#ffaa00")
 
-            if self.compound_state["subtype"] == "Productos" or self.compound_state["category"] == "Sinopsis":
-                self.ctrl_panel.add_button("📎 Gestionar Referencias", self._open_reference_manager)
-                ref_count = len(self.compound_state["references"])
-                self.ctrl_panel.add_label(f"📦 {ref_count} referencias activas.", color="#4EC9B0")
+            if self.compound_state["subtype"] in ["Productos", "Ingredientes"]:
+                # La gestión de referencias ahora es universal, no hace falta añadirla aquí
+                pass
         
         else:
             # Upgrade Grades (G2, G3, G4)
+            # Para Audio (G3): buscamos origen G2
+            # Para Video (G4): buscamos origen G3
+            # Para Imagen (G2): buscamos origen G1
             target_grade = {"Imagen": 1, "Audio": 2, "Video": 3, "3D": 1}.get(mode, 1)
-            # Cargar lista de documentos compatibles
-            import asyncio
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            docs_resp = loop.run_until_complete(self.list_compound_docs(grade=target_grade))
-            loop.close()
             
-            docs = docs_resp.get("result", [])
-            doc_names = [d["name"] for d in docs] if docs else ["Sin documentos compatibles"]
+            # 1. Selector de Categoría (Prioritario)
+            cats = self.CONFIG_COMPUESTA.get("Ingredientes", []) + self.CONFIG_COMPUESTA.get("Productos", [])
+            self.ctrl_panel.add_dropdown("Categoría", "gen_category", cats,
+                                        default=self.compound_state["category"],
+                                        callback=self._on_category_change)
             
-            self.ctrl_panel.add_dropdown(f"Documento Origen (G{target_grade})", "source_doc", 
-                                        doc_names, 
-                                        callback=lambda v: self._on_source_doc_change(v, docs))
+            # 2. Cargar lista de documentos compatibles (Escaneo Sincrónico para máxima estabilidad en Desktop)
+            try:
+                comp_root = os.path.join(self.output_root, "texto", "compuesto")
+                docs = []
+                sel_cat = self.compound_state.get("category", "Personaje") # Asegurar definición
+                
+                if os.path.exists(comp_root):
+                    for root, dirs, files in os.walk(comp_root):
+                        for filename in files:
+                            if filename.endswith(".json"):
+                                path = os.path.join(root, filename)
+                                try:
+                                    with open(path, "r", encoding="utf-8") as f:
+                                        data = json.load(f)
+                                        if data.get("grado_desarrollo") == int(target_grade) and data.get("categoria") == sel_cat:
+                                            rel_path = os.path.relpath(path, comp_root).replace("\\", "/")
+                                            docs.append({
+                                                "name": data.get("titulo", filename),
+                                                "path": f"texto/compuesto/{rel_path}"
+                                            })
+                                except: continue
+                
+                doc_names = [d["name"] for d in docs] if docs else []
+                
+                if not doc_names:
+                    self.ctrl_panel.add_label(f"⚠️ Sin {sel_cat} G{target_grade} disponibles.", color="#ffaa00")
+                else:
+                    # Guardar mapeo para resolución rápida
+                    self.current_source_docs = docs
+                    
+                    # Forzar selección inicial en el estado si está vacío
+                    if not self.compound_state.get("source_doc") and docs:
+                        self.compound_state["source_doc"] = docs[0]["path"]
+
+                    self.ctrl_panel.add_dropdown(f"Seleccionar {sel_cat} (G{target_grade})", "source_doc", 
+                                                doc_names, 
+                                                default=doc_names[0],
+                                                callback=lambda v: self._on_source_doc_change(v, docs))
+                    
+                    # La gestión de referencias ahora es universal
+                    
+                # El botón se añade ahora centralizado en _update_controllers_logic
+                pass
+            except Exception as e:
+                print(f"[MediaGenerator] Error cargando documentos de origen: {e}")
+                self.ctrl_panel.add_label("⚠️ Error detectando documentos origen.", color="#ff4444")
+
+    def _add_reference_management_controls(self):
+        """Añade los controles de gestión de referencias de forma uniforme."""
+        # Limpiar posibles duplicados si el panel reutiliza el contenedor
+        target = self.ctrl_panel.grid_container # Usamos el grid_container principal
+        
+        self.ctrl_panel.add_button("📎 Gestionar Referencias", self._open_reference_manager)
+        
+        # NUEVO: Botón de generación completa para personajes
+        if self.compound_state.get("category") == "Personaje":
+            self.ctrl_panel.add_button("🚀 Personaje Completo (Auto)", self.handle_auto_full_character_generation)
+        
+        ref_count = len(self.compound_state.get("references", []))
+        label_color = "#4EC9B0" if ref_count > 0 else "#888"
+        self.ctrl_panel.add_label(f"📦 {ref_count} referencias activas.", color=label_color)
 
     def _on_subtype_change(self, val):
         self.compound_state["subtype"] = val
@@ -294,6 +462,19 @@ class MediaGeneratorModule(StandardModule):
         top.geometry("500x600")
         top.configure(bg=self.style.get_color("bg_main"))
         
+        # Modal y centrado
+        top.transient(self.workspace)
+        top.grab_set()
+        top.focus_set()
+        
+        # Centrar
+        top.update_idletasks()
+        w = top.winfo_width()
+        h = top.winfo_height()
+        extra_w = (top.winfo_screenwidth() - w) // 2
+        extra_h = (top.winfo_screenheight() - h) // 2
+        top.geometry(f"+{extra_w}+{extra_h}")
+        
         # 1. Cabecera y Filtros
         tk.Label(top, text="GESTOR DE REFERENCIAS", bg=self.style.get_color("bg_main"),
                  fg=self.style.get_color("accent"), font=("Arial", 11, "bold")).pack(pady=10)
@@ -302,7 +483,10 @@ class MediaGeneratorModule(StandardModule):
         filter_frame.pack(fill=tk.X, padx=10, pady=5)
         
         categories = ["TODOS", "Personaje", "Escenario", "Prop", "Sinopsis", "Productos", "Finales"]
-        self._ref_filter = tk.StringVar(value="TODOS")
+        
+        # Iniciar con el filtro de la categoría actual para que apunte a donde debe
+        initial_filter = self.compound_state["category"] if self.compound_state["category"] in categories else "TODOS"
+        self._ref_filter = tk.StringVar(value=initial_filter)
         
         for cat in categories:
             btn = tk.Radiobutton(filter_frame, text=cat.upper(), variable=self._ref_filter, value=cat,
@@ -326,19 +510,39 @@ class MediaGeneratorModule(StandardModule):
         canvas.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
 
-        # Cargar datos
+        # Cargar datos de forma segura
+        all_pieces = []
         import asyncio
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        pieces_resp = loop.run_until_complete(self.list_all_compound_pieces())
-        loop.close()
-        
-        res = pieces_resp.get("result", {})
-        all_pieces = res.get("ingredients", []) + res.get("products", []) + res.get("finals", [])
+        import traceback
+        try:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            pieces_resp = loop.run_until_complete(self.list_all_compound_pieces())
+            loop.close()
+            res = pieces_resp.get("result", {})
+            all_pieces = res.get("ingredients", []) + res.get("products", []) + res.get("finals", [])
+        except Exception as e:
+            print(f"[MediaGenerator][UI] Error cargando piezas para referencias: {e}")
+            traceback.print_exc()
         
         # Estado persistente durante la vida de la ventana
         current_selection = set(self.compound_state["references"])
         checkbox_vars = {} # Map path -> BooleanVar
+
+        def on_publish(path):
+            """Publica el personaje y refresca."""
+            msg_id = tk.messagebox.askyesno("Publicar", f"¿Deseas publicar este personaje en el Hub de ASIMOD?\n\nPath: {path}")
+            if msg_id:
+                async def run_publish():
+                    res = await self.publish_to_hub(path)
+                    color = "green" if res["status"] == "success" else "red"
+                    tk.messagebox.showinfo("Resultado", res["message"])
+                
+                # Ejecutar en hilo para no bloquear UI
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                loop.run_until_complete(run_publish())
+                loop.close()
 
         def on_toggle(path, var):
             if var.get():
@@ -386,8 +590,20 @@ class MediaGeneratorModule(StandardModule):
                     "Noticias": "📡", "Musical": "🎵", "Archviz": "🏢", "Publicidad": "🛍️"
                 }.get(p["category"], "📄")
                 lbl_text = f"{icon} {p['name']}"
-                tk.Label(row, text=lbl_text, bg=self.style.get_color("bg_dark"),
-                         fg="white", font=("Arial", 9)).pack(side=tk.LEFT, padx=5)
+                lbl = tk.Label(row, text=lbl_text, bg=self.style.get_color("bg_dark"),
+                         fg="white", font=("Arial", 9))
+                lbl.pack(side=tk.LEFT, padx=5)
+
+                # Grado y Publicar
+                grade = p.get("grade", 1)
+                tk.Label(row, text=f"• G{grade}", bg=self.style.get_color("bg_dark"),
+                         fg="#888", font=("Arial", 8)).pack(side=tk.LEFT, padx=5)
+
+                if p["category"] == "Personaje" and grade >= 2:
+                    btn_pub = tk.Button(row, text="🚀 PUBLICAR", bg="#2D5A27", fg="white", 
+                                       font=("Arial", 7, "bold"), bd=0, padx=5, pady=2,
+                                       command=lambda pt=path: on_publish(pt))
+                    btn_pub.pack(side=tk.RIGHT, padx=5)
 
         refresh_list()
 
@@ -403,7 +619,19 @@ class MediaGeneratorModule(StandardModule):
         """Sobrescribe el layout estándar para poner resultados ARRIBA y controles ABAJO."""
         from modules.widgets import HorizontalMenu, ControllerPanel, GalleryWidget
         
+        # SANEAMIENTO: Si ya existe el widget y es válido, lo reutilizamos
+        if hasattr(self, "_main_widget") and self._main_widget.winfo_exists():
+            # Pero nos aseguramos de que el panel de control se actualice
+            if hasattr(self, "ctrl_panel"):
+                self._update_controllers_logic(self.current_mode)
+            return self._main_widget
+            
+        # Limpieza profunda del padre para evitar duplicados
+        for child in parent.winfo_children():
+            child.destroy()
+            
         main_frame = tk.Frame(parent, bg=self.style.get_color("bg_main"))
+        self._main_widget = main_frame
         
         # 1. Menú Superior (Siempre arriba)
         if self.show_menu and self.menu_items:
@@ -462,6 +690,10 @@ class MediaGeneratorModule(StandardModule):
 
     def render_top_actions(self, parent):
         """Dibuja el área de prompt y botones en el panel inferior."""
+        # SANEAMIENTO PROFUNDO: Limpiar el contenedor de acciones antes de dibujar
+        for child in parent.winfo_children():
+            child.destroy()
+            
         frame = tk.Frame(parent, bg=self.style.get_color("bg_main"))
         frame.pack(fill=tk.BOTH, expand=True)
 
@@ -581,16 +813,28 @@ class MediaGeneratorModule(StandardModule):
             result = await self._perform_generation(prompt, mode, web_params=params)
             print(f"[MediaGenerator][Web] Resultado obtenido: {result}")
             
+            # Normalizar resultado si es una lista (ComfyUI devuelve listas)
+            if isinstance(result, list) and result:
+                result = result[0]
+
             # Si el resultado es una ruta de archivo, lo convertimos a URL estática
             if isinstance(result, str) and os.path.exists(result):
                 # IMPORTANTE: Movemos el archivo de forma síncrona para que la URL sea válida ya mismo
-                filename = os.path.basename(result)
-                target_dir = os.path.join(self.output_root, mode.lower())
-                os.makedirs(target_dir, exist_ok=True)
+                # SEGURIDAD: No mover si ya está en una carpeta de compuesta/ingrediente
+                if "texto/compuesto" in result.replace("\\", "/"):
+                    final_path = result
+                else:
+                    filename = os.path.basename(result)
+                    target_dir = os.path.join(self.output_root, mode.lower())
+                    os.makedirs(target_dir, exist_ok=True)
+                    
+                    final_path = os.path.join(target_dir, filename)
+                    if os.path.abspath(result) != os.path.abspath(final_path):
+                        shutil.move(result, final_path)
                 
-                final_path = os.path.join(target_dir, filename)
-                if os.path.abspath(result) != os.path.abspath(final_path):
-                    shutil.move(result, final_path)
+                # Obtener ruta relativa para la URL de la API
+                rel_url_path = os.path.relpath(final_path, self.output_root).replace("\\", "/")
+                filename = os.path.basename(final_path)
                 
                 # Actualizar la UI local si existe
                 if hasattr(self, "workspace") and self.workspace:
@@ -599,7 +843,7 @@ class MediaGeneratorModule(StandardModule):
                 return {
                     "status": "success", 
                     "type": "file", 
-                    "url": f"/v1/modules/{self.id}/output/{mode.lower()}/{filename}",
+                    "url": f"/v1/modules/{self.id}/output/{rel_url_path}",
                     "filename": filename
                 }
             else:
@@ -649,8 +893,8 @@ class MediaGeneratorModule(StandardModule):
         else:
             return os.path.join(base, "Otros")
 
-    async def list_compound_docs(self, grade=None):
-        """Lista documentos compuestos filtrados por grado, buscando en subcarpetas."""
+    async def list_compound_docs(self, grade=None, category=None):
+        """Lista documentos compuestos filtrados por grado y categoría, buscando en subcarpetas."""
         comp_root = os.path.join(self.output_root, "texto", "compuesto")
         if not os.path.exists(comp_root): return {"status": "success", "result": []}
         
@@ -662,15 +906,22 @@ class MediaGeneratorModule(StandardModule):
                     try:
                         with open(path, "r", encoding="utf-8") as f:
                             data = json.load(f)
-                            if grade is None or data.get("grado_desarrollo") == int(grade):
-                                # Ruta relativa al root de compuesto para consistencia
-                                rel_path = os.path.relpath(path, comp_root).replace("\\", "/")
-                                docs.append({
-                                    "name": data.get("titulo", filename),
-                                    "path": f"texto/compuesto/{rel_path}",
-                                    "grade": data.get("grado_desarrollo", 1),
-                                    "category": data.get("categoria")
-                                })
+                            # Filtrar por Grado
+                            if grade is not None and data.get("grado_desarrollo") != int(grade):
+                                continue
+                            
+                            # Filtrar por Categoría
+                            if category is not None and data.get("categoria") != category:
+                                continue
+
+                            # Ruta relativa al root de compuesto para consistencia
+                            rel_path = os.path.relpath(path, comp_root).replace("\\", "/")
+                            docs.append({
+                                "name": data.get("titulo", filename),
+                                "path": f"texto/compuesto/{rel_path}",
+                                "grade": data.get("grado_desarrollo", 1),
+                                "category": data.get("categoria")
+                            })
                     except: continue
         return {"status": "success", "result": docs}
 
@@ -709,6 +960,120 @@ class MediaGeneratorModule(StandardModule):
                                 result["products"].append(piece)  # Fallback
                     except: continue
         return {"status": "success", "result": result}
+
+    def handle_auto_full_character_generation(self):
+        """Dispara el proceso completo secuencial de creación de personaje."""
+        prompt = self.prompt_text.get("1.0", tk.END).strip()
+        if not prompt or "Escribe aquí" in prompt:
+            self._cache_result_and_show("Por favor, introduce un prompt descriptivo para el personaje.", "Texto")
+            return
+            
+        def run_sequence():
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                # 1. Fase G1: Perfil de Personaje (Texto)
+                self.chat_service.notify_system_msg("🚀 Iniciando Fase 1/4: Generando Perfil (G1)...", color="#40E0D0")
+                g1_params = {
+                    "workflow": "character_instruction.json",
+                    "compound": {
+                        "type": "Compuesto",
+                        "subtype": "Personaje",
+                        "category": "Personaje"
+                    }
+                }
+                # Enriquecer el prompt para el modelo local con estructura JSON sugerida
+                enriched_prompt = f"Crea un personaje detallado en formato JSON basado en esta idea: {prompt}. "
+                enriched_prompt += "Estructura obligatoria: {\"titulo\": \"...\", \"nombre\": \"...\", \"edad\": ..., \"apariencia\": \"...\", \"historia\": \"...\", \"personalidad\": \"...\"}. "
+                enriched_prompt += "No escribas nada fuera del JSON."
+                
+                res1 = loop.run_until_complete(self._perform_generation(enriched_prompt, "Texto", web_params=g1_params))
+                
+                # Manejar retorno (puede ser dict exitoso o la ruta directamente)
+                if isinstance(res1, dict) and res1.get("status") == "success":
+                    g1_path = res1.get("json_path")
+                elif isinstance(res1, str) and os.path.exists(res1):
+                    g1_path = res1
+                else:
+                    raise Exception(f"No se pudo generar G1. El modelo devolvió: {str(res1)[:200]}...")
+                
+                # 2. Fase G2: Imagen (G2)
+                self.chat_service.notify_system_msg("🎨 Fase 2/4: Generando Imagen Principal (G2)...", color="#40E0D0")
+                g2_params = {
+                    "source_doc": g1_path,
+                    "compound": {
+                        "type": "Compuesto",
+                        "subtype": "Personaje",
+                        "category": "Personaje"
+                    }
+                }
+                res2 = loop.run_until_complete(self._perform_generation(prompt, "Imagen", web_params=g2_params))
+                if isinstance(res2, dict) and res2.get("status") == "success":
+                    g2_path = res2.get("json_path")
+                elif isinstance(res2, list) and res2 and os.path.exists(res2[0]):
+                    g2_path = res2[0]
+                elif isinstance(res2, str) and os.path.exists(res2):
+                    g2_path = res2
+                else:
+                    raise Exception(f"Fallo en G2: {str(res2)[:200]}...")
+
+                # 3. Fase G3: Audio/Ficha (G3)
+                self.chat_service.notify_system_msg("🎙️ Fase 3/4: Generando Voz y Ficha Técnica (G3)...", color="#40E0D0")
+                g3_params = {
+                    "source_doc": g2_path,
+                    "compound": {
+                        "type": "Compuesto",
+                        "subtype": "Personaje",
+                        "category": "Personaje"
+                    }
+                }
+                res3 = loop.run_until_complete(self._perform_generation(prompt, "Audio", web_params=g3_params))
+                if isinstance(res3, dict) and res3.get("status") == "success":
+                    g3_path = res3.get("json_path")
+                elif isinstance(res3, list) and res3 and os.path.exists(res3[0]):
+                    g3_path = res3[0]
+                elif isinstance(res3, str) and os.path.exists(res3):
+                    g3_path = res3
+                else:
+                    raise Exception(f"Fallo en G3: {str(res3)[:200]}...")
+
+                # 4. Fase G4: Vídeo (G4)
+                self.chat_service.notify_system_msg("🎬 Fase 4/4: Generando Vídeos de Animación (G4)...", color="#40E0D0")
+                g4_params = {
+                    "source_doc": g3_path,
+                    "compound": {
+                        "type": "Compuesto",
+                        "subtype": "Personaje",
+                        "category": "Personaje"
+                    }
+                }
+                res4 = loop.run_until_complete(self._perform_generation(prompt, "Video", web_params=g4_params))
+                if isinstance(res4, dict) and res4.get("status") == "success":
+                    g4_path = res4.get("json_path")
+                    final_res = res4
+                elif isinstance(res4, list) and res4 and os.path.exists(res4[0]):
+                    g4_path = res4[0]
+                    final_res = {"status": "success", "json_path": g4_path}
+                elif isinstance(res4, str) and os.path.exists(res4):
+                    g4_path = res4
+                    final_res = {"status": "success", "json_path": g4_path}
+                else:
+                    raise Exception(f"Fallo en G4: {str(res4)[:200]}...")
+
+                # 5. Publicación Automática (Ya se hace dentro de _perform_generation para G4 final, pero aseguramos)
+                self.chat_service.notify_system_msg("✅ ¡PERSONAJE COMPLETO GENERADO CON ÉXITO!", color="#00ff00", beep=True)
+                self._cache_result_and_show(final_res, "Video")
+
+            except Exception as e:
+                import traceback
+                traceback.print_exc()
+                self._cache_result_and_show(f"Error en flujo automático: {str(e)}", "Texto")
+                self.chat_service.notify_system_msg(f"❌ Error en generación automática: {str(e)}", color="#ff4444")
+            finally:
+                loop.close()
+            
+        import threading
+        threading.Thread(target=run_sequence, daemon=True).start()
 
     def handle_generate_manual(self, prompt):
         """Versión de compatibilidad para disparar hilos desde la UI desktop."""
@@ -840,26 +1205,51 @@ class MediaGeneratorModule(StandardModule):
             # Si es el placeholder, ignorar
             if "Lo que NO quieres" in neg_prompt: neg_prompt = ""
         
-        # Detectar modo compuesto: leer directamente del estado interno (ya actualizado por callbacks)
-        desktop_is_compound = (not web_params) and self.compound_state.get("type") == "Compuesto"
+        # Detectar modo compuesto: leer directamente del estado interno
+        # Soportar variaciones de nombre (Compuesto/Compuesta) y ser flexible si se elige una receta
+        current_type = self.compound_state.get("type", "Simple")
+        current_wf = self._get_val("workflow", web_params) or ""
+        
+        is_recipe = "instruction.json" in current_wf.lower() or "recipe" in current_wf.lower()
+        desktop_is_compound = (not web_params) and (current_type in ["Compuesto", "Compuesta"] or is_recipe)
 
         if web_params:
             comp_state = web_params.get("compound", {})
-            if comp_state.get("type") == "Compuesto":
+            # Forzar modo compuesto si hay receta o si se indica explícitamente
+            if comp_state.get("type") in ["Compuesto", "Compuesta"] or is_recipe:
                 is_compound = True
                 comp_params = web_params
         elif desktop_is_compound:
             is_compound = True
-            comp_params = {
-                "compound": self.compound_state,
-                "source_doc": self.compound_state.get("source_doc")
-            }
 
         if is_compound:
-            # Inyectar neg_prompt en comp_params
+            # --- RESOLUCIÓN DINÁMICA DE SOURCE DOC ---
+            s_doc = None
+            if web_params:
+                s_doc = web_params.get("source_doc")
+                comp_params = web_params
+            else:
+                s_doc = self.compound_state.get("source_doc")
+                if not s_doc:
+                    # Si no está en el estado, intentar recuperarlo del dropdown y mapearlo
+                    ui_name = self._get_val("source_doc")
+                    if ui_name and hasattr(self, "current_source_docs"):
+                        for d in self.current_source_docs:
+                            if d["name"] == ui_name:
+                                s_doc = d["path"]
+                                break
+                
+                comp_params = {
+                    "compound": self.compound_state,
+                    "source_doc": s_doc,
+                    "workflow": current_wf
+                }
+
+            # Inyectar neg_prompt si existe
             if neg_prompt:
                 if "params" not in comp_params: comp_params["params"] = {}
                 comp_params["params"]["neg_prompt"] = neg_prompt
+
             return await self._generate_compound(prompt, mode, comp_params)
 
         if mode == "Imagen":
@@ -887,19 +1277,37 @@ class MediaGeneratorModule(StandardModule):
                     w_type = self._get_val("type", web_params, default="Simple")
                     w_subtype = self._get_val("subtype", web_params)
                     
-                    base_w = os.path.join(os.path.dirname(__file__), "workflows", w_type.lower())
-                    if not os.path.exists(base_w):
-                        base_w = os.path.join(os.path.dirname(__file__), "workflows", w_type.capitalize())
+                    current_wf = self._get_val("workflow", web_params)
                     
-                    if w_subtype:
-                        base_w = os.path.join(base_w, w_subtype.lower())
+                    if w_type == "Compuesto":
+                        # RECETA: Buscar en la carpeta 'processes'
+                        full_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "processes", current_wf))
+                    else:
+                        # WORKFLOW SIMPLE: Buscar en la carpeta correspondiente
+                        w_folder = "compuesta" if w_type.lower() == "compuesto" else w_type.lower()
+                        full_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "workflows", w_folder))
+                        if w_subtype:
+                            full_path = os.path.join(full_path, w_subtype.lower())
+                        full_path = os.path.join(full_path, current_wf)
                     
-                    full_path = os.path.join(base_w, w_file)
-                    print(f"[MediaGenerator] Workflow: {full_path}")
+                    print(f"[MediaGenerator] Workflow/Receta: {full_path}")
                     if os.path.exists(full_path):
                         try:
                             with open(full_path, "r", encoding="utf-8") as f:
                                 workflow_data = json.load(f)
+                            
+                            # --- FAILSAFE: Si el JSON tiene 'grades', es una RECETA, no un workflow ---
+                            if isinstance(workflow_data, dict) and "grades" in workflow_data:
+                                print(f"[MediaGenerator] Receta detectada por contenido. Forzando modo Compuesto.")
+                                is_compound = True
+                                if not comp_params:
+                                    comp_params = {
+                                        "compound": self.compound_state,
+                                        "source_doc": self.compound_state.get("source_doc"),
+                                        "workflow": current_wf
+                                    }
+                                return await self._generate_compound(prompt, mode, comp_params)
+                                
                         except Exception as e:
                             print(f"[MediaGenerator] Error workflow JSON: {e}")
                     else:
@@ -1023,11 +1431,19 @@ class MediaGeneratorModule(StandardModule):
             
             # Recoger inputs dinámicos
             input_files = []
+            img_dims = None
+
             if v_subtype == "Img+Audio2Video":
                 img = self._get_val("input_image", web_params)
                 if img and img != "Ninguno": 
                     if not os.path.isabs(img): img = os.path.join(self.output_root, img)
-                    if os.path.exists(img): input_files.append(img)
+                    if os.path.exists(img): 
+                        input_files.append(img)
+                        try:
+                            with Image.open(img) as im:
+                                img_dims = im.size
+                            print(f"[MediaGenerator] Resolución detectada de imagen de entrada: {img_dims[0]}x{img_dims[1]}")
+                        except: pass
                 
                 count_val = self._get_val("v_audio_count", web_params) or "1"
                 try: count = int(count_val)
@@ -1055,16 +1471,19 @@ class MediaGeneratorModule(StandardModule):
                         if not os.path.isabs(val): val = os.path.join(self.output_root, val)
                         if os.path.exists(val): input_files.append(val)
             
-            # Resolución de Video
-            preset = self._get_val("video_resolution", web_params, default="Apaisada SD (640x480)")
-            w, h = 640, 640 
-            if preset == "Personalizado":
-                w = self._get_val("video_resolution_w", web_params, default=640)
-                h = self._get_val("video_resolution_h", web_params, default=640)
-            elif preset:
-                import re
-                match = re.search(r"\((\d+)x(\d+)\)", str(preset))
-                if match: w, h = match.groups()
+            # Resolución de Video (Priorizar dimensiones de imagen si existe para evitar distorsión)
+            if img_dims:
+                w, h = img_dims
+            else:
+                preset = self._get_val("video_resolution", web_params, default="Apaisada SD (640x480)")
+                w, h = 640, 640 
+                if preset == "Personalizado":
+                    w = self._get_val("video_resolution_w", web_params, default=640)
+                    h = self._get_val("video_resolution_h", web_params, default=640)
+                elif preset:
+                    import re
+                    match = re.search(r"\((\d+)x(\d+)\)", str(preset))
+                    if match: w, h = match.groups()
             
             dur = self._get_val("video_duration", web_params, default=5)
             neg_prompt = self._get_val("neg_prompt", web_params, default="")
@@ -1176,8 +1595,8 @@ class MediaGeneratorModule(StandardModule):
     async def _generate_compound(self, prompt, mode, web_params):
         """Maneja el pipeline de 4 grados para piezas compuestas."""
         comp_state = web_params.get("compound", {})
-        subtype = comp_state.get("subtype")
-        category = comp_state.get("category")
+        subtype = comp_state.get("subtype") or web_params.get("subtype")
+        category = comp_state.get("category") or web_params.get("category")
         source_path = web_params.get("source_doc")
         
         # Determinar el grado objetivo basado en el panel (modo)
@@ -1311,12 +1730,25 @@ class MediaGeneratorModule(StandardModule):
             # Usar chat_service para generar el texto base
             resp = await self.chat_service.generate_chat([{"role":"user", "content":prompt}], system_prompt=system_p)
             try:
-                llm_json = json.loads(str(resp))
+                # Limpiar y parsear JSON
+                clean_resp = self._clean_json_markdown(str(resp))
+                llm_json = json.loads(clean_resp)
                 piece_data.update(llm_json)
                 # Preservar campos de tipo aunque el LLM los sobreescriba
                 piece_data.update(tipo_field)
             except:
-                piece_data["descripcion_generada"] = str(resp)
+                # Si falla el JSON, intentar mappear campos básicos desde el texto bruto
+                raw_text = str(resp)
+                piece_data["descripcion_generada"] = raw_text
+                # Heurística mínima para que G2 no falle (Nombre e Historia)
+                if "titulo" not in piece_data or piece_data["titulo"].startswith("Nueva"):
+                    lines = [l.strip() for l in raw_text.split("\n") if l.strip()]
+                    if lines: piece_data["titulo"] = lines[0][:50]
+                
+                if "historia" not in piece_data:
+                    piece_data["historia"] = raw_text[:500]
+                if "personalidad" not in piece_data:
+                    piece_data["personalidad"] = "Personalidad definida por su trasfondo."
 
             piece_data["grado_desarrollo"] = 1
 
@@ -1345,171 +1777,414 @@ class MediaGeneratorModule(StandardModule):
             img_recipe = recipe.get("grades", {}).get("2", {})
             if img_recipe.get("workflow_folder"):
                 adapter = self.image_service.get_adapter("ComfyUI")
+                # --- GENERACIÓN MULTI-FASE BASADA EN RECETA (+ Master Defaults) ---
+                # [ACTUALIZADO] Ahora buscamos en imagen/compuesta o imagen/simple según receta
+                wf_folder = img_recipe.get("workflow_folder", "workflows/imagen/compuesta/personaje/imagen")
+                steps = img_recipe.get("steps", [])
                 
-                # --- FASE 1: IMAGEN PRINCIPAL ---
-                main_wf_path = os.path.join(os.path.dirname(__file__), img_recipe["workflow_folder"], img_recipe["default_workflow"])
-                with open(main_wf_path, "r", encoding="utf-8") as f:
-                    main_wf = json.load(f)
-                
-                # Usar descripción generada como prompt (Confirmado por usuario)
-                p_text = piece_data.get("descripcion_generada", piece_data.get("descripcion_detallada", prompt))
-                print(f"[Compound] Generando Imagen Principal para {category}...")
-                main_img_res = await adapter.generate_image(p_text, workflow_json=main_wf)
-                
-                if isinstance(main_img_res, str) and os.path.exists(main_img_res):
-                    if "multimedia" not in piece_data: piece_data["multimedia"] = {}
-                    piece_data["multimedia"]["imagen_principal"] = os.path.basename(main_img_res)
-                    # También lo guardamos en la lista general para compatibilidad con la galería
-                    if "imagenes" not in piece_data["multimedia"]: piece_data["multimedia"]["imagenes"] = []
-                    piece_data["multimedia"]["imagenes"].append(os.path.basename(main_img_res))
+                if not steps:
+                    # Fallback si no hay pasos definidos, usar el default antiguo o el maestro
+                    master_wf = self._resolve_master_workflow("Imagen", recipe_wf=img_recipe.get("default_workflow", "DefaultImg2Img.json"))
+                    steps = [{"name": "Fase 1", "workflow": master_wf, "output_key": "imagen_principal"}]
+
+                step_results = {}
+                for step in steps:
+                    s_name = step.get("name")
+                    # RESOLUCIÓN MAESTRA: Si el paso es el principal o indica default, usar el maestro
+                    raw_wf = step.get("workflow")
+                    s_file = self._resolve_master_workflow("Imagen", recipe_wf=raw_wf)
+                    # Soporte para carpeta de workflow por paso (flexibilidad total)
+                    s_folder = step.get("workflow_folder", wf_folder)
+                    s_out_key = step.get("output_key", "imagen_aux")
+                    s_input_from = step.get("input_from")
                     
-                    # --- FASE 2: MULTIPLANO (Solo Personajes) ---
-                    if category == "Personaje":
-                        print("[Compound] Iniciando Fase 2 (Multiplano) para Personaje...")
-                        multi_wf_path = os.path.join(os.path.dirname(__file__), img_recipe["workflow_folder"], "multi_view.json")
+                    wf_path = os.path.normpath(os.path.join(os.path.dirname(__file__), s_folder, s_file))
+                    print(f"[Compound][G2] Ejecutando Paso '{s_name}': {wf_path}")
+                    
+                    if not os.path.exists(wf_path):
+                        raise Exception(f"No se encuentra el workflow necesario en: {wf_path}")
                         
-                        if os.path.exists(multi_wf_path):
-                            with open(multi_wf_path, "r", encoding="utf-8") as f:
-                                multi_wf = json.load(f)
-                            
-                            # Pasamos la imagen principal como input para mayor consistencia
-                            # El adaptador de ComfyUI se encargará de inyectarla en el nodo LoadImage
-                            multi_res = await adapter.generate_image(p_text, workflow_json=multi_wf, input_images=[main_img_res])
-                            
-                            # Procesar resultados (pueden ser uno o varios archivos)
-                            multi_list = []
-                            if isinstance(multi_res, str):
-                                multi_list.append(os.path.basename(multi_res))
-                                piece_data["multimedia"]["imagenes"].append(os.path.basename(multi_res))
-                            elif isinstance(multi_res, list):
-                                for r in multi_res:
-                                    multi_list.append(os.path.basename(r))
-                                    piece_data["multimedia"]["imagenes"].append(os.path.basename(r))
-                            
-                            piece_data["multimedia"]["hoja_diseno"] = multi_list
+                    with open(wf_path, "r", encoding="utf-8") as f:
+                        wf_json = json.load(f)
+                    
+                    # Preparar inputs
+                    p_text = piece_data.get("descripcion_generada", piece_data.get("descripcion_detallada", prompt))
+                    inputs = []
+                    if s_input_from and s_input_from in step_results:
+                        inputs.append(step_results[s_input_from])
+                    
+                    print(f"[Compound][G2] Generando {s_name} (Resolución fija: 512x512)...")
+                    res = await adapter.generate_image(p_text, workflow_json=wf_json, input_images=inputs, width=512, height=512)
+                    
+                    if isinstance(res, str) and os.path.exists(res):
+                        # Registrar resultado en multimedia
+                        if "multimedia" not in piece_data: piece_data["multimedia"] = {}
+                        if "imagenes" not in piece_data["multimedia"]: piece_data["multimedia"]["imagenes"] = []
+                        
+                        fname = os.path.basename(res)
+                        piece_data["multimedia"]["imagenes"].append(fname)
+                        piece_data["multimedia"][s_out_key] = fname
+                        step_results[s_name] = res # Guardar para siguientes pasos
+                        print(f"[Compound][G2] Paso '{s_name}' completado: {fname}")
+                    elif isinstance(res, list):
+                        # Caso de múltiples salidas
+                        flist = [os.path.basename(r) for r in res]
+                        if "multimedia" not in piece_data: piece_data["multimedia"] = {}
+                        piece_data["multimedia"].setdefault("imagenes", []).extend(flist)
+                        piece_data["multimedia"][s_out_key] = flist
+                        step_results[s_name] = res[0] # Usar la primera como referencia si hace falta
+                        print(f"[Compound][G2] Paso '{s_name}' completado (Múltiples): {len(flist)} archivos.")
 
-                    # --- EXPORTACIÓN AL REPOSITORIO GLOBAL (NUEVO) ---
-                    if category == "Personaje":
-                        try:
-                            import shutil
-                            char_name = piece_data.get("titulo", piece_data.get("id"))
-                            reg_path = os.path.join("Resources", "Characters", char_name)
-                            if not os.path.exists(reg_path):
-                                os.makedirs(reg_path, exist_ok=True)
-                            
-                            # Extraer descripción si existe el JSON interno
-                            personality = ""
-                            if "descripcion_generada" in piece_data:
-                                desc = piece_data["descripcion_generada"]
-                                if "```json" in desc:
-                                    try:
-                                        inner = json.loads(desc.split("```json")[1].split("```")[0])
-                                        personality = f"Arquetipo: {inner.get('archetype')}. Personalidad: {', '.join(inner.get('personality_and_traits', {}).get('personality_traits', []))}"
-                                    except: pass
-                            
-                            # Generar JSON simplificado para el Core
-                            reg_data = {
-                                "id": piece_data["id"],
-                                "name": char_name,
-                                "personality": personality,
-                                "avatar": piece_data.get("avatar", {}),
-                                "voice_id": piece_data.get("voice_config", {}).get("voice_id"),
-                                "voice_provider": piece_data.get("voice_config", {}).get("voice_provider")
-                            }
-                            
-                            # Copiar Assets a la carpeta del personaje
-                            multimedia = piece_data.get("multimedia", {})
-                            output_img_dir = os.path.join(os.path.dirname(__file__), "output", "imagen")
-                            
-                            for key in ["imagen_principal"]:
-                                img_name = multimedia.get(key)
-                                if img_name:
-                                    src = os.path.join(output_img_dir, img_name)
-                                    if os.path.exists(src):
-                                        shutil.copy(src, os.path.join(reg_path, "idle.png"))
-                                        reg_data["avatar"]["idle"] = f"Resources/Characters/{char_name}/idle.png"
-                                        reg_data["avatar"]["talking"] = f"Resources/Characters/{char_name}/idle.png"
-
-                            # Guardar JSON en el Hub
-                            with open(os.path.join(reg_path, "character.json"), "w", encoding="utf-8") as f:
-                                json.dump(reg_data, f, indent=4, ensure_ascii=False)
-                                
-                            print(f"[CharacterHub] Personaje '{char_name}' exportado con éxito.")
-                        except Exception as e:
-                            print(f"[CharacterHub] Error exportando: {e}")
-
-            piece_data["grado_desarrollo"] = 2
+            if "multimedia" in piece_data and piece_data["multimedia"].get("imagenes"):
+                piece_data["grado_desarrollo"] = 2
+            else:
+                print("[Warning] No se generaron imágenes en G2. El grado se mantiene en 1.")
 
         elif target_grade == 3:
-            # Grado 3: Generación de Audio (Voces, Música, FX)
-            print("[Compound] Escalando a Grado 3: Generando activos de audio...")
-            audio_plan = piece_data.get("audio_plan", {})
-            if not audio_plan:
-                print("[Warning] No hay plan de audio en la pieza. Intentando generar uno básico.")
-                # Lógica de fallback para generar plan de audio si falta
+            # Grado 3: Generación de Audio (Voz de presentación)
+            print("[Compound] Escalando a Grado 3: Generando voz del personaje...")
             
+            # 1. Determinar Datos del Personaje (NUEVO: Mejora de detección)
+            personality = piece_data.get("personality", piece_data.get("descripcion_generada", piece_data.get("descripcion", "")))
+            name = piece_data.get("titulo", "Este personaje")
+            
+            gender = piece_data.get("gender")
+            if not gender:
+                gender = self._detect_gender(name, personality)
+                piece_data["gender"] = gender
+                print(f"[Compound][G3] Género detectado automáticamente: {gender}")
+
+            voice_id = piece_data.get("voice_id")
+            
+            # 2. Generar Frase de Presentación via LLM (ASIMOD Core)
+            llm_prompt = f"Genera una frase de presentación MUY CORTA (máximo 15 palabras) para el personaje '{name}' basándote en su personalidad: {personality}. Escribe SOLO la frase, sin comillas."
+            res = await self.chat_service.generate_chat([{"role": "user", "content": llm_prompt}], system_prompt="Eres un guionista experto en diálogos cortos y carismáticos.")
+            presentation_phrase = str(res).strip()
+            piece_data["presentation_phrase"] = presentation_phrase
+            print(f"[Compound] Frase G3: {presentation_phrase}")
+
+            # 3. Generar Audio TTS (NUEVO: Selección aleatoria por género)
+            if not voice_id:
+                from core.factories.voice_factory import VoiceFactory
+                import random
+                adapter = VoiceFactory.get_adapter("Edge TTS")
+                if adapter:
+                    all_voices = adapter.list_voices()
+                    search_term = "Masculina" if gender == "male" else "Femenina"
+                    matching = [v["id"] for v in all_voices if search_term in v["name"]]
+                    if matching:
+                        voice_id = random.choice(matching)
+                        print(f"[Compound][G3] Voz aleatoria seleccionada para {gender}: {voice_id}")
+                
+                if not voice_id:
+                    # Fallback tradicional
+                    voice_id = "es-ES-ElviraNeural" if gender == "female" else "es-ES-AlvaroNeural"
+                
+                piece_data["voice_id"] = voice_id
+
             multimedia = piece_data.setdefault("multimedia", {})
             audios = multimedia.setdefault("audios", [])
-            
-            # 1. Generar Voces (TTS o ComfyUI)
-            # 2. Generar Música
-            # 3. Generar Efectos
-            # Por ahora, implementamos una llamada genérica al adaptador de audio
-            # Basándonos en la receta de audio
-            audio_recipe = recipe.get("grades", {}).get("3", {})
-            if audio_recipe.get("workflow_folder"):
-                 adapter = self.image_service.get_adapter("ComfyUI")
-                 # Aquí la lógica sería iterar sobre el plan de audio y disparar generaciones
-                 # Simplificamos a una generación de música ambiente por ahora
-                 wf_path = os.path.join(os.path.dirname(__file__), audio_recipe["workflow_folder"], audio_recipe["default_workflow"])
-                 if os.path.exists(wf_path):
-                     with open(wf_path, "r", encoding="utf-8") as f: wf = json.load(f)
-                     prompt_audio = f"Atmósfera sonora para {piece_data.get('titulo')}: {prompt}"
-                     audio_res = await adapter.generate_image(prompt_audio, workflow_json=wf)
-                     if isinstance(audio_res, str) and os.path.exists(audio_res):
-                         audios.append(os.path.basename(audio_res))
 
-            piece_data["grado_desarrollo"] = 3
+            # --- RESOLUCIÓN DE WORKFLOW (Diferenciar Virtual de ComfyUI) ---
+            wf_choice = self._resolve_master_workflow("Audio", subtype="voices")
+            
+            if wf_choice == "ASIMOD - Edge.json":
+                # MODO RÁPIDO (Virtual): Usar adaptador Edge directamente
+                target_prov = "Edge TTS"
+                print(f"[Compound][G3] Usando Workflow VIRTUAL: {wf_choice} (Generación Ultra-Rápida)")
+            else:
+                # MODO COMFYUI: Usar adaptador ComfyUI (Si existe el workflow real)
+                target_prov = "ComfyUI"
+                print(f"[Compound][G3] Usando Workflow COMFYUI: {wf_choice}")
+            
+            from core.factories.voice_factory import VoiceFactory
+            voice_adapter = VoiceFactory.get_adapter(target_prov) 
+            
+            if voice_adapter:
+                # Generar audio temporal
+                temp_audio = os.path.join(self.output_root, "audio", f"temp_{piece_data['id']}.mp3")
+                os.makedirs(os.path.dirname(temp_audio), exist_ok=True)
+                
+                # Si es ComfyUI, pasaríamos el workflow, pero el adaptador actual de ComfyUI 
+                # suele esperar que el pipeline sea distinto. De momento, usamos el adapter de voz
+                # que sabe lidiar con ComfyUI o Edge.
+                success = await voice_adapter.generate(presentation_phrase, temp_audio, voice_id=voice_id)
+                if success and os.path.exists(temp_audio):
+                    final_name = f"{piece_data['id']}_g3_voice.mp3"
+                    final_path = os.path.join(self.output_root, "audio", final_name)
+                    shutil.move(temp_audio, final_path)
+                    
+                    if final_name not in audios: audios.append(final_name)
+                    multimedia["audio_principal"] = final_name
+                    print(f"[Compound] Audio G3 generado con éxito: {final_name}")
+            
+            # Validar que se generó el audio antes de subir el grado
+            if "multimedia" in piece_data and piece_data["multimedia"].get("audio_principal"):
+                piece_data["grado_desarrollo"] = 3
+            else:
+                print("[Warning] No se generó el audio en G3. El grado se mantiene en 2.")
 
         elif target_grade == 4:
-            # Grado 4: Video (Composición final)
-            print("[Compound] Escalando a Grado 4: Renderizando video final...")
+            # Grado 4: Vídeo (Animación Talking e Idle)
+            print("[Compound] Escalando a Grado 4: Generando videos de speech e idle...")
             
             multimedia = piece_data.setdefault("multimedia", {})
             videos = multimedia.setdefault("videos", [])
             
+            # 1. Preparar Inputs
+            img_list = multimedia.get("imagenes", [])
+            audio_list = multimedia.get("audios", [])
+            
+            if not img_list or not audio_list:
+                raise Exception("Faltan imágenes (G2) o audios (G3) para generar el vídeo.")
+            
+            img_path = os.path.join(self.output_root, "imagen", img_list[0])
+            speech_audio_path = os.path.join(self.output_root, "audio", multimedia.get("audio_principal", audio_list[0]))
+            
+            # Detectar resolución de la imagen base (G2) para evitar distorsión en el video final
+            v_width, v_height = 1024, 1024
+            try:
+                with Image.open(img_path) as im:
+                    v_width, v_height = im.size
+                print(f"[Compound][G4] Sincronizando resolución con imagen original: {v_width}x{v_height}")
+            except Exception as e:
+                print(f"[Compound][Warning] No se pudo leer dimensiones de la imagen: {e}")
+            
+            # 2. Preparar Workflow
+            vid_recipe = recipe.get("grades", {}).get("4", {})
+            wf_folder = vid_recipe.get("workflow_folder", "workflows/video/simple/Img+Audio2Video")
+            raw_wf = vid_recipe.get("default_workflow", "DefaultImg+Audio2Video.json")
+            wf_file = self._resolve_master_workflow("Video", recipe_wf=raw_wf)
+            
+            wf_path = os.path.normpath(os.path.join(os.path.dirname(__file__), wf_folder, wf_file))
+
+            # Ruta para idle (Priorizar si ya existe en metadata, sino usar el default silencioso)
+            idle_audio_name = multimedia.get("audio_idle") or "idle_silent.mp3"
+            if idle_audio_name.startswith("http") or os.path.isabs(idle_audio_name):
+                idle_audio_path = idle_audio_name
+            elif os.path.exists(os.path.join(self.output_root, "audio", idle_audio_name)):
+                idle_audio_path = os.path.join(self.output_root, "audio", idle_audio_name)
+            else:
+                idle_audio_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "resources", "idle_silent.mp3"))
+
+            print(f"[Compound][G4] Usando audios respectivos: Speak={os.path.basename(speech_audio_path)}, Idle={os.path.basename(idle_audio_path)}")
+            
+            # 2. Generar SPEAKING Video
             video_recipe = recipe.get("grades", {}).get("4", {})
-            if video_recipe.get("workflow_folder"):
-                 adapter = self.image_service.get_adapter("ComfyUI")
-                 wf_path = os.path.join(os.path.dirname(__file__), video_recipe["workflow_folder"], video_recipe["default_workflow"])
-                 if os.path.exists(wf_path):
-                     with open(wf_path, "r", encoding="utf-8") as f: wf = json.load(f)
-                     
-                     # Recoger inputs de los grados anteriores
-                     input_files = []
-                     # Imagen del G2
-                     if multimedia.get("imagenes"):
-                         input_files.append(os.path.join(self.output_root, "imagen", multimedia["imagenes"][0]))
-                     # Audio del G3
-                     if multimedia.get("audios"):
-                         input_files.append(os.path.join(self.output_root, "audio", multimedia["audios"][0]))
-                     
-                     video_res = await adapter.generate_image(prompt, workflow_json=wf, input_images=input_files)
-                     if isinstance(video_res, str) and os.path.exists(video_res):
-                         videos.append(os.path.basename(video_res))
+            adapter = self.image_service.get_adapter("ComfyUI")
+            
+            if not os.path.exists(wf_path):
+                raise Exception(f"No se encuentra el workflow de animación en: {wf_path}")
 
-            piece_data["grado_desarrollo"] = 4
+            with open(wf_path, "r", encoding="utf-8") as f: wf = json.load(f)
+            
+            # 2.1 Generar VIDEO SPEAKING
+            print("[Compound] Generando VIDEO SPEAKING...")
+            v_speech_res = await adapter.generate_image(prompt, workflow_json=wf, input_images=[img_path, speech_audio_path], width=v_width, height=v_height)
+            
+            # Normalizar si es lista (ComfyUI)
+            if isinstance(v_speech_res, list) and v_speech_res:
+                v_speech_res = v_speech_res[0]
 
-        # 4. Guardar Resultado Progresivo en subcarpeta
+            if isinstance(v_speech_res, str) and os.path.exists(v_speech_res):
+                speech_target_name = f"{piece_data['id']}_g4_speaking.mp4"
+                speech_target_path = os.path.join(self.output_root, "video", speech_target_name)
+                shutil.copy(v_speech_res, speech_target_path)
+                
+                if speech_target_name not in videos: videos.append(speech_target_name)
+                multimedia["video_talking"] = speech_target_name
+                print(f"[Compound] Video Speaking G4 generado: {speech_target_name}")
+
+                # 2.2 Generar Versión SILENCIOSA (vía FFmpeg)
+                silent_target_name = f"{piece_data['id']}_g4_speaking_silent.mp4"
+                silent_target_path = os.path.join(self.output_root, "video", silent_target_name)
+                print(f"[Compound] Procesando versión silenciosa con FFmpeg...")
+                
+                try:
+                    cmd = ["ffmpeg", "-y", "-i", speech_target_path, "-an", "-vcodec", "copy", silent_target_path]
+                    proc = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+                    await proc.communicate()
+                    
+                    if os.path.exists(silent_target_path):
+                        if silent_target_name not in videos: videos.append(silent_target_name)
+                        multimedia["video_talking_silent"] = silent_target_name
+                        print(f"[Compound] Video Silent G4 generado: {silent_target_name}")
+                except Exception as e:
+                    print(f"[Compound][Warning] Falló el procesamiento de video silencioso: {e}")
+
+            # 3. Generar IDLE Video (Mismo workflow, audio silencioso)
+            if os.path.exists(idle_audio_path):
+                print("[Compound] Generando VIDEO IDLE...")
+                v_idle_res = await adapter.generate_image("idle loop", workflow_json=wf, input_images=[img_path, idle_audio_path], width=v_width, height=v_height)
+                
+                # Normalizar si es lista (ComfyUI)
+                if isinstance(v_idle_res, list) and v_idle_res:
+                    v_idle_res = v_idle_res[0]
+
+                if isinstance(v_idle_res, str) and os.path.exists(v_idle_res):
+                    idle_target_name = f"{piece_data['id']}_g4_idle.mp4"
+                    idle_target_path = os.path.join(self.output_root, "video", idle_target_name)
+                    shutil.copy(v_idle_res, idle_target_path)
+                    
+                    if idle_target_name not in videos: videos.append(idle_target_name)
+                    multimedia["video_idle"] = idle_target_name
+                    print(f"[Compound] Video Idle G4 generado: {idle_target_name}")
+            else:
+                print("[Warning] No se encontró el audio silent para IDLE en " + idle_audio_path)
+                
+            # Validar que se generó al menos un video antes de subir el grado
+            if "multimedia" in piece_data and piece_data["multimedia"].get("videos"):
+                piece_data["grado_desarrollo"] = 4
+            else:
+                raise Exception("[Error] No se generaron videos en G4. El grado no puede subir.")
+
+        # 4. Guardar Resultado Progresivo en subcarpeta central (SIEMPRE en texto/compuesto para trazabilidad)
         output_name = f"{piece_data['id']}.json"
-        subfolder = self._get_compound_path(category)
-        dest_path = os.path.join(subfolder, output_name)
+        # Forzar el uso de la ruta central para el JSON de metadata
+        central_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "output", "texto", "compuesto"))
+        subfolder_name = self._get_compound_path(category).split(os.path.sep)[-1] # Sacar el nombre final (Personajes, Escenarios...)
+        dest_path = os.path.join(central_root, subfolder_name, output_name)
         
+        print(f"[MediaGenerator][Debug] Guardando metadata central en: {dest_path}")
         os.makedirs(os.path.dirname(dest_path), exist_ok=True)
         with open(dest_path, "w", encoding="utf-8") as f:
             json.dump(piece_data, f, indent=4, ensure_ascii=False)
             
-        return dest_path
+        # PUBLICACIÓN AUTOMÁTICA AL HUB
+        if category == "Personaje":
+            await self.publish_to_hub(dest_path)
+            
+        return {
+            "status": "success", 
+            "json_path": dest_path, 
+            "piece_data": piece_data,
+            "id": piece_data.get("id")
+        }
+
+    async def publish_to_hub(self, json_path):
+        """Publica un ingrediente (actualmente Personaje) al repositorio global de ASIMOD."""
+        try:
+            # Resolver ruta si es relativa
+            if not os.path.isabs(json_path):
+                full_path = os.path.join(self.output_root, json_path)
+                if os.path.exists(full_path):
+                    json_path = full_path
+
+            if not os.path.exists(json_path):
+                return {"status": "error", "message": f"Archivo no encontrado: {json_path}"}
+                
+            with open(json_path, "r", encoding="utf-8") as f:
+                piece_data = json.load(f)
+                
+            category = piece_data.get("categoria", piece_data.get("category"))
+            if category != "Personaje":
+                return {"status": "error", "message": "Solo se pueden publicar Personajes de momento."}
+                
+            char_name = piece_data.get("titulo", piece_data.get("id"))
+            # Sanitizar nombre para carpeta (Windows no permite : / \ * ? " < > |)
+            char_folder = char_name
+            for char in '<>:"/\\|?*':
+                char_folder = char_folder.replace(char, "_")
+                
+            reg_path = os.path.join("Resources", "Characters", char_folder)
+            os.makedirs(reg_path, exist_ok=True)
+            
+            # Extraer personalidad
+            personality = ""
+            desc = piece_data.get("descripcion_generada", "")
+            if "```json" in desc:
+                try:
+                    inner = json.loads(desc.split("```json")[1].split("```")[0])
+                    pers_list = inner.get('personality_and_traits', {}).get('personality_traits', [])
+                    personality = f"Arquetipo: {inner.get('archetype')}. Personalidad: {', '.join(pers_list)}"
+                except: pass
+            
+            # Cargar datos existentes si es un 'Upgrade'
+            existing_reg_data = {}
+            reg_json_path = os.path.join(reg_path, "character.json")
+            if os.path.exists(reg_json_path):
+                try:
+                    with open(reg_json_path, "r", encoding="utf-8") as f:
+                        existing_reg_data = json.load(f)
+                    print(f"[MediaGenerator] Detectado upgrade para '{char_name}'. Preservando ID: {existing_reg_data.get('id')}")
+                except: pass
+
+            # Datos para character.json (Fusión)
+            reg_data = {
+                "id": existing_reg_data.get("id", piece_data["id"]),
+                "name": char_name,
+                "personality": personality if personality else existing_reg_data.get("personality", ""),
+                "gender": piece_data.get("gender", existing_reg_data.get("gender", "male")),
+                "active_thread": existing_reg_data.get("active_thread", f"thread_{piece_data['id']}"),
+                "avatar": existing_reg_data.get("avatar", {}),
+                "video": existing_reg_data.get("video", {"idle": "", "talking": ""}),
+                "voice_id": piece_data.get("voice_id") or existing_reg_data.get("voice_id"),
+                "voice_provider": piece_data.get("voice_provider") or existing_reg_data.get("voice_provider", "Edge TTS")
+            }
+            
+            # Copiar Assets
+            multimedia = piece_data.get("multimedia", {})
+            output_img_dir = os.path.join(os.path.dirname(__file__), "output", "imagen")
+            output_vid_dir = os.path.join(os.path.dirname(__file__), "output", "video")
+            
+            def ensure_str(val):
+                if isinstance(val, list) and val:
+                    return val[0]
+                return val
+
+            # 1. Idle Image (G2)
+            img_name = ensure_str(multimedia.get("imagen_principal"))
+            if img_name and isinstance(img_name, str):
+                src = os.path.join(output_img_dir, img_name)
+                if os.path.exists(src):
+                    shutil.copy(src, os.path.join(reg_path, "idle.png"))
+                    reg_data["avatar"]["idle"] = f"Resources/Characters/{char_folder}/idle.png"
+                    reg_data["avatar"]["talking"] = f"Resources/Characters/{char_folder}/idle.png"
+
+            # 2. Videos (G4) - OPCIONAL
+            # Talking Video
+            vid_talking = ensure_str(multimedia.get("video_talking"))
+            if vid_talking and isinstance(vid_talking, str):
+                src = os.path.join(output_vid_dir, vid_talking)
+                if os.path.exists(src):
+                    shutil.copy(src, os.path.join(reg_path, "talking.mp4"))
+                    reg_data["video"]["talking"] = f"Resources/Characters/{char_folder}/talking.mp4"
+
+            # Idle Video
+            vid_idle = ensure_str(multimedia.get("video_idle"))
+            if vid_idle and isinstance(vid_idle, str):
+                src = os.path.join(output_vid_dir, vid_idle)
+                if os.path.exists(src):
+                    shutil.copy(src, os.path.join(reg_path, "idle.mp4"))
+                    reg_data["video"]["idle"] = f"Resources/Characters/{char_folder}/idle.mp4"
+
+            # Guardar JSON final en el Hub
+            with open(os.path.join(reg_path, "character.json"), "w", encoding="utf-8") as f:
+                json.dump(reg_data, f, indent=4, ensure_ascii=False)
+                
+            print(f"[MediaGenerator] Personaje '{char_name}' publicado en el Hub.")
+            return {"status": "success", "message": f"Personaje '{char_name}' publicado con éxito en el Hub."}
+            
+        except Exception as e:
+            msg = f"Error publicando: {str(e)}"
+            print(f"[MediaGenerator] {msg}")
+            return {"status": "error", "message": msg}
+
+    def _detect_gender(self, name, personality):
+        """Intento simple de detectar género por palabras clave en nombre y descripción."""
+        p = (name + " " + personality).lower()
+        masc = ["hombre", "pirata", "caballero", "niño", "anciano", "rey", "señor", "niño", "lobo", "corsario", "masculino"]
+        fem = ["mujer", "femenina", "dama", "niña", "anciana", "reina", "señora", "doctora", "chica"]
+        
+        # Prioridad a palabras muy específicas
+        if any(w in p for w in ["mujer", "niña", "doctora", "reina", "femenina", "chica"]): return "female"
+        if any(w in p for w in ["hombre", "niño", "rey", "masculino", "caballero"]): return "male"
+        
+        # Conteo simple
+        m_count = sum(1 for w in masc if w in p)
+        f_count = sum(1 for w in fem if w in p)
+        
+        return "female" if f_count > m_count else "male"
 
     async def _auto_create_plano_ingredients(self, piece_data, comp_state, original_prompt):
         """
@@ -1732,15 +2407,22 @@ class MediaGeneratorModule(StandardModule):
 
     def _load_recipe(self, category):
         """Carga el JSON de instrucciones para una categoría."""
-        mapping = {
-            "Personaje": "character_instruction.json",
-            "Escenario": "setting_instruction.json",
-            "Prop": "prop_instruction.json",
-            "Sinopsis": "synopsis_instruction.json",
-            "Plano": "plano_instruction.json"
-        }
-        recipe_file = mapping.get(category, "character_instruction.json")
-        path = os.path.join(os.path.dirname(__file__), "processes", recipe_file)
+        # --- NUEVO: Priorizar el selector de 'Workflow' (que ahora muestra recetas en modo Compuesto) ---
+        # En la UI de escritorio, el valor del workflow se guarda en self.prompt_params
+        selected_wf = self._get_val("workflow")
+        if selected_wf and selected_wf.endswith(".json"):
+            recipe_file = selected_wf
+        else:
+            mapping = {
+                "Personaje": "character_instruction.json",
+                "Escenario": "setting_instruction.json",
+                "Prop": "prop_instruction.json",
+                "Sinopsis": "synopsis_instruction.json",
+                "Plano": "plano_instruction.json"
+            }
+            recipe_file = mapping.get(category, "character_instruction.json")
+            
+        path = os.path.abspath(os.path.join(os.path.dirname(__file__), "processes", recipe_file))
         if os.path.exists(path):
             with open(path, "r", encoding="utf-8") as f:
                 return json.load(f)
@@ -1760,13 +2442,32 @@ class MediaGeneratorModule(StandardModule):
         return "\n".join(contents)
 
     def _clean_json_markdown(self, text):
-        """Limpia bloques de código markdown de una respuesta LLM."""
+        """Limpia bloques de código markdown y extrae el primer objeto JSON válido."""
+        if not text: return ""
+        text = str(text).strip()
+        
+        # 1. Intentar extraer contenido entre bloques de código ```json ... ```
+        import re
+        code_blocks = re.findall(r'```(?:json)?\s*(\{.*?\})\s*```', text, re.DOTALL)
+        if code_blocks:
+            return code_blocks[0].strip()
+        
+        # 2. Intentar encontrar el primer '{' y el último '}'
+        # Esto sirve para cuando el LLM habla antes o después del JSON
+        start = text.find('{')
+        end = text.rfind('}')
+        if start != -1 and end != -1 and end > start:
+            return text[start:end+1].strip()
+            
+        # 3. Limpieza básica por si lo anterior falla
         return text.replace("```json", "").replace("```", "").strip()
 
-    def _rebuild_3d_panel(self, g_type=None):
+    def _rebuild_3d_panel(self, g_type=None, skip_clear=False):
         """Construye el panel de control para generación 3D."""
         if not self.ctrl_panel: return
-        self.ctrl_panel.clear()
+        
+        if not skip_clear:
+            self.ctrl_panel.clear()
 
         # 1. Tipo de generación 3D
         options = ["Texto a 3D", "Imagen a 3D"]
@@ -1924,6 +2625,11 @@ class MediaGeneratorModule(StandardModule):
             processed = []
             for item in content:
                 if isinstance(item, str) and os.path.exists(item):
+                    # SEGURIDAD: Si ya está en la carpeta de compuestos, no mover
+                    if "texto/compuesto" in item.replace("\\", "/"):
+                        processed.append(item)
+                        continue
+
                     new_p = os.path.join(target_dir, os.path.basename(item))
                     if os.path.abspath(item) != os.path.abspath(new_p):
                         try: shutil.move(item, new_p)
@@ -1935,13 +2641,18 @@ class MediaGeneratorModule(StandardModule):
                 final_file = processed[0]
         
         elif isinstance(content, str) and os.path.exists(content):
-            new_p = os.path.join(target_dir, os.path.basename(content))
-            if os.path.abspath(content) != os.path.abspath(new_p):
-                try: shutil.move(content, new_p)
-                except: pass
-                content = new_p
-            self.media_display.load_media(content)
-            final_file = content
+            # SEGURIDAD: Si ya está en la carpeta de compuestos, no mover
+            if "texto/compuesto" in content.replace("\\", "/"):
+                final_file = content
+            else:
+                new_p = os.path.join(target_dir, os.path.basename(content))
+                if os.path.abspath(content) != os.path.abspath(new_p):
+                    try: shutil.move(content, new_p)
+                    except: pass
+                    content = new_p
+                final_file = content
+            
+            self.media_display.load_media(final_file)
             
         elif isinstance(content, str):
             # Es texto (Prompt o resultado literario)
@@ -1959,21 +2670,31 @@ class MediaGeneratorModule(StandardModule):
         if final_file:
             self.gallery_path = os.path.dirname(final_file)
             self._refresh_gallery_from_disk()
+            
+            # 4. Refrescar controladores si estamos en modo compuesto para actualizar listas de ingredientes
+            if self.compound_state.get("type") == "Compuesto":
+                print("[MediaGenerator] Refrescando listas de ingredientes...")
+                if hasattr(self, "workspace") and self.workspace:
+                    self.workspace.after(100, lambda: self._update_controllers_logic(self.current_mode))
 
-    def _rebuild_audio_panel(self, a_type=None, a_prov=None):
+    def _rebuild_audio_panel(self, a_type=None, a_prov=None, skip_clear=False):
         """Reconstruye el panel de controles para el modo Audio de forma atómica."""
         if not self.ctrl_panel: return
         
-        # Capturar estado actual o usar defaults
-        current_type = a_type or self.ctrl_panel.get_value("audio_type") or "Voces"
-        current_prov = a_prov or self.ctrl_panel.get_value("audio_provider")
+        # Sincronizar con el estado persistente
+        current_type = a_type or self.audio_state.get("type", "Voces")
+        current_prov = a_prov or self.audio_state.get("provider", "ASIMOD - Edge")
         
-        self.ctrl_panel.clear()
+        # Actualizar memoria interna
+        self.audio_state.update({"type": current_type, "provider": current_prov})
+
+        # --- SE HA ELIMINADO EL CLEAR INTERNO ---
         
         # 1. Selector de TIPO (Prioridad 1)
         tipos = ["Voces", "Música", "Efectos"]
         self.ctrl_panel.add_dropdown("Tipo (Audio)", "audio_type", tipos, default=current_type,
-                                    callback=lambda v: self._rebuild_audio_panel(a_type=v, a_prov=None))
+                                    callback=lambda v: [self.audio_state.update({"type": v}), 
+                                                        self._update_controllers_logic(self.current_mode)])
         
         # 2. Selector de PROVEEDOR (Dependiente de Tipo)
         providers_map = {
@@ -1988,7 +2709,17 @@ class MediaGeneratorModule(StandardModule):
             current_prov = available_providers[0]
             
         self.ctrl_panel.add_dropdown("Proveedor", "audio_provider", available_providers, default=current_prov,
-                                    callback=lambda v: self._rebuild_audio_panel(a_type=current_type, a_prov=v))
+                                    callback=lambda v: [self.audio_state.update({"provider": v}), 
+                                                        self._update_controllers_logic(self.current_mode)])
+                                                        
+        # Botón para fijar como Default si es ComfyUI y estamos en Simple
+        if current_prov == "ComfyUI" and self.compound_state["type"] == "Simple":
+            # Usar la nueva clave unificada 'comfyui_defaults'
+            m_config = self.config_service.get("comfyui_defaults", {}).get("Audio", {})
+            current_master = m_config.get("workflow")
+            btn_text = "📌 Marcar como Default Audio"
+            if current_master: btn_text += f" ({current_master})"
+            self.ctrl_panel.add_button(btn_text, lambda: self._set_master_default("Audio"))
         
         # 3. CONTROLES ESPECÍFICOS SEGÚN PROVEEDOR
         if current_prov == "ComfyUI":
@@ -2229,45 +2960,43 @@ class MediaGeneratorModule(StandardModule):
 
     def _on_image_engine_change(self, engine_name):
         """Callback simple para redirigir a la reconstrucción completa."""
-        self._rebuild_image_panel(engine_name=engine_name)
+        self.image_state["engine"] = engine_name
+        self._update_controllers_logic(self.current_mode)
 
-    def _rebuild_image_panel(self, engine_name=None, w_type=None, w_subtype=None, img_count=None, w_flow=None):
-        """
-        Dibuja el panel de control de imagen de forma atómica y limpia.
-        Relee los valores necesarios para no perder el estado al reconstruir.
-        """
+    def _rebuild_image_panel(self, engine_name=None, w_type=None, w_subtype=None, img_count=None, w_flow=None, skip_clear=False):
+        """Dibuja el panel de control de imagen de forma atómica y limpia usando estado persistente."""
         if not self.ctrl_panel: return
 
-        # 1. Recuperar valores actuales antes de limpiar (si existen)
-        if not engine_name: 
-            engine_name = self.ctrl_panel.get_value("engine") or "DALL-E 3"
+        # 1. Sincronizar memoria persistente
+        if engine_name: self.image_state["engine"] = engine_name
+        if w_subtype: self.image_state["subtype"] = w_subtype
+        if img_count: self.image_state["count"] = img_count
+        if w_flow: self.image_state["workflow"] = w_flow
         
-        if not w_type: 
-            w_type = self.ctrl_panel.get_value("type")
-            
-        if not w_subtype: 
-            w_subtype = self.ctrl_panel.get_value("subtype")
-            
-        if not img_count: 
-            img_count = self.ctrl_panel.get_value("img_count") or "1"
-        
-        # Validar numérico para evitar fallos en el bucle
-        try:
-            icount = int(img_count)
-        except:
-            icount = 1
-            
-        if not w_flow:
-            w_flow = self.ctrl_panel.get_value("workflow")
+        # Recuperar valores consolidados
+        engine_name = self.image_state["engine"]
+        w_type = self.compound_state["type"] # Siempre prima el tipo global
+        w_subtype = self.image_state["subtype"]
+        img_count = self.image_state["count"]
+        w_flow = self.image_state["workflow"]
 
-        # 2. Limpiar panel por completo
-        self.ctrl_panel.clear()
+        # --- SE HA ELIMINADO EL CLEAR INTERNO ---
+
+        # Botón para fijar como Default en modo Simple
+        if self.compound_state["type"] == "Simple":
+            # Usar la nueva clave unificada 'comfyui_defaults'
+            m_config = self.config_service.get("comfyui_defaults", {}).get("Imagen", {})
+            current_master = m_config.get("workflow")
+            btn_text = f"📌 Fijar como Default Imagen"
+            if current_master: btn_text += f" ({current_master})"
+            self.ctrl_panel.add_button(btn_text, lambda: self._set_master_default("Imagen"))
 
         # 3. Reconstruir dropdown Motor (siempre presente)
         engines = self.image_service.get_engines_list()
         self.ctrl_panel.add_dropdown("Motor de Imagen", "engine", engines, 
                                     default=engine_name,
-                                    callback=lambda v: self._rebuild_image_panel(engine_name=v))
+                                    callback=lambda v: [self.image_state.update({"engine": v}), 
+                                                        self._update_controllers_logic(self.current_mode)])
         
         # Si acabamos de entrar o no hay valores, forzar los predefinidos solicitados
         is_first_build = not w_type and not w_subtype
@@ -2277,20 +3006,15 @@ class MediaGeneratorModule(StandardModule):
         
         elif engine_name == "ComfyUI":
             # Jerarquía de Workflows (Cargar para saber qué hay en disco)
-            base_w = os.path.join(os.path.dirname(__file__), "workflows")
+            # [ACTUALIZADO] Ahora la base para imagen es workflows/imagen
+            base_w = os.path.join(os.path.dirname(__file__), "workflows", "imagen")
             w_struct = self.image_service.scan_workflows(base_w)
             
-            # Selector Tipo (Forzado a Simple / Compuesta según petición)
-            types = ["Simple", "Compuesta"]
-            if not w_type or w_type not in types:
-                # Intentar recuperar del panel si existe, si no default
-                w_type = self.ctrl_panel.get_value("type") or "Simple"
-            
-            self.ctrl_panel.add_dropdown("Tipo", "type", types, default=w_type,
-                                        callback=lambda v: self._rebuild_image_panel(w_type=v, w_subtype=None))
+            # Usar el tipo global del estado para filtrar workflows
+            w_type = self.compound_state["type"]
             
             # Selector Subtipo
-            if w_type == "Compuesta":
+            if w_type == "Compuesto":
                 # Lista fija solicitada por el usuario
                 subtypes = ["Personaje", "Escenario", "Prop", "Sinopsis", "Plano", "Escena", "Secuencia", "Pelicula"]
             else:
@@ -2299,53 +3023,20 @@ class MediaGeneratorModule(StandardModule):
             
             if subtypes:
                 if not w_subtype or w_subtype not in subtypes:
-                    w_subtype = "Personaje" if w_type == "Compuesta" else (
+                    w_subtype = "Personaje" if w_type == "Compuesto" else (
                                 "text2img" if "text2img" in [s.lower() for s in subtypes] else subtypes[0])
                 
                 self.ctrl_panel.add_dropdown("Subtipo", "subtype", subtypes, default=w_subtype,
-                                            callback=lambda v: self._rebuild_image_panel(w_type=w_type, w_subtype=v, w_flow=None))
+                                            callback=lambda v: [self.image_state.update({"subtype": v}), 
+                                                                self._update_controllers_logic(self.current_mode)])
             
             # Selector de archivo Workflow
             self._update_workflow_files(w_type, w_subtype, current_flow=w_flow)
             
-            # --- SECCIÓN DE COMPUESTA (Origen e Ingredientes) ---
-            if w_type == "Compuesta":
-                try:
-                    # 1. Documento Origen
-                    res_docs = asyncio.run(self.list_compound_docs())
-                    all_docs = res_docs.get("result", [])
-                    cat_docs = [d for d in all_docs if d.get("category") == w_subtype]
-                    if cat_docs:
-                        names = [d["name"] for d in cat_docs]
-                        self.doc_map = {d["name"]: d["path"] for d in cat_docs}
-                        self.ctrl_panel.add_dropdown("Documento Origen", "doc_origin", names)
-                    else:
-                        self.ctrl_panel.add_label(f"⚠️ No hay {w_subtype} G1 para desarrollar.", color="#ffaa00")
-                except Exception as e:
-                    print(f"[MediaGenerator] Error en origen: {e}")
-
-            # Botón de ingredientes solo visible en Compuesta
-            if hasattr(self, "btn_ing"):
-                if w_type == "Compuesta":
-                    self.btn_ing.pack(side=tk.RIGHT, padx=5)
-                else:
-                    self.btn_ing.pack_forget()
-                    if self.ingredient_panel_visible: self._toggle_ingredient_panel()
-
-            # 2. Selector de Referencias (En el panel de la derecha)
-            if w_type == "Compuesta":
-                try:
-                    for child in self.ingredient_panel.winfo_children():
-                        child.destroy()
-                    
-                    res_pieces = asyncio.run(self.list_all_compound_pieces())
-                    ingredients = res_pieces.get("result", {}).get("ingredients", [])
-                    if ingredients:
-                        items = [(f"[{i['category']}] {i['name']}", i['path']) for i in ingredients]
-                        # Inyectar checklist en el panel lateral derecho
-                        self.ctrl_panel.add_check_list("🗳️", "references", items, parent=self.ingredient_panel)
-                except Exception as e:
-                    print(f"[MediaGenerator] Error en panel ingredientes: {e}")
+            # --- SECCIÓN DE COMPUESTA (Origen, Referencias y Workflows) ---
+            if w_type == "Compuesto":
+                # Usar el configurador centralizado para evitar colisiones
+                self._setup_compound_controllers("Imagen", skip_clear=True)
 
             # Control de Semilla
             current_seed = self.ctrl_panel.get_value("seed") or "-1"
@@ -2355,7 +3046,8 @@ class MediaGeneratorModule(StandardModule):
             if w_subtype and w_subtype.lower() == "img2img":
                 self.ctrl_panel.add_dropdown("Nº Imágenes", "img_count", ["1", "2", "3"], 
                                             default=img_count,
-                                            callback=lambda v: self._rebuild_image_panel(img_count=v))
+                                            callback=lambda v: [self.image_state.update({"count": v}), 
+                                                                self._update_controllers_logic(self.current_mode)])
                 for i in range(1, int(img_count) + 1):
                     key = f"input_image_{i}"
                     container = self.ctrl_panel.add_file_picker(f"Imagen {i}", key)
@@ -2393,9 +3085,6 @@ class MediaGeneratorModule(StandardModule):
         else:
             row = len(target.winfo_children()) // 2
             btn_frame.grid(row=row, column=0, columnspan=2, sticky="ew", pady=5)
-        
-        tk.Button(btn_frame, text="🚀 Lanzar ComfyUI", bg="#444", fg="white", bd=0, padx=10, 
-                  command=self._launch_comfy).pack(side=tk.LEFT, padx=5)
         
         tk.Button(btn_frame, text="⚙️ Config", bg="#333", fg="#4EC9B0", bd=0, padx=8,
                   command=self._show_comfy_config, cursor="hand2").pack(side=tk.LEFT, padx=5)
@@ -2463,19 +3152,31 @@ class MediaGeneratorModule(StandardModule):
             self._show_result(f"Error: No se encontró el acceso directo en {lnk_path}")
 
     def _update_workflow_files(self, w_type, w_subtype, current_flow=None):
-        base_w = os.path.join(os.path.dirname(__file__), "workflows", w_type.lower())
-        if w_subtype:
-            base_w = os.path.join(base_w, w_subtype.lower())
+        # --- SOLUCIÓN DEFINITIVA: Si es Compuesto, mostrar RECETAS en el selector de Workflow ---
+        if w_type == "Compuesto":
+            base_w = os.path.abspath(os.path.join(os.path.dirname(__file__), "processes"))
+            print(f"[MediaGenerator] Modo Compuesto: Listando Recetas en {base_w}")
+        else:
+            # [ACTUALIZADO] Ahora Imagen usa su propia subcarpeta 'imagen' para ser coherente con Video/Audio
+            w_type_folder = "compuesta" if w_type.lower() == "compuesto" else w_type.lower()
+            
+            if self.current_mode == "Imagen":
+                base_w = os.path.join(os.path.dirname(__file__), "workflows", "imagen", w_type_folder)
+            else:
+                base_w = os.path.join(os.path.dirname(__file__), "workflows", self.current_mode.lower(), w_type_folder)
+                
+            if w_subtype:
+                base_w = os.path.join(base_w, w_subtype.lower())
         
         # [NUEVO] Si no hay archivos .json en la carpeta base pero hay una subcarpeta 'imagen', entrar en ella
-        # Esto permite que 'compuesta/personaje' encuentre los flujos en 'compuesta/personaje/imagen'
-        if os.path.exists(base_w):
-            direct_json = [f for f in os.listdir(base_w) if f.endswith(".json")]
-            if not direct_json:
-                img_path = os.path.join(base_w, "imagen")
-                if os.path.exists(img_path):
+        # (Solo aplica para el modo Simple)
+        if w_type != "Compuesto" and os.path.exists(base_w):
+            img_path = os.path.join(base_w, "imagen")
+            if os.path.exists(img_path):
+                # Verificar si hay JSONs en la carpeta base actual
+                if not [f for f in os.listdir(base_w) if f.endswith(".json")]:
                     base_w = img_path
-
+ 
         files = self.image_service.get_workflow_files(base_w)
         
         # Prioridad de selección:
@@ -2501,7 +3202,9 @@ class MediaGeneratorModule(StandardModule):
                 default_val = files[0]
 
         if "workflow" not in self.ctrl_panel.controls:
-            self.ctrl_panel.add_dropdown("Workflow", "workflow", files, default=default_val)
+            self.ctrl_panel.add_dropdown("Workflow de Imagen", "workflow", files, default=default_val,
+                                        callback=lambda v: [self.image_state.update({"workflow": v}), 
+                                                            self._update_controllers_logic(self.current_mode)])
         else:
             self.ctrl_panel.update_dropdown("workflow", files)
 
@@ -2532,46 +3235,62 @@ class MediaGeneratorModule(StandardModule):
             else:
                 self.ctrl_panel.add_dropdown("Modelo", "model", models)
 
-    def _rebuild_video_panel(self, v_type=None, v_subtype=None):
+    def _rebuild_video_panel(self, v_type=None, v_subtype=None, skip_clear=False):
         """Reconstruye el panel de controles para el modo Video de forma atómica."""
         if not self.ctrl_panel: return
         
-        # Capturar estado actual
-        current_type = v_type or self.ctrl_panel.get_value("video_type") or "Simple"
-        current_subtype = v_subtype or self.ctrl_panel.get_value("video_subtype")
+        # Sincronizar con el estado persistente
+        parent_type = self.compound_state.get("type", "Simple")
+        current_type = v_type or self.video_state.get("type", "Simple")
+        raw_subtype = v_subtype or self.video_state.get("subtype", "Img2Video")
+        current_subtype = raw_subtype if raw_subtype else "Img2Video"
         
-        self.ctrl_panel.clear()
+        # Memorizar
+        self.video_state.update({"type": current_type, "subtype": current_subtype})
         
+        # --- SE HA ELIMINADO EL CLEAR INTERNO ---
+
         # 1. Motor (Solo ComfyUI de momento)
         self.ctrl_panel.add_dropdown("Motor de Video", "engine", ["ComfyUI"])
         
-        # 2. Tipo
-        tipos = ["Simple", "Compuesto"]
-        self.ctrl_panel.add_dropdown("Tipo", "video_type", tipos, default=current_type,
-                                    callback=lambda v: self._rebuild_video_panel(v_type=v, v_subtype=None))
+        # 2. Workflow de Video
+        # En compuesto Video (G4), el workflow es casi siempre Img+Audio2Video
+        sub_folder = current_subtype.replace(" ", "") if parent_type == "Simple" else "Img+Audio2Video"
+        wf_folder = os.path.join(os.path.dirname(__file__), "workflows", "video", "simple", sub_folder)
+        if not os.path.exists(wf_folder):
+            wf_folder = os.path.join(os.path.dirname(__file__), "workflows", "video", "simple")
         
-        # 3. Subtipo (Solo para Simple)
-        if current_type == "Simple":
-            subtipos = ["text2video", "img2video", "Img+Audio2Video", "video2video"]
-            if not current_subtype or current_subtype not in subtipos:
-                current_subtype = "text2video"
+        wf_files = [f for f in os.listdir(wf_folder) if f.endswith(".json")] if os.path.exists(wf_folder) else []
+        if wf_files:
+            current_wf = self.video_state.get("workflow") or wf_files[0]
+            if current_wf not in wf_files: current_wf = wf_files[0]
             
-            self.ctrl_panel.add_dropdown("Subtipo", "video_subtype", subtipos, default=current_subtype,
-                                        callback=lambda v: self._rebuild_video_panel(v_type=current_type, v_subtype=v))
-        
-        # 4. Selector de Workflow
-        self._update_video_workflow_files(current_type, current_subtype)
-        
-        # 5. Inputs dinámicos según subtipo
-        if current_type == "Simple":
+            self.ctrl_panel.add_dropdown("Workflow de Video", "workflow", wf_files, default=current_wf,
+                                        callback=lambda v: [self.video_state.update({"workflow": v}),
+                                                            self._update_controllers_logic(self.current_mode)])
+            
+            # Botón para fijar como Default en modo Simple
+            if self.compound_state["type"] == "Simple":
+                # Usar la nueva clave unificada 'comfyui_defaults'
+                m_config = self.config_service.get("comfyui_defaults", {}).get("Video", {})
+                current_master = m_config.get("workflow")
+                btn_text = "📌 Marcar como Default Video"
+                if current_master: btn_text += f" ({current_master})"
+                self.ctrl_panel.add_button(btn_text, lambda: self._set_master_default("Video"))
+        else:
+            self.ctrl_panel.add_label("⚠️ Sin workflows de video detectados.", color="#ffaa00")
+
+        # 3. Inputs dinámicos (Solo para Simple)
+        if parent_type == "Simple":
             if "img" in current_subtype.lower():
                 self.ctrl_panel.add_file_picker("Imagen de entrada", "input_image")
             
             if current_subtype == "Img+Audio2Video":
                 counts = ["1", "2", "3"]
-                current_count = self.ctrl_panel.get_value("v_audio_count") or "1"
+                current_count = self.video_state.get("audio_count", "1")
                 self.ctrl_panel.add_dropdown("Nº de Audios", "v_audio_count", counts, default=current_count,
-                                            callback=lambda v: self._rebuild_video_panel(v_subtype=current_subtype))
+                                            callback=lambda v: [self.video_state.update({"audio_count": v}), 
+                                                                self._update_controllers_logic(self.current_mode)])
                 
                 for i in range(1, int(current_count) + 1):
                     self.ctrl_panel.add_file_picker(f"Audio {i}", f"input_audio_{i}", 
@@ -2599,7 +3318,13 @@ class MediaGeneratorModule(StandardModule):
         self.ctrl_panel.add_input("Prompt Negativo", "neg_prompt", 
                                  default="low quality, blurry, static, text, watermark, deformed, bad proportions")
         
-        self._add_comfy_launch_controls()
+        if parent_type == "Compuesto":
+            # Asegurar que la categoría por defecto sea Personaje si estamos en Video
+            if not self.compound_state.get("category"):
+                self.compound_state["category"] = "Personaje"
+            self._setup_compound_controllers("Video", skip_clear=True)
+        else:
+            self._add_comfy_launch_controls()
 
     def _update_video_workflow_files(self, v_type, v_subtype):
         """Escanea la carpeta de workflows de video según el tipo y subtipo."""
@@ -2851,74 +3576,116 @@ class ComfyUIConfigView(tk.Frame):
                   relief="flat", font=("Arial", 8, "bold"), cursor="hand2", 
                   command=self.on_back).pack(side=tk.LEFT)
         
-        tk.Label(header, text="CONFIGURACIÓN DE WORKFLOWS", bg=style.get_color("bg_main"), 
-                 fg=style.get_color("accent"), font=("Arial", 9, "bold")).pack(side=tk.LEFT, padx=20)
+        tk.Label(header, text="CONFIGURACIÓN MAESTRA DE WORKFLOWS", bg=style.get_color("bg_main"), 
+                 fg=style.get_color("accent"), font=("Arial", 10, "bold")).pack(side=tk.LEFT, padx=20)
         
-        self.container = tk.Frame(self, bg=style.get_color("bg_main"))
-        self.container.pack(fill=tk.BOTH, expand=True)
+        # Contenedor con Scroll para que quepan todos los tipos
+        self.canvas = tk.Canvas(self, bg=style.get_color("bg_main"), highlightthickness=0)
+        self.scrollbar = ttk.Scrollbar(self, orient="vertical", command=self.canvas.yview)
+        self.scroll_frame = tk.Frame(self.canvas, bg=style.get_color("bg_main"))
         
-        # Layout en 2 columnas para que no ocupe tanto alto
-        self.entries = {}
+        self.scroll_frame.bind("<Configure>", lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all")))
+        self.canvas.create_window((0, 0), window=self.scroll_frame, anchor="nw")
+        self.canvas.configure(yscrollcommand=self.scrollbar.set)
+        
+        self.canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        self.scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        # Mapeo de Dropdowns
+        self.selectors = {} # {(cat, sub): combobox}
+        
         self._build_interface()
         
-        # Pie de página con botón de guardar
+        # Pie de página
         footer = tk.Frame(self, bg=style.get_color("bg_main"))
         footer.pack(fill=tk.X, pady=(10, 0))
         
         tk.Button(footer, text="Guardar como Predeterminados", bg=style.get_color("accent"), fg="white", 
-                  bd=0, padx=15, pady=5, font=("Arial", 8, "bold"),
+                  bd=0, padx=20, pady=8, font=("Arial", 9, "bold"),
                   command=self._save).pack(side=tk.RIGHT)
 
     def _build_interface(self):
-        categories = ["Imagen", "Video", "3D", "Audio"]
+        # Definición de la jerarquía que queremos configurar
+        structure = {
+            "Imagen": ["text2img", "img2img"],
+            "Video": ["Img2Video", "Img+Audio2Video"],
+            "Audio": ["voices", "music", "sounds"],
+            "3D": ["img_to_3d"]
+        }
+        
         base_path = os.path.join(os.path.dirname(__file__), "workflows")
         
-        # Usar grid dentro del container para 2x2
-        for i, cat in enumerate(categories):
-            r, c = i // 2, i % 2
-            frame = tk.LabelFrame(self.container, text=cat, bg=self.style.get_color("bg_main"), 
-                                  fg="#666", font=("Arial", 8, "bold"), padx=10, pady=5)
-            frame.grid(row=r, column=c, sticky="nsew", padx=5, pady=2)
+        for cat, subtypes in structure.items():
+            # Grupo por Categoría
+            group = tk.LabelFrame(self.scroll_frame, text=cat.upper(), bg=self.style.get_color("bg_main"), 
+                                  fg=self.style.get_color("accent"), font=("Arial", 9, "bold"), padx=15, pady=10)
+            group.pack(fill=tk.X, padx=5, pady=10)
             
-            # Recuperar valores actuales
-            current = self.defaults.get(cat, {})
-            c_type = current.get("type", "Simple")
-            c_subtype = current.get("subtype", "")
-            c_flow = current.get("workflow", "")
+            cat_folder = cat.lower()
+            cat_path = os.path.join(base_path, cat_folder)
             
-            cat_path = os.path.join(base_path, cat.lower()) if cat.lower() != "3d" else os.path.join(base_path, "3d")
-            w_struct = self.image_service.scan_workflows(cat_path) if os.path.exists(cat_path) else {}
-            
-            # Controles compactos
-            tk.Label(frame, text="Tipo / Subtipo:", bg=self.style.get_color("bg_main"), fg="#888", font=("Arial", 7)).pack(anchor="w")
-            row1 = tk.Frame(frame, bg=self.style.get_color("bg_main"))
-            row1.pack(fill=tk.X)
-            
-            type_list = list(w_struct.keys()) or ["Simple"]
-            cb_type = ttk.Combobox(row1, values=type_list, width=10, state="readonly", font=("Arial", 8))
-            cb_type.pack(side=tk.LEFT)
-            cb_type.set(c_type if c_type in type_list else type_list[0])
-            
-            subtypes = w_struct.get(cb_type.get(), [])
-            cb_sub = ttk.Combobox(row1, values=subtypes, width=10, state="readonly", font=("Arial", 8))
-            cb_sub.pack(side=tk.LEFT, padx=5)
-            cb_sub.set(c_subtype if c_subtype in subtypes else (subtypes[0] if subtypes else ""))
-            
-            tk.Label(frame, text="Archivo:", bg=self.style.get_color("bg_main"), fg="#888", font=("Arial", 7)).pack(anchor="w", pady=(5,0))
-            
-            files_path = os.path.join(cat_path, cb_type.get().lower())
-            if cb_sub.get(): files_path = os.path.join(files_path, cb_sub.get().lower())
-            files = self.image_service.get_workflow_files(files_path) if os.path.exists(files_path) else []
-            
-            cb_flow = ttk.Combobox(frame, values=files, width=25, state="readonly", font=("Arial", 8))
-            cb_flow.pack(fill=tk.X)
-            cb_flow.set(c_flow if c_flow in files else (files[0] if files else ""))
-            
-            self.entries[cat] = {
-                "type": cb_type, "subtype": cb_sub, "workflow": cb_flow, "cat_path": cat_path
-            }
-            
-            cb_sub.bind("<<ComboboxSelected>>", lambda e, c=cat: self._update_row(c))
+            for sub in subtypes:
+                row = tk.Frame(group, bg=self.style.get_color("bg_main"), pady=2)
+                row.pack(fill=tk.X)
+                
+                # Nombre del Subtipo
+                lbl = tk.Label(row, text=f"{sub}:", width=18, anchor="w", 
+                               bg=self.style.get_color("bg_main"), fg="#bbb", font=("Arial", 8))
+                lbl.pack(side=tk.LEFT)
+                
+                # Buscar archivos en disco para este subtipo
+                # La estructura ahora es workflows/[cat]/[type]/[sub] pero para config lo simplificamos a workflows/[cat]/simple/[sub] o lo que corresponda
+                # Usamos simple como carpeta base para los defaults maestros
+                sub_path = os.path.join(cat_path, "simple", sub)
+                if not os.path.exists(sub_path):
+                    # Fallback si no hay carpeta 'simple' intermedia
+                    sub_path = os.path.join(cat_path, sub)
+                
+                files = []
+                if os.path.exists(sub_path):
+                    files = [f for f in os.listdir(sub_path) if f.endswith(".json")]
+                
+                cb = ttk.Combobox(row, values=files, state="readonly", font=("Arial", 8), width=40)
+                cb.pack(side=tk.LEFT, fill=tk.X, expand=True)
+                
+                # Cargar valor actual de la configuración
+                current_val = self.defaults.get(cat, {}).get(sub, "")
+                if current_val in files:
+                    cb.set(current_val)
+                elif files:
+                    cb.set(files[0])
+                
+                self.selectors[(cat, sub)] = cb
+
+        # Campo extra para la ruta de output (Root)
+        out_frame = tk.LabelFrame(self.scroll_frame, text="SISTEMA", bg=self.style.get_color("bg_main"),
+                                 fg="#888", font=("Arial", 9, "bold"), padx=15, pady=10)
+        out_frame.pack(fill=tk.X, padx=5, pady=10)
+        
+        tk.Label(out_frame, text="Ruta de Salida (Output Root):", bg=self.style.get_color("bg_main"), 
+                 fg="#bbb", font=("Arial", 8)).pack(anchor="w")
+        self.ent_output = tk.Entry(out_frame, bg=self.style.get_color("bg_input"), fg="white", 
+                                  bd=0, font=("Arial", 9), insertbackground="white")
+        self.ent_output.pack(fill=tk.X, pady=5)
+        self.ent_output.insert(0, self.config.get("media_output_root", "output"))
+
+    def _save(self):
+        # Recopilar todos los valores de los comboboxes
+        new_defaults = {}
+        for (cat, sub), cb in self.selectors.items():
+            if cat not in new_defaults: new_defaults[cat] = {}
+            new_defaults[cat][sub] = cb.get()
+        
+        # Guardar en Config
+        self.config.set("comfyui_defaults", new_defaults)
+        
+        # Guardar Output Root
+        self.config.set("media_output_root", self.ent_output.get())
+        
+        # Notificar
+        from tkinter import messagebox
+        messagebox.showinfo("Configuración", "Workflows predeterminados guardados con éxito.")
+        if self.on_back: self.on_back()
 
         # Ruta de Output Configurable
         tk.Frame(self.container, bg="#333", height=1).grid(row=2, column=0, columnspan=2, sticky="ew", pady=10)

@@ -1,0 +1,15 @@
+{
+    "id": "personaje_1776489021",
+    "name": "BARBA AZUL PIRATA",
+    "personality": "Arquetipo: None. Personalidad: ",
+    "avatar": {
+        "idle": "Resources/Characters/BARBA AZUL PIRATA/idle.png",
+        "talking": "Resources/Characters/BARBA AZUL PIRATA/idle.png"
+    },
+    "video": {
+        "idle": "",
+        "talking": ""
+    },
+    "voice_id": "es-ES-ElviraNeural",
+    "voice_provider": "Edge TTS"
+}

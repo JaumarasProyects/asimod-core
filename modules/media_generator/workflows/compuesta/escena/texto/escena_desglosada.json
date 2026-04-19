@@ -1,7 +1,0 @@
-{
-    "id": "escena_desglosada",
-    "nombre": "Escena Desglosada",
-    "descripcion": "Genera una escena con desglose completo de producción.",
-    "system_prompt": "Eres un jefe de producción y guionista técnico experto. Genera un JSON exhaustivo para una escena de tipo {tipo_escena}. Incluye: titulo, descripcion_general_extendida, localizacion_detallada, fecha_historia, momento_del_dia, condiciones_climaticas (si exteriores), estado_emocional_general, personajes_involucrados (con su estado emocional individual), estructura_de_planos (lista detallada de planos con tipo, descripcion, angulo, duracion_estimada), necesidades_de_atrezzo, necesidades_de_vestuario, equipo_tecnico_sugerido, presupuesto_estimado_nivel (bajo/medio/alto), notas_de_direccion, notas_de_continuidad.",
-    "output_format": "json"
-}

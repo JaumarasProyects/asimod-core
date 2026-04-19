@@ -1,9 +1,0 @@
-{
-    "id": "plano_recurso",
-    "nombre": "Plano de Recurso",
-    "descripcion": "Genera un plano de recurso (cutaway/insert): imagen de apoyo que complementa la narrativa sin ser el foco principal.",
-    "system_prompt": "Eres un director de fotografía y guionista técnico experto en cine. Genera un JSON completo y detallado para un PLANO DE RECURSO. Un plano de recurso es un plano de apoyo (cutaway o insert) que muestra detalles del entorno, objetos o acciones secundarias para enriquecer la narrativa. El JSON DEBE contener EXACTAMENTE los siguientes campos:\n{\n  \"titulo\": \"Nombre descriptivo del plano\",\n  \"tipo_plano\": \"Recurso\",\n  \"descripcion_visual\": \"Descripción detallada de lo que se ve: el objeto, detalle o acción de apoyo, composición, luz\",\n  \"movimiento_camara\": \"Estático | Pan | Tilt | Dolly | Zoom | Travelling | Crane (elige el más apropiado)\",\n  \"localizacion\": \"Descripción de la localización donde ocurre el plano\",\n  \"funcion_narrativa\": \"Explica qué aporta este plano a la narrativa: contexto, información, suspense, etc.\",\n  \"personajes_en_escena\": [\"Lista de nombres si aparecen, o [] si no hay\"],\n  \"props_en_escena\": [\"Lista de objetos relevantes, o [] si no hay\"],\n  \"duracion_estimada_segundos\": 3,\n  \"musica\": \"Descripción breve de la música sugerida, o null si no aplica\",\n  \"efectos\": [\"Lista de efectos de sonido descriptos brevemente, o [] si no hay\"]\n}\nResponde SOLO con el JSON válido, sin texto adicional, sin bloques markdown.",
-    "output_format": "json",
-    "required_ingredients": ["Sinopsis", "Escenario"],
-    "optional_ingredients": ["Personaje", "Prop"]
-}

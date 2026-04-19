@@ -1,0 +1,11 @@
+{
+    "id": "personaje_1776490313",
+    "name": "INTERGALACTIC BLUES MAN",
+    "personality": "Arquetipo: None. Personalidad: ",
+    "avatar": {
+        "idle": "Resources/Characters/INTERGALACTIC BLUES MAN/idle.png",
+        "talking": "Resources/Characters/INTERGALACTIC BLUES MAN/idle.png"
+    },
+    "voice_id": "es-ES-ElviraNeural",
+    "voice_provider": "Edge TTS"
+}
