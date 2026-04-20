@@ -177,14 +177,36 @@
                         <div id="avatarVisualizer" class="avatar-circle" title="Abrir Biblioteca" style="cursor:pointer;">
                             <span id="avatarFallback" class="avatar-icon">👤</span>
                             <img id="avatarImage" src="" style="display:none;">
-                            <video id="avatarVideoIdle" src="" style="display:none;" loop muted playsinline webkit-playsinline preload="auto"></video>
-                            <video id="avatarVideoTalking" src="" style="display:none;" loop muted playsinline webkit-playsinline preload="auto"></video>
+                            <video id="avatarVideoIdle" src="" style="display:none;" loop muted playsinline preload="auto"></video>
+                            <video id="avatarVideoTalking" src="" style="display:none;" loop muted playsinline preload="auto"></video>
+                            <video id="avatarVideoIdle_joy" src="" style="display:none;" loop muted playsinline preload="auto"></video>
+                            <video id="avatarVideoTalking_joy" src="" style="display:none;" loop muted playsinline preload="auto"></video>
+                            <video id="avatarVideoIdle_anger" src="" style="display:none;" loop muted playsinline preload="auto"></video>
+                            <video id="avatarVideoTalking_anger" src="" style="display:none;" loop muted playsinline preload="auto"></video>
                             <div id="avatarEmoji" class="avatar-emoji"></div>
                             <div class="avatar-ring"></div>
+                            
+                            <!-- Botón de Biblioteca (HUD) -->
+                            <button id="hudLibraryBtn" class="hud-btn-library" title="Abrir Biblioteca">📁</button>
+                            
+                            <!-- Marcadores de Humor/Estado -->
+                            <div class="hud-mood-markers">
+                                <div class="mood-dot joy" data-mood="joy" title="Alegría"></div>
+                                <div class="mood-dot anger" data-mood="anger" title="Ira"></div>
+                                <div class="mood-dot fear" data-mood="fear" title="Miedo"></div>
+                                <div class="mood-dot stress" data-mood="stress" title="Estrés"></div>
+                            </div>
                         </div>
                         <div class="avatar-info">
-                            <span id="avatarName" class="avatar-name">Sistema</span>
-                            <span id="avatarStatus" class="avatar-status">En línea</span>
+                            <span id="avatarName" class="avatar-name">Sincronizando...</span>
+                            
+                            <!-- Selector de Hilos Rápido -->
+                            <div class="hud-thread-picker">
+                                <select id="hudThreadSelect" title="Cambiar Memoria"></select>
+                                <button id="hudNewThreadBtn" class="hud-add-thread" title="Nuevo Hilo">+</button>
+                            </div>
+
+                            <span id="avatarStatus" class="avatar-status">Conectando con el Núcleo</span>
                         </div>
                     </div>
                 </div>
@@ -241,6 +263,6 @@
     </div>
 
     <!-- Scripts -->
-    <script src="js/app.js"></script>
+    <script src="js/app.js?v=2.2.0"></script>
 </body>
 </html>

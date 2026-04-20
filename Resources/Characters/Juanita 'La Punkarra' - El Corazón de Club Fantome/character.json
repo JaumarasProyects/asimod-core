@@ -1,0 +1,23 @@
+{
+    "id": "personaje_1776666263",
+    "name": "Juanita 'La Punkarra' - El Corazón de Club Fantome",
+    "personality": "",
+    "gender": "male",
+    "active_thread": "thread_personaje_1776666263",
+    "avatar": {
+        "idle": "Resources/Characters/Juanita 'La Punkarra' - El Corazón de Club Fantome/idle.png",
+        "talking": "Resources/Characters/Juanita 'La Punkarra' - El Corazón de Club Fantome/talking.png",
+        "idle_anger": "Resources/Characters/Juanita 'La Punkarra' - El Corazón de Club Fantome/idle_anger.png",
+        "talking_anger": "Resources/Characters/Juanita 'La Punkarra' - El Corazón de Club Fantome/talking_anger.png",
+        "idle_joy": "Resources/Characters/Juanita 'La Punkarra' - El Corazón de Club Fantome/idle_joy.png",
+        "talking_joy": "Resources/Characters/Juanita 'La Punkarra' - El Corazón de Club Fantome/talking_joy.png"
+    },
+    "video": {
+        "idle": "Resources/Characters/Juanita 'La Punkarra' - El Corazón de Club Fantome/idle.mp4",
+        "talking": "Resources/Characters/Juanita 'La Punkarra' - El Corazón de Club Fantome/talking.mp4",
+        "talking_anger": "Resources/Characters/Juanita 'La Punkarra' - El Corazón de Club Fantome/talking_anger.mp4",
+        "talking_joy": "Resources/Characters/Juanita 'La Punkarra' - El Corazón de Club Fantome/talking_joy.mp4"
+    },
+    "voice_id": "es-US-AlonsoNeural",
+    "voice_provider": "Edge TTS"
+}

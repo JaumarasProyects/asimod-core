@@ -44,6 +44,9 @@ class ChatService(ChatPort):
         # Callback para notificar mensajes locales/sistema a la UI
         self.on_system_msg_cb: Optional[Callable[[str, str], None]] = None
 
+        # Callback para notificar emojis detectados ANTES del TTS (Sincronía temprana)
+        self.on_emojis_detected_cb: Optional[Callable[[List[str]], None]] = None
+
         # Servicios de voz
         self.voice_service = VoiceService(config_service, self.locale_service)
         
@@ -63,6 +66,25 @@ class ChatService(ChatPort):
         # Cargar memoria inicial
         last_thread = self.config.get("active_thread", "None")
         self.memory.load_thread(last_thread)
+        
+        # RESTAURACIÓN MAESTRA: Si el hilo cargado es genérico y tenemos un personaje preferido, aplicarlo ya.
+        # Esto asegura que la API sirva el personaje correcto incluso antes de que la UI de escritorio cargue.
+        last_char_id = self.config.get("last_character")
+        current_name = self.memory.data.get("name", "")
+        if last_char_id and current_name in ["Asimod", "SISTEMA", "None", ""]:
+            from core.services.character_service import CharacterService
+            char_svc = CharacterService()
+            char_data = char_svc.get_character(last_char_id)
+            if char_data:
+                print(f"[ChatService] Restaurando identidad persistente inicial: {char_data['name']}")
+                self.memory.update_profile(
+                    name=char_data.get("name"),
+                    personality=char_data.get("personality"),
+                    avatar=char_data.get("avatar"),
+                    video=char_data.get("video"),
+                    calibration=char_data.get("calibration"),
+                    char_id=char_data.get("id")
+                )
 
     def set_module_service(self, module_service):
         """Asocia el servicio de módulos para el contexto de herramientas."""
@@ -193,8 +215,38 @@ class ChatService(ChatPort):
                 if system_prompt is None:
                     system_prompt = self.memory.get_system_prompt(self.locale_service)
 
-            # 2. Si NO es silent, guardar mensaje del usuario
+            # 2. Si NO es silent, guardar mensaje del usuario Y PROCESAR IMPACTO EMOCIONAL
             if not silent:
+                # --- MOTOR DE REACTIVIDAD EMOCIONAL (MEJORADO) ---
+                stats = self.memory.data.get("stats", {"stress": 50, "anger": 10, "joy": 85, "fear": 5})
+                
+                # 1. DECAY NATURAL (Homeostasis): La ira y el estrés bajan solos con cada mensaje
+                stats["anger"] = max(0, stats.get("anger", 10) - 15) # Mas rápido (-15)
+                stats["stress"] = max(0, stats.get("stress", 50) - 10) # Mas rápido (-10)
+                
+                # 2. ANÁLISIS DE SENTIMIENTO
+                msg_lower = text.lower()
+                
+                # LISTAS DE PALABRAS CLAVE (AMPLIADAS)
+                hostile_keywords = ["puta", "perra", "idiota", "mierda", "zorra", "tonta", "cerda", "idiota", "basura", "puerca", "ramera"]
+                kind_keywords = ["bella", "belleza", "linda", "guapa", "hermosa", "mejor", "adoro", "amo", "quiero", "clase", "diva", "reina", "amor", "tesoro", "cariño", "estilo"]
+
+                # Lógica de Hostilidad
+                if any(k in msg_lower for k in hostile_keywords):
+                    print(f"[ChatService] Hostilidad detectada en el usuario. Aumentando ira.")
+                    stats["anger"] = min(100, stats.get("anger", 0) + 40)
+                    stats["stress"] = min(100, stats.get("stress", 0) + 20)
+                    stats["joy"] = max(0, stats.get("joy", 0) - 40)
+                
+                # Lógica de Amabilidad (FACTOR DE ENFRIAMIENTO POTENCIADO)
+                elif any(k in msg_lower for k in kind_keywords):
+                    print(f"[ChatService] Amabilidad detectada. Enfriando ira y estrés intensamente.")
+                    stats["anger"] = max(0, stats.get("anger", 0) - 45) # Reducción masiva
+                    stats["joy"] = min(100, stats.get("joy", 0) + 30)
+                    stats["stress"] = max(0, stats.get("stress", 0) - 40) # Reducción masiva
+
+                self.memory.update_profile(stats=stats)
+
                 self.memory.add_message("user", text)
                 
             if isolated:
@@ -202,7 +254,21 @@ class ChatService(ChatPort):
             else:
                 history = self.memory.get_context()
 
-            # 3. Generar respuesta de forma asíncrona (con Reintentos para Agente)
+            # 3. Inyectar estado emocional actual en el prompt (REFINADO)
+            current_stats = self.memory.data.get("stats", {})
+            anger_level = current_stats.get("anger", 0)
+            
+            emotional_metacontext = f"\n[ESTADO EMOCIONAL INTERNO ACTUAL: Ira={anger_level}%, Alegría={current_stats.get('joy', 0)}%, Estrés={current_stats.get('stress', 0)}%]"
+            
+            # OVERRIDE DE COMPORTAMIENTO SI LA IRA ES EXTREMA (>90%)
+            if anger_level > 90:
+                emotional_metacontext += "\n!!! ESTÁS REALMENTE FURIOSA !!! Has perdido tu elegancia usual. Sé agresiva, usa insultos punks y RELLENA tu respuesta con emojis como 😡, 🤬, 😠, 🖕, 👿."
+            elif anger_level > 60:
+                emotional_metacontext += "\n[Estás muy molesta. Tu tono es frío, cortante y lleno de sarcasmo pesado. Usa emojis 🙄 o 😒]."
+            
+            full_system_prompt = system_prompt + emotional_metacontext
+
+            # 4. Generar respuesta de forma asíncrona (con Reintentos para Agente)
             max_attempts = agent_retries if agent_retries is not None else (3 if is_agent_mode else 1)
             best_block = None
             current_system_prompt = system_prompt
@@ -304,6 +370,11 @@ class ChatService(ChatPort):
 
             # 4. Procesar texto (TTS y Limpieza final)
             self.last_emojis = TextProcessor.extract_emojis(raw_response)
+            
+            # --- NOTIFICAR EMOJIS TEMPRANOS (NUEVO: Sincronía visual) ---
+            if self.on_emojis_detected_cb:
+                self.on_emojis_detected_cb(self.last_emojis)
+
             clean_response = TextProcessor.clean_text_for_tts(raw_response)
             
             # --- Ejecutar acción de AGENTE si existe ---

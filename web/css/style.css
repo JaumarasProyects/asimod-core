@@ -1553,6 +1553,110 @@ body {
     animation: emoji-float 2s ease-in-out infinite;
 }
 
+/* Nuevos Controles HUD */
+.hud-btn-library {
+    position: absolute;
+    left: 12px;
+    top: 12px;
+    background: rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    color: white;
+    width: 34px;
+    height: 34px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: 1rem;
+    transition: all 0.3s;
+    z-index: 15;
+    padding: 0;
+}
+
+.hud-btn-library:hover {
+    background: var(--accent);
+    color: var(--bg-dark);
+    transform: scale(1.1);
+    box-shadow: 0 0 15px var(--accent);
+}
+
+.hud-mood-markers {
+    position: absolute;
+    bottom: 12px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 15px;
+    background: rgba(0,0,0,0.5);
+    padding: 6px 12px;
+    border-radius: 20px;
+    border: 1px solid rgba(255,255,255,0.1);
+    z-index: 15;
+}
+
+.mood-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.1);
+    transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+}
+
+/* Colores de Humor (Neon) */
+.mood-dot.joy.active { background: #FFD700; box-shadow: 0 0 10px #FFD700, 0 0 20px #FFD700; }
+.mood-dot.anger.active { background: #FF4444; box-shadow: 0 0 10px #FF4444, 0 0 20px #FF4444; }
+.mood-dot.fear.active { background: #00A3FF; box-shadow: 0 0 10px #00A3FF, 0 0 20px #00A3FF; }
+.mood-dot.stress.active { background: #FFA500; box-shadow: 0 0 10px #FFA500, 0 0 20px #FFA500; }
+
+.hud-thread-picker {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    margin: 5px 0;
+}
+
+#hudThreadSelect {
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.1);
+    color: var(--accent);
+    font-size: 0.75rem;
+    font-weight: 700;
+    padding: 4px 8px;
+    border-radius: 6px;
+    outline: none;
+    cursor: pointer;
+    max-width: 150px;
+}
+
+#hudThreadSelect option {
+    background: var(--bg-dark);
+    color: white;
+}
+
+.hud-add-thread {
+    background: var(--accent);
+    color: var(--bg-dark);
+    border: none;
+    width: 24px;
+    height: 24px;
+    border-radius: 6px;
+    font-weight: 800;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.hud-add-thread:hover {
+    transform: rotate(90deg) scale(1.1);
+    box-shadow: 0 0 10px var(--accent);
+}
+
 @keyframes emoji-float {
     0%, 100% { transform: translateY(0) scale(1); }
     50% { transform: translateY(-5px) scale(1.05); }

@@ -47,6 +47,20 @@ def start_api():
     # Conectar resultados STT a la cola de la API
     chat_engine.on_stt_result_cb = api_server.push_stt_result
     
+    # Mostrar información de Tailscale si está disponible
+    try:
+        from check_tailscale import get_tailscale_ip
+        ts_ip = get_tailscale_ip()
+        if ts_ip:
+            print("\n" + "="*50)
+            print(f" [NET] TAILSCALE DETECTADO: {ts_ip}")
+            print(f" [URL] http://{ts_ip}:8000/web/")
+            print("="*50 + "\n")
+    except ImportError:
+        pass
+    except Exception as e:
+        print(f"[NET] Error al comprobar Tailscale: {e}")
+
     # Run uvicorn on the app
     uvicorn.run(api_server.app, host="0.0.0.0", port=8000)
 

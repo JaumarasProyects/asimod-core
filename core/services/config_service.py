@@ -55,8 +55,9 @@ class ConfigService:
             "api_port": 8000,
             "modules_enabled": True,
             "modules_path": "modules",
-            "visualizer_type": "waveform",
+            "visualizer_type": "avatar",
             "visualizers_path": "visualizers",
+            "last_character": "",
             "comfyui_defaults": {
                 "Imagen": {"type": "Simple", "subtype": "text2img", "workflow": "DefaultText2Img.json"},
                 "Video": {"type": "Simple", "subtype": "text2video", "workflow": "DefaultText2Video.json"},

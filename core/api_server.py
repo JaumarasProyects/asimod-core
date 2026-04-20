@@ -417,7 +417,10 @@ class APIServer:
                 "char_name": self.chat_service.memory.data.get("name", ""),
                 "char_personality": self.chat_service.memory.data.get("personality", ""),
                 "char_avatar": self.chat_service.memory.data.get("avatar", {}),
-                "char_video": self.chat_service.memory.data.get("video", {})
+                "char_video": self.chat_service.memory.data.get("video", {}),
+                "char_stats": self.chat_service.memory.data.get("stats", {}),
+                "calibration": self.chat_service.memory.data.get("calibration", {}), # NUEVO
+                "current_style": self.chat_service.config.get("current_style", "dark_carbon") # NUEVO
             }
 
         @self.app.get("/v1/fs/get")
@@ -439,6 +442,36 @@ class APIServer:
         async def list_registry_characters():
             """Retorna la lista de personajes en el Repositorio Global."""
             return {"characters": self.character_service.list_characters()}
+
+        @self.app.get("/v1/characters/{char_id}")
+        async def get_character_details(char_id: str):
+            """Retorna los detalles de un personaje específico."""
+            char = self.character_service.get_character(char_id)
+            if not char:
+                raise HTTPException(status_code=404, detail="Personaje no encontrado")
+            return char
+
+        @self.app.patch("/v1/characters/{char_id}/stats")
+        async def update_character_stats(char_id: str, stats: dict):
+            """Actualiza las estadísticas emocionales de un personaje."""
+            char = self.character_service.get_character(char_id)
+            if not char:
+                raise HTTPException(status_code=404, detail="Personaje no encontrado")
+            
+            # Combinar stats existentes con los nuevos
+            current_stats = char.get("stats", {})
+            for k, v in stats.items():
+                current_stats[k] = v
+            
+            success = self.character_service.update_character(char_id, {"stats": current_stats})
+            
+            # Si el personaje actual es el que estamos editando, actualizar memoria activa también
+            if success and self.chat_service.memory.data.get("id") == char_id:
+                self.chat_service.memory.data["stats"] = current_stats
+                # Forzar actualización de UI si hay visualizador activo
+                # (A través del mecanismo de sondeo de la UI o mediante un evento disparado aquí)
+                
+            return {"status": "success" if success else "error", "stats": current_stats}
 
         # =====================================================
         # MEMORY MANAGEMENT
@@ -470,6 +503,7 @@ class APIServer:
             v_prov = data.get("voice_provider")
             avatar = data.get("avatar") # NUEVO
             video = data.get("video") # NUEVO
+            calibration = data.get("calibration") # NUEVO
 
             if target == "New" or (not target or target == "None"):
                 # Si target es None/New, intentar usar name como ID
@@ -489,7 +523,8 @@ class APIServer:
                         voice_id=voice,
                         voice_provider=v_prov,
                         avatar=avatar, # NUEVO
-                        video=video # NUEVO
+                        video=video, # NUEVO
+                        calibration=calibration # NUEVO
                     )
 
                 self.chat_service.config.set("active_thread", actual_id)
@@ -510,7 +545,8 @@ class APIServer:
                     voice_id=voice,
                     voice_provider=v_prov,
                     avatar=avatar,
-                    video=video
+                    video=video,
+                    calibration=calibration # NUEVO
                 )
 
             self.chat_service.config.set("active_thread", target)

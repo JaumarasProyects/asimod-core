@@ -33,6 +33,10 @@ class BackgroundFrame(tk.Canvas):
                     self.after(100, lambda: self._resize_image(type('obj', (object,), {'width': self.winfo_width(), 'height': self.winfo_height()})))
                 except Exception as e:
                     print(f"[BackgroundFrame] Error cargando imagen {self.img_path}: {e}")
+        
+        # Suscribirse a cambios de estilo en tiempo de ejecución
+        if hasattr(self.style, "subscribe"):
+            self.style.subscribe(self.update_style)
 
     def _resize_image(self, event):
         w, h = event.width, event.height

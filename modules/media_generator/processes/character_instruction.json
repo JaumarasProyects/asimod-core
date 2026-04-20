@@ -14,7 +14,22 @@
                     "name": "Retrato",
                     "workflow_folder": "workflows/imagen/simple/text2img",
                     "workflow": "DefaultText2Img.json",
-                    "output_key": "imagen_principal"
+                    "output_key": "imagen_principal",
+                    "prompt_override": "Frontal avatar pose, arms down at sides, empty hands, no objects held, clean background"
+                },
+                {
+                    "name": "Angry",
+                    "workflow": "DefaultImg2Img.json",
+                    "input_from": "Retrato",
+                    "output_key": "imagen_anger",
+                    "prompt_override": "Rage, angry face, enraged staring at camera, mouth slightly open, intense expression"
+                },
+                {
+                    "name": "Happy",
+                    "workflow": "DefaultImg2Img.json",
+                    "input_from": "Retrato",
+                    "output_key": "imagen_joy",
+                    "prompt_override": "Happy face, laughing, big smile, joyful eyes, looking at camera"
                 }
             ],
             "prompt_template": "Crea una hoja de diseño detallada del personaje {nombre}. Rasgos: {historia}. Personalidad: {personalidad}.",

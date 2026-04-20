@@ -11,6 +11,7 @@ class StyleService:
         self.styles_dir = styles_dir
         self.available_styles = {}
         self.current_theme = {}
+        self.callbacks = [] # NUEVO: Lista de observadores
         
         # Asegurar que la carpeta existe
         if not os.path.exists(self.styles_dir):
@@ -18,6 +19,25 @@ class StyleService:
             
         self.refresh_available_styles()
         self.load_current_style()
+
+    def subscribe(self, callback):
+        """Registra un componente para ser notificado cuando el estilo cambie."""
+        if callback not in self.callbacks:
+            self.callbacks.append(callback)
+
+    def unsubscribe(self, callback):
+        """Elimina un componente de la lista de notificaciones."""
+        if callback in self.callbacks:
+            self.callbacks.remove(callback)
+
+    def notify(self):
+        """Notifica a todos los suscriptores que el estilo ha cambiado."""
+        print(f"[StyleService] Notificando cambio de estilo a {len(self.callbacks)} componentes.")
+        for cb in self.callbacks:
+            try:
+                cb()
+            except Exception as e:
+                print(f"[StyleService] Error notificando a observador: {e}")
 
     def refresh_available_styles(self):
         """Escanea la carpeta de estilos en busca de archivos JSON."""
@@ -74,5 +94,6 @@ class StyleService:
         if style_id in self.available_styles:
             self.config.set("current_style", style_id)
             self.load_current_style()
+            self.notify() # NUEVO: Propagar cambio
             return True
         return False

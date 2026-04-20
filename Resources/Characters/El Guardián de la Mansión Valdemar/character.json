@@ -1,0 +1,14 @@
+{
+    "id": "personaje_1776634962",
+    "name": "El Guardián de la Mansión Valdemar",
+    "personality": "",
+    "gender": "male",
+    "active_thread": "thread_personaje_1776634962",
+    "avatar": {},
+    "video": {
+        "idle": "",
+        "talking": ""
+    },
+    "voice_id": "en-US-AndrewNeural",
+    "voice_provider": "Edge TTS"
+}

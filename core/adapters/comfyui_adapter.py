@@ -208,14 +208,23 @@ class ComfyUIAdapter(ImagePort):
             p = {"prompt": clean_workflow, "client_id": self.client_id}
             url = f"{self.base_url}/prompt"
 
-            async with httpx.AsyncClient() as client:
-                resp = await client.post(url, json=p, timeout=30.0)
-                if resp.status_code != 200:
-                    return f"Error ComfyUI al enviar prompt: {resp.status_code} - {resp.text}"
-                
-                data = resp.json()
-                prompt_id = data.get("prompt_id")
-                print(f"[ComfyUIAdapter] Tarea enviada. Prompt ID: {prompt_id}. Esperando resultado...")
+            try:
+                async with httpx.AsyncClient() as client:
+                    resp = await client.post(url, json=p, timeout=30.0)
+                    if resp.status_code != 200:
+                        return f"Error ComfyUI al enviar prompt: {resp.status_code} - {resp.text}"
+                    
+                    data = resp.json()
+                    prompt_id = data.get("prompt_id")
+                    print(f"[ComfyUIAdapter] Tarea enviada. Prompt ID: {prompt_id}. Esperando resultado...")
+            except httpx.ConnectError:
+                msg = f"[ComfyUIAdapter][Error] No se pudo conectar con ComfyUI en {self.base_url}. ¿Está el servidor encendido?"
+                print(msg)
+                return msg
+            except Exception as e:
+                msg = f"[ComfyUIAdapter][Error] Excepción al contactar ComfyUI: {str(e)}"
+                print(msg)
+                return msg
 
             # 3. Polling para obtener el resultado
             timeout = 7200 # 2 horas (para workflows de video o muy pesados)

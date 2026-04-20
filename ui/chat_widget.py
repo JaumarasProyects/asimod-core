@@ -46,6 +46,10 @@ class ChatWidget(tk.Frame):
         if hasattr(self.chat_engine, "on_system_msg_cb"):
             self.chat_engine.on_system_msg_cb = self._on_system_msg_notified
         
+        # Suscribir a Emojis Tempranos (Sincronía visual Zero-Latency)
+        if hasattr(self.chat_engine, "on_emojis_detected_cb"):
+            self.chat_engine.on_emojis_detected_cb = self._on_early_emojis_detected
+        
         # Contenedor principal para las vistas (Soporte para Imagen de Fondo)
         self.container = BackgroundFrame(self, self.style, "chat")
         self.container.pack(fill=tk.BOTH, expand=True)
@@ -55,18 +59,119 @@ class ChatWidget(tk.Frame):
         self._load_initial_state()
         self._update_ui_texts()
         
+        # Suscribirse a cambios de estilo en tiempo de ejecución
+        if hasattr(self.style, "subscribe"):
+            self.style.subscribe(self.on_style_changed)
+
+    def on_style_changed(self):
+        """Notificación de que el tema global ha cambiado."""
+        print("[ChatWidget] Actualizando interfaz por cambio de tema...")
+        self.apply_styles()
+
+    def apply_styles(self):
+        """Re-aplica todos los colores y fondos del tema actual."""
+        ghost_bg = self.style.get_color("bg_main")
+        accent = self.style.get_color("accent")
+        text_main = self.style.get_color("text_main")
+        text_dim = self.style.get_color("text_dim")
+        
+        # 1. Contenedor principal
+        self.config(bg=ghost_bg)
+        
+        # 2. Frames que no son BackgroundFrame (estos se actualizan solos al estar suscritos)
+        # Nota: los BackgroundFrame (top_bar, container, toolbar, hub_panel) 
+        # se actualizan solos porque también se suscriben al StyleService.
+        
+        # 3. Etiquetas y Botones Estándar (Los que usan ghost_bg)
+        for widget in self.winfo_children():
+            self._recursive_style_update(widget, ghost_bg, text_main, accent)
+
+    def _recursive_style_update(self, widget, bg, fg, accent):
+        try:
+            if isinstance(widget, (tk.Label, tk.Frame, tk.Canvas)) and not hasattr(widget, 'update_style'):
+                # No tocar BackgroundFrames (tienen su propio update_style)
+                widget.config(bg=bg)
+                if isinstance(widget, tk.Label):
+                    # Mantener acentos si ya los tenían (heurística)
+                    current_fg = widget.cget("fg")
+                    if current_fg.lower() in ["#ffffff", "#888888", "white", "gray"]:
+                         widget.config(fg=fg)
+            elif isinstance(widget, tk.Button):
+                widget.config(bg="#333", fg="white") # Estilo botón oscuro estandar
+        except:
+            pass
+            
+        for child in widget.winfo_children():
+            self._recursive_style_update(child, bg, fg, accent)
+        
     def _setup_visualizer(self):
         """Configura el visualizador si está habilitado mediante carga dinámica"""
         if self.config.get("visualizer_enabled", False):
             v_service = VisualizerService(self.config)
             v_type = self.config.get("visualizer_type", "avatar") # Avatar por defecto
-            v_height = 350 if v_type == "avatar" else 60
+            v_height = 230 if v_type == "avatar" else 60
             # Aumentamos el ancho para que llene el hueco
             self.visualizer = v_service.get_instance(v_type, self, width=300, height=v_height)
             
             if self.visualizer and self.chat_engine.voice_service:
                 self.chat_engine.voice_service.on_audio_start = self.visualizer.on_audio_start
                 self.chat_engine.voice_service.on_audio_end = self.visualizer.on_audio_end
+                
+                self.visualizer.on_thread_change = self._on_memory_change_from_viz
+                self.visualizer.on_new_thread = self._on_new_thread_from_viz
+                self.visualizer.on_stats_change = self._on_stats_change_from_viz
+
+    def _on_stats_change_from_viz(self, stats):
+        """Notificación de cambio en las estadísticas emocionales desde el visualizador."""
+        if self.chat_engine and self.chat_engine.memory:
+            # Actualizar en la memoria de la sesión (Thread activo)
+            # Esto asegura que los cambios persistan en el hilo actual pero no afecten
+            # a la definición original del personaje en el JSON base.
+            self.chat_engine.memory.update_profile({"stats": stats})
+
+    def _on_memory_change_from_viz(self, thread_id):
+        """Cambio de hilo solicitado desde el visualizador."""
+        self.combo_memory.set(thread_id)
+        self._on_memory_change(None)
+
+    def _on_new_thread_from_viz(self, thread_id):
+        """Creación de nuevo hilo solicitada desde el visualizador (sin wizard)."""
+        current_data = self.chat_engine.memory.data.copy()
+        
+        # 1. Crear el hilo
+        self.chat_engine.memory.create_new_thread(thread_id)
+        
+        # 2. Re-aplicar el perfil actual (para mantener la identidad)
+        self.chat_engine.memory.update_profile(
+            name=current_data.get("name"),
+            personality=current_data.get("personality"),
+            history=current_data.get("character_history"),
+            voice_id=current_data.get("voice_id"),
+            voice_provider=current_data.get("voice_provider"),
+            avatar=current_data.get("avatar"),
+            video=current_data.get("video")
+        )
+        
+        # 3. Registrar este nuevo hilo en el JSON del personaje si existe
+        char_id = current_data.get("id")
+        if char_id:
+            char_data = self.char_service.get_character(char_id)
+            if char_data:
+                threads = char_data.get("threads", [])
+                if thread_id not in threads:
+                    threads.append(thread_id)
+                    char_data["threads"] = threads
+                    char_data["active_thread"] = thread_id
+                    self.char_service.save_character(char_data)
+                    
+                    # NUEVO: Inyectar también en la memoria activa actual para evitar latencia
+                    self.chat_engine.memory.update_profile(
+                        threads=threads,
+                        char_id=char_id
+                    )
+        
+        # 4. Cambiar al nuevo hilo en la UI
+        self._on_memory_change_from_viz(thread_id)
 
     def t(self, key: str) -> str:
         return self.chat_engine.locale_service.t(key)
@@ -139,10 +244,10 @@ class ChatWidget(tk.Frame):
         
         if has_bg:
             self.top_bar = BackgroundFrame(self.container, self.style, header_bg_key)
-            self.top_bar.pack(fill=tk.X, padx=20, pady=(15, 5))
+            self.top_bar.pack(fill=tk.X, padx=20, pady=(5, 0))
         else:
             self.top_bar = tk.Frame(self.container, bg=ghost_bg, pady=5)
-            self.top_bar.pack(fill=tk.X, padx=20, pady=(15, 5))
+            self.top_bar.pack(fill=tk.X, padx=20, pady=(5, 0))
             
         self.chat_components.append(self.top_bar)
 
@@ -220,7 +325,8 @@ class ChatWidget(tk.Frame):
                                          style=self.style, callback=self._toggle_hub_panel, pady=2, padx=10)
         else:
             self.btn_top_hub = tk.Button(self.top_bar, text="📁 BIBLIOTECA", font=("Arial", 7, "bold"), 
-                                        command=self._toggle_hub_panel, **btn_style, fg=self.style.get_color("accent"))
+                                        command=self._toggle_hub_panel, **btn_style)
+            self.btn_top_hub.config(fg=self.style.get_color("accent"))
         self.btn_top_hub.pack(side=tk.LEFT, padx=10)
 
         # 3. BOTONES DE CONFIGURACIÓN (LUEGO DE BIBLIOTECA)
@@ -251,6 +357,10 @@ class ChatWidget(tk.Frame):
                 # Usamos padx=20 para alinear con el top_bar
                 self.visualizer._frame.pack(fill=tk.X, padx=20)
                 self.chat_components.append(self.visualizer._frame)
+                
+                # Cargar estado inicial ahora que el visualizador está creado (NUEVO)
+                if self.chat_engine.memory.data:
+                    self.visualizer.set_character(self.chat_engine.memory.data)
 
         # LÍNEA 0: Gestión de Memoria e Hilos (NUEVA)
         self.memory_bar = tk.Frame(self.toolbar, bg=self.style.get_color("bg_main"), pady=2)
@@ -371,9 +481,8 @@ class ChatWidget(tk.Frame):
                                              fg=self.style.get_color("text_dim"), font=("Arial", 8), highlightthickness=0)
         self.chk_test_mode.pack(side=tk.LEFT, padx=2)
 
-        sep = ttk.Separator(self.container, orient="horizontal")
-        sep.pack(fill=tk.X, padx=20, pady=5)
-        self.chat_components.append(sep)
+        # ELIMINADO: El separador ahora está integrado dentro del visualizador como una sola línea interna
+        # para ahorrar el máximo espacio posible.
 
         # --- ÁREA DE ENTRADA (FOOTER - SIEMPRE ABAJO) ---
         has_footer_bg = self.style.get_background("button") is not None
@@ -392,7 +501,7 @@ class ChatWidget(tk.Frame):
 
         # --- CONTENEDOR CENTRAL (Para Chat o Wizard) ---
         self.middle_container = tk.Frame(self.container, bg=self.style.get_color("bg_main"))
-        self.middle_container.pack(fill=tk.BOTH, expand=True, padx=20, pady=5)
+        self.middle_container.pack(fill=tk.BOTH, expand=True, padx=20, pady=(0, 5)) # Sin margen superior para pegarse al separador
         self.chat_components.append(self.middle_container)
 
         # --- WIZAD DE NUEVO HILO (Hijo de middle_container) ---
@@ -535,6 +644,13 @@ class ChatWidget(tk.Frame):
         self.combo_memory.set(active_thread)
         self._update_profile_ui()
 
+        # SUPER-PERSISTENCIA (NUEVO): Si el perfil cargado es genérico y tenemos un personaje preferido, aplicarlo.
+        last_char_id = self.config.get("last_character")
+        current_name = self.chat_engine.memory.data.get("name", "")
+        if last_char_id and current_name in ["Asimod", "SISTEMA", "None", ""]:
+            print(f"[ChatWidget] Restaurando identidad persistente: {last_char_id}")
+            self._apply_character_by_id(last_char_id)
+
         # AI
         last_provider = self.config.get("last_provider", "Ollama")
         self.combo_provider.set(last_provider)
@@ -619,15 +735,20 @@ class ChatWidget(tk.Frame):
         # 1. Crear el hilo físicamente
         new_id = self.chat_engine.memory.create_new_thread()
         
-        # 2. Aplicar perfil (incluyendo motor y voz)
+        # 2. Aplicar perfil (incluyendo motor y voz) con HERENCIA (NUEVO)
+        # Si no hay visuales nuevos en el wizard, heredamos los de la sesión actual
+        current_avatar = self.chat_engine.memory.data.get("avatar")
+        current_video = self.chat_engine.memory.data.get("video")
+        
         self.chat_engine.memory.update_profile(
             name=name if name else None,
             personality=pers if pers else None,
             history=hist if hist else None,
             voice_id=voice_id if voice_id else None,
             voice_provider=motor if motor != "None" else None,
-            avatar=self.pending_avatar, # Aplicar avatar del hub (NUEVO)
-            video=self.pending_video # Aplicar video del hub (NUEVO)
+            avatar=self.pending_avatar if self.pending_avatar else current_avatar,
+            video=self.pending_video if self.pending_video else current_video,
+            char_id=self.config.get("last_character") # Mantener anclaje al personaje
         )
         self.pending_avatar = None # Limpiar tras aplicar
         self.pending_video = None # Limpiar tras aplicar
@@ -958,6 +1079,11 @@ class ChatWidget(tk.Frame):
         try:
             # Ejecutamos la corrutina en un nuevo bucle de eventos en este hilo
             result = asyncio.run(self.chat_engine.send_message(text, model=model, images=images))
+            
+            # REFRESH INMEDIATO DE STATS (NUEVO: Para que los gauges reaccionen antes del TTS)
+            if self.visualizer and self.chat_engine.memory.data:
+                self.after(0, lambda: self.visualizer.set_character(self.chat_engine.memory.data))
+
             # Notificar al hilo principal para actualizar UI
             if self.winfo_exists():
                 self.after(0, lambda: self._handle_response(result) if self.winfo_exists() else None)
@@ -988,6 +1114,12 @@ class ChatWidget(tk.Frame):
                 self.visualizer.set_emojis(result["emojis"])
         else:
             self._append_message(self.t("chat.system"), str(result), "red")
+
+    def _on_early_emojis_detected(self, emojis):
+        """Callback temprano de emojis para sincronizar el visualizador antes del TTS."""
+        if self.visualizer and emojis:
+            # Forzar actualización en el hilo principal
+            self.after(0, lambda: self.visualizer.set_emojis(emojis))
 
     def _stop_audio(self):
         """Detiene la reproducción de audio actual."""
@@ -1052,6 +1184,15 @@ class ChatWidget(tk.Frame):
         if canvas_width > 1:
             self.hub_canvas.itemconfig(self.hub_window_id, width=canvas_width)
 
+    def _apply_character_by_id(self, char_id):
+        """Busca un personaje en el registro por ID y lo aplica."""
+        if not self.char_service: return
+        characters = self.char_service.list_characters()
+        found = next((c for c in characters if c.get("id") == char_id), None)
+        if found:
+            print(f"[ChatWidget] Aplicando restauración para personaje ID: {char_id}")
+            self._apply_registry_character(found)
+
     def _apply_registry_character(self, char_data):
         """Aplica los datos de un personaje del registro con soporte para hilos persistentes."""
         # Si el hub está visible, lo cerramos tras seleccionar
@@ -1110,14 +1251,18 @@ class ChatWidget(tk.Frame):
             self._refresh_memories()
             self.combo_memory.set(char_thread_id)
             self.config.set("active_thread", char_thread_id)
+            self.config.set("last_character", char_data.get("id", "")) # ANCLAJE GLOBAL (NUEVO)
             
-            # ACTUALIZAR PERFIL (NUEVO: Asegurar que video y avatar estén al día)
+            # ACTUALIZAR PERFIL (Sincronización total de metadatos)
             self.chat_engine.memory.update_profile(
                 name=name,
                 personality=personality,
                 avatar=avatar,
                 video=video,
-                voice_id=voice_id
+                voice_id=voice_id,
+                threads=char_data.get("threads", []),
+                stats=char_data.get("stats", {}),
+                char_id=char_data.get("id")
             )
             
             # Cargar los datos del hilo recién seleccionado en los campos de la UI
@@ -1138,13 +1283,15 @@ class ChatWidget(tk.Frame):
                 self.pending_video = video
             else:
                 print(f"[ChatWidget] Intercambiando identidad actual por '{name}'.")
+                self.config.set("last_character", char_data.get("id", "")) # ANCLAJE GLOBAL (NUEVO)
                 self.chat_engine.memory.update_profile(
                     name=name,
                     personality=personality,
                     avatar=avatar,
                     video=video,
                     voice_id=voice_id,
-                    voice_provider="Edge TTS"
+                    voice_provider="Edge TTS",
+                    char_id=char_data.get("id")
                 )
                 self._load_current_thread_data()
 
@@ -1161,17 +1308,25 @@ class ChatWidget(tk.Frame):
 
     def _load_current_thread_data(self):
         """Carga los datos de la memoria activa en todos los controles de la UI."""
-        data = self.chat_engine.memory.data
+        # 4. Auto-sincronizar metadatos del registro (NUEVÍSIMO)
+        # Esto rellena 'threads' y 'stats' desde el JSON maestro si falta en el hilo
+        self._sync_metadata_from_registry()
         
+        # Recargar data tras sync
+        data = self.chat_engine.memory.data
+
         # 1. Campos de Perfil
         self.ent_char_name.delete(0, tk.END)
         self.ent_char_name.insert(0, data.get("name", ""))
         self.ent_char_pers.delete(0, tk.END)
         self.ent_char_pers.insert(0, data.get("personality", ""))
         
-        # Sincronizar Visualizador (NUEVO)
+        # Sincronizar Visualizador
         if self.visualizer:
-            self.visualizer.set_character(data)
+            # Asegurar que el ID del hilo actual esté en la data para el visualizador
+            viz_data = data.copy()
+            viz_data["active_thread"] = self.chat_engine.memory.active_thread
+            self.visualizer.set_character(viz_data)
         
         # 2. Configuración de Voz
         voice_id = data.get("voice_id", "")
@@ -1182,24 +1337,41 @@ class ChatWidget(tk.Frame):
         self.combo_char_motor.set(provider)
         
         # Sincronizar combo de voz
-        if self.combo_char_voice:
+        if hasattr(self, 'combo_char_voice') and self.combo_char_voice:
             values = self.combo_char_voice['values']
             for i in range(len(values)):
                 if values[i].startswith(voice_id):
                     self.combo_char_voice.current(i)
                     break
 
-        # 4. Auto-sincronizar metadatos (NUEVO: Asegurar que video y avatar estén al día si es personaje conocido)
-        self._sync_metadata_from_registry()
-        # self.chat_display.config(state='normal')
-        # self.chat_display.delete('1.0', tk.END)
-        # self.chat_display.config(state='disabled')
-        # self._refresh_history_display() # Implementar si se quiere ver el historial
     def _sync_metadata_from_registry(self):
-        """Si el personaje tiene un nombre que coincide con uno del registro, asegura que tiene video/avatar."""
+        """Si el personaje tiene un ID que coincide con uno del registro, asegura que tiene threads/stats."""
         data = self.chat_engine.memory.data
-        name = data.get("name")
-        if not name or not self.char_service:
+        char_id = data.get("id")
+        # Si no tiene ID directo, intentamos por nombre
+        if not char_id: char_id = data.get("name")
+        
+        if not char_id or not self.char_service: return
+        
+        master_data = self.char_service.get_character(char_id)
+        if master_data:
+            print(f"[ChatWidget] Sincronizando metadatos para {char_id} desde el registro maestro.")
+            # Mezclar threads
+            master_threads = master_data.get("threads", [])
+            current_threads = data.get("threads", [])
+            
+            # Unir sin duplicados
+            new_threads = list(set(master_threads + current_threads))
+            
+            # Sincronizar stats si los del hilo están vacíos o queremos los maestros
+            # (En el futuro esto podría ser bidireccional, por ahora priorizamos maestros al cargar)
+            master_stats = master_data.get("stats", {})
+            
+            self.chat_engine.memory.update_profile(
+                threads=new_threads,
+                stats=master_stats,
+                char_id=master_data.get("id")
+            )
             return
             
         # Solo sincronizar si falta el video

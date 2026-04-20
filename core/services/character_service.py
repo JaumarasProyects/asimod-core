@@ -52,6 +52,44 @@ class CharacterService:
         """Busca un personaje por su ID o Nombre de carpeta."""
         chars = self.list_characters()
         for c in chars:
-            if c["id"] == char_id or c["name"] == char_id:
+            if c.get("id") == char_id or c.get("name") == char_id:
                 return c
         return None
+
+    def save_character(self, char_data: dict) -> bool:
+        """Guarda los datos de un personaje en su archivo JSON correspondiente."""
+        char_id = char_data.get("id")
+        char_name = char_data.get("name")
+        
+        # Buscar la carpeta
+        folder_name = char_name
+        for char in '<>:"/\\|?*':
+            folder_name = folder_name.replace(char, "_")
+            
+        char_path = os.path.join(self.reg_dir, folder_name)
+        json_file = os.path.join(char_path, "character.json")
+        
+        try:
+            # Limpiar URLs temporales del frontend antes de guardar si existieran
+            clean_data = char_data.copy()
+            if "avatar" in clean_data:
+                clean_data["avatar"] = {k: v for k, v in clean_data["avatar"].items() if not k.endswith("_url")}
+            if "video" in clean_data:
+                clean_data["video"] = {k: v for k, v in clean_data["video"].items() if not k.endswith("_url")}
+                
+            with open(json_file, "w", encoding="utf-8") as f:
+                json.dump(clean_data, f, indent=4, ensure_ascii=False)
+            return True
+        except Exception as e:
+            print(f"[CharacterService] Error guardando {char_id}: {e}")
+            return False
+
+    def update_character(self, char_id: str, patch_data: dict) -> bool:
+        """Actualiza campos específicos de un personaje."""
+        char_data = self.get_character(char_id)
+        if not char_data: return False
+        
+        for k, v in patch_data.items():
+            char_data[k] = v
+            
+        return self.save_character(char_data)

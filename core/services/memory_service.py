@@ -34,6 +34,14 @@ class MemoryService:
                 "idle": "",
                 "talking": ""
             },
+            "threads": [],
+            "stats": {
+                "stress": 50,
+                "anger": 50,
+                "joy": 50,
+                "fear": 50
+            },
+            "calibration": {}, # NUEVO: Mapeo de emojis a emociones
             "history": []
         }
 
@@ -54,7 +62,12 @@ class MemoryService:
         if os.path.exists(file_path):
             try:
                 with open(file_path, "r", encoding="utf-8") as f:
-                    self.data = json.load(f)
+                    loaded_data = json.load(f)
+                
+                # Fusionar con el template vacío para asegurar que existen todas las llaves (stats, threads, etc)
+                self.data = self._get_empty_thread()
+                self._recursive_update(self.data, loaded_data)
+                
                 self.active_thread = thread_id
                 return self.data
             except Exception as e:
@@ -87,7 +100,12 @@ class MemoryService:
             with open(file_path, "w", encoding="utf-8") as f:
                 json.dump(self.data, f, indent=4, ensure_ascii=False)
         except Exception as e:
-            print(f"Error guardando memoria {self.active_thread}: {e}")
+            print(f"Error guardando memoria: {e}")
+
+    def update_profile(self, patch_data: dict):
+        """Actualiza el perfil de la memoria activa (incluyendo stats) de forma recursiva."""
+        self._recursive_update(self.data, patch_data)
+        self.save_current()
 
     def add_message(self, role: str, content: str):
         """Añade un mensaje al historial y guarda automáticamente."""
@@ -96,7 +114,8 @@ class MemoryService:
 
     def update_profile(self, name: str = None, personality: str = None, history: str = None, 
                        voice_id: str = None, voice_provider: str = None, avatar: dict = None,
-                       video: dict = None):
+                       video: dict = None, threads: list = None, stats: dict = None,
+                       char_id: str = None, calibration: dict = None):
         """Actualiza el perfil del asistente en la memoria activa."""
         if name is not None: self.data["name"] = name
         if personality is not None: self.data["personality"] = personality
@@ -105,6 +124,10 @@ class MemoryService:
         if voice_provider is not None: self.data["voice_provider"] = voice_provider
         if avatar is not None: self.data["avatar"] = avatar
         if video is not None: self.data["video"] = video
+        if threads is not None: self.data["threads"] = threads
+        if stats is not None: self.data["stats"] = stats
+        if char_id is not None: self.data["id"] = char_id
+        if calibration is not None: self.data["calibration"] = calibration
         self.save_current()
 
     def get_context(self) -> list:
@@ -161,7 +184,12 @@ class MemoryService:
         if os.path.exists(file_path):
             try:
                 with open(file_path, "r", encoding="utf-8") as f:
-                    return json.load(f)
+                    loaded_data = json.load(f)
+                
+                # Fusionar para consistencia
+                res = self._get_empty_thread()
+                self._recursive_update(res, loaded_data)
+                return res
             except Exception as e:
                 print(f"Error cargando hilo {thread_id}: {e}")
         return None
@@ -264,3 +292,13 @@ class MemoryService:
             json.dump(target_data, f, indent=4, ensure_ascii=False)
         
         return {"status": "success", "message": "Profile updated"}
+
+    def _recursive_update(self, base_dict, update_with):
+        """Actualiza un diccionario recursivamente."""
+        import collections.abc
+        for k, v in update_with.items():
+            if isinstance(v, collections.abc.Mapping) and k in base_dict:
+                self._recursive_update(base_dict[k], v)
+            else:
+                base_dict[k] = v
+        return base_dict

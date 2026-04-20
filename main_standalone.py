@@ -132,6 +132,29 @@ def main():
                              on_collapse_cmd=lambda: toggle_chat(False))
         chat_ui.pack(fill=tk.BOTH, expand=True)
 
+        # --- DINAMISMO EXTRÍNSECO (NUEVO): Suscripción al Shell ---
+        def update_shell_theme():
+            print("[Shell] Actualizando colores globales...")
+            new_bg = style_service.get_color("bg_main")
+            new_dark = style_service.get_color("bg_dark")
+            new_header = style_service.get_color("bg_header")
+            new_accent = style_service.get_color("accent")
+            
+            root.configure(bg=new_bg)
+            main_container.config(bg=new_dark)
+            chat_collapsed_bar.config(bg=new_header)
+            
+            # Actualizar botones que no son ImageButton
+            if not has_btn_img:
+                toggle_btn.config(bg=new_bg, fg=new_accent)
+            
+            # Si hay un módulo activo, forzar su re-estilado
+            if module_service and module_service.active_module:
+                module_service.active_module.on_style_changed()
+
+        if hasattr(style_service, "subscribe"):
+            style_service.subscribe(update_shell_theme)
+
         # --- Lógica de navegación de módulos ---
         sidebar_expanded = True
         sidebar_btns = []

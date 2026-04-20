@@ -1,0 +1,14 @@
+{
+    "id": "personaje_1776634673",
+    "name": "El Anfitrión de la Alta Sociedad",
+    "personality": "",
+    "gender": "male",
+    "active_thread": "thread_personaje_1776634673",
+    "avatar": {},
+    "video": {
+        "idle": "",
+        "talking": ""
+    },
+    "voice_id": "es-MX-JorgeNeural",
+    "voice_provider": "Edge TTS"
+}

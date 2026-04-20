@@ -23,31 +23,26 @@ class VisualizerPort(ABC):
         pass
     
     def create(self, parent: tk.Widget) -> tk.Frame:
-        """Crea el frame del visualizador con soporte para texturas de fondo"""
-        # Intentar obtener el style_service desde el parent (algunos widgets lo guardan)
+        """Crea el contenedor base y el canvas del visualizador"""
         style = getattr(parent, 'style', None)
         
-        from ui.background_frame import BackgroundFrame
-        if style:
-            self._frame = BackgroundFrame(parent, style, "button")
-            self._frame.config(height=self.height)
-        else:
-            bg_color = parent.cget("bg")
-            self._frame = tk.Frame(parent, bg=bg_color, height=self.height)
-            
+        # 1. SIEMPRE crear un Frame contenedor base (Fondo negro para fundir vacios)
+        bg_color = "#1a1a1a" if style else parent.cget("bg")
+        self._frame = tk.Frame(parent, bg=bg_color)
+        
+        # El frame se expande horizontalmente
         self._frame.pack(fill=tk.X)
-        self._frame.pack_propagate(False)
+        # NO usamos propagate(False) en el frame base para que crezca con la cabecera
         
-        # El canvas debe ser transparente si el fondo es una imagen
-        # (Tkinter no soporta transparencia real fácil, pero simulamos con el mismo color o intentamos)
-        bg_canvas = self._frame.cget("bg") if not style else "#000000" 
-        # Si hay imagen de fondo en el Frame (Canvas), el canvas hijo tapará. 
-        # En Tkinter, lo ideal es dibujar directamente en el Canvas del BackgroundFrame.
+        # 2. Crear el Canvas (o BackgroundFrame) como hijo del Frame
+        from ui.background_frame import BackgroundFrame
         
-        if style and isinstance(self._frame, BackgroundFrame):
-            # Usamos el propio canvas del BackgroundFrame para el visualizador
-            self._canvas = self._frame
-            self._init_canvas()
+        bg_canvas = "#000000" if style else bg_color
+        
+        if style:
+            # Usamos BackgroundFrame como hijo si hay estilo
+            self._canvas = BackgroundFrame(self._frame, style, "button", height=self.height)
+            self._canvas.pack(fill=tk.X) # SOLO HORIZONTAL, NO EXPANDIR VERTICALMENTE
         else:
             self._canvas = tk.Canvas(
                 self._frame, 
@@ -56,8 +51,10 @@ class VisualizerPort(ABC):
                 bg=bg_canvas, 
                 highlightthickness=0
             )
-            self._canvas.pack(fill=tk.BOTH, expand=True)
-            self._init_canvas()
+            self._canvas.pack(fill=tk.X) # SOLO HORIZONTAL
+            
+        # Inicializar el contenido del canvas
+        self._init_canvas()
             
         return self._frame
     

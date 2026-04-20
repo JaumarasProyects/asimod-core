@@ -620,7 +620,7 @@ class MediaGeneratorModule(StandardModule):
         from modules.widgets import HorizontalMenu, ControllerPanel, GalleryWidget
         
         # SANEAMIENTO: Si ya existe el widget y es válido, lo reutilizamos
-        if hasattr(self, "_main_widget") and self._main_widget.winfo_exists():
+        if getattr(self, "_main_widget", None) and self._main_widget.winfo_exists():
             # Pero nos aseguramos de que el panel de control se actualice
             if hasattr(self, "ctrl_panel"):
                 self._update_controllers_logic(self.current_mode)
@@ -1183,8 +1183,7 @@ class MediaGeneratorModule(StandardModule):
         if not web_params:
             if key == "neg_prompt" and hasattr(self, "neg_prompt_text"):
                 return self.neg_prompt_text.get("1.0", tk.END).strip()
-
-        # 3. Ultimo recurso: Leer del panel local (Tkinter)
+                # 3. Ultimo recurso: Leer del panel local (Tkinter)
         if self.ctrl_panel:
             return self.ctrl_panel.get_value(key, default)
             
@@ -1599,6 +1598,26 @@ class MediaGeneratorModule(StandardModule):
         category = comp_state.get("category") or web_params.get("category")
         source_path = web_params.get("source_doc")
         
+        # 2. Cargar o Inicializar Datos
+        piece_data = comp_state.get("compound", {})
+        
+        # NUEVO: Recuperación de metadatos existentes para evitar pérdida de assets (G2, G3)
+        piece_id = piece_data.get("id")
+        if piece_id:
+            existing_data = self._load_existing_piece_metadata(piece_id, category)
+            if existing_data:
+                print(f"[Compound] Recuperados metadatos existentes para {piece_id}. Fusionando...")
+                # Fusionar multimedia con cuidado
+                ex_multimedia = existing_data.get("multimedia", {})
+                curr_multimedia = piece_data.get("multimedia", {})
+                for k, v in ex_multimedia.items():
+                    if k not in curr_multimedia or not curr_multimedia[k]:
+                        curr_multimedia[k] = v
+                for k, v in existing_data.items():
+                    if k not in piece_data or not piece_data[k]:
+                        piece_data[k] = v
+                piece_data["multimedia"] = curr_multimedia
+
         # Determinar el grado objetivo basado en el panel (modo)
         grade_map = {"Texto": 1, "Imagen": 2, "Audio": 3, "Video": 4}
         target_grade = grade_map.get(mode, 1)
@@ -1608,8 +1627,6 @@ class MediaGeneratorModule(StandardModule):
         # 1. Cargar Receta (Instrucciones)
         recipe = self._load_recipe(category)
         
-        # 2. Cargar o Inicializar Datos
-        piece_data = {}
         if target_grade == 1:
             # Creación inicial
             piece_id = f"{category.lower()}_{int(time.time())}"
@@ -1807,8 +1824,11 @@ class MediaGeneratorModule(StandardModule):
                     with open(wf_path, "r", encoding="utf-8") as f:
                         wf_json = json.load(f)
                     
-                    # Preparar inputs
-                    p_text = piece_data.get("descripcion_generada", piece_data.get("descripcion_detallada", prompt))
+                    # Preparar inputs y prompt
+                    base_p = piece_data.get("descripcion_generada", piece_data.get("descripcion_detallada", prompt))
+                    override_p = step.get("prompt_override")
+                    p_text = f"{base_p}. {override_p}" if override_p else base_p
+                    
                     inputs = []
                     if s_input_from and s_input_from in step_results:
                         inputs.append(step_results[s_input_from])
@@ -1918,6 +1938,48 @@ class MediaGeneratorModule(StandardModule):
                     multimedia["audio_principal"] = final_name
                     print(f"[Compound] Audio G3 generado con éxito: {final_name}")
             
+            # --- NUEVO: CALIBRACIÓN EMOCIONAL (Entrevista de Personalidad) ---
+            print(f"[Compound][G3] Iniciando Calibración Emocional para: {name}...")
+            calibration_results = []
+            questions = [
+                {"type": "joy", "q": "¿Qué es lo que más te apasiona o te hace sentir realmente feliz? Usa muchos emojis en tu respuesta."},
+                {"type": "joy", "q": "¡Has ganado un premio importante! ¿Cómo lo celebrarías? Demuéstrame tu alegría."},
+                {"type": "anger", "q": "Alguien acaba de insultar tu trabajo y dice que no vales nada. ¿Qué le responderías? No te cortes con los emojis si te molesta."},
+                {"type": "anger", "q": "Parece que hoy todo te sale mal y la gente no deja de molestarte. ¿Qué tienes que decir al respecto?"}
+            ]
+            
+            calib_system = (
+                f"Actúa estrictamente como el personaje '{name}'.\n"
+                f"Personalidad: {personality}\n"
+                f"Género: {gender}\n"
+                "REGLAS:\n"
+                "1. Responde de forma natural según tu personalidad.\n"
+                "2. Usa emojis de forma abundante para expresar tu estado emocional actual.\n"
+                "3. Mantén tus respuestas cortas (2-3 frases)."
+            )
+            
+            for item in questions:
+                try:
+                    print(f"[Calibration] Pregunta ({item['type']}): {item['q']}")
+                    res = await self.chat_service.generate_chat(
+                        [{"role": "user", "content": item['q']}], 
+                        system_prompt=calib_system
+                    )
+                    ans = str(res).strip()
+                    calibration_results.append({
+                        "type": item['type'],
+                        "question": item['q'],
+                        "answer": ans
+                    })
+                except Exception as e:
+                    print(f"[Calibration] Error en pregunta: {e}")
+            
+            piece_data["calibration"] = calibration_results
+            print(f"[Compound][G3] Calibración completada con {len(calibration_results)} respuestas.")
+            
+            # LIMPIEZA DE HISTORIAL: Asegurar que el personaje empiece limpio para el usuario
+            piece_data["history"] = []
+            
             # Validar que se generó el audio antes de subir el grado
             if "multimedia" in piece_data and piece_data["multimedia"].get("audio_principal"):
                 piece_data["grado_desarrollo"] = 3
@@ -1935,8 +1997,17 @@ class MediaGeneratorModule(StandardModule):
             img_list = multimedia.get("imagenes", [])
             audio_list = multimedia.get("audios", [])
             
+            if not img_list and category == "Personaje":
+                # NUEVO: Intentar rescatar imagen del HUB si no hay en la pieza actual (Resiliencia)
+                print(f"[Compound][G4] Imágenes ausentes. Intentando rescate desde el HUB...")
+                recovered_img = self._attempt_hub_recovery(piece_data)
+                if recovered_img:
+                    img_list = [recovered_img]
+                    multimedia["imagenes"] = img_list
+                    multimedia["imagen_principal"] = recovered_img
+            
             if not img_list or not audio_list:
-                raise Exception("Faltan imágenes (G2) o audios (G3) para generar el vídeo.")
+                raise Exception("Faltan imágenes (G2) o audios (G3) para generar el vídeo. Verifica si ComfyUI está encendido.")
             
             img_path = os.path.join(self.output_root, "imagen", img_list[0])
             speech_audio_path = os.path.join(self.output_root, "audio", multimedia.get("audio_principal", audio_list[0]))
@@ -1969,74 +2040,90 @@ class MediaGeneratorModule(StandardModule):
 
             print(f"[Compound][G4] Usando audios respectivos: Speak={os.path.basename(speech_audio_path)}, Idle={os.path.basename(idle_audio_path)}")
             
-            # 2. Generar SPEAKING Video
-            video_recipe = recipe.get("grades", {}).get("4", {})
-            adapter = self.image_service.get_adapter("ComfyUI")
+            # 2. GENERACIÓN MULTI-EMOCIONAL (Loopear sobre los estados detectados)
+            emotion_map = {
+                "neutral": multimedia.get("imagen_principal"),
+                "anger": multimedia.get("imagen_anger"),
+                "joy": multimedia.get("imagen_joy")
+            }
             
+            adapter = self.image_service.get_adapter("ComfyUI")
             if not os.path.exists(wf_path):
                 raise Exception(f"No se encuentra el workflow de animación en: {wf_path}")
-
             with open(wf_path, "r", encoding="utf-8") as f: wf = json.load(f)
-            
-            # 2.1 Generar VIDEO SPEAKING
-            print("[Compound] Generando VIDEO SPEAKING...")
-            v_speech_res = await adapter.generate_image(prompt, workflow_json=wf, input_images=[img_path, speech_audio_path], width=v_width, height=v_height)
-            
-            # Normalizar si es lista (ComfyUI)
-            if isinstance(v_speech_res, list) and v_speech_res:
-                v_speech_res = v_speech_res[0]
 
-            if isinstance(v_speech_res, str) and os.path.exists(v_speech_res):
-                speech_target_name = f"{piece_data['id']}_g4_speaking.mp4"
-                speech_target_path = os.path.join(self.output_root, "video", speech_target_name)
-                shutil.copy(v_speech_res, speech_target_path)
+            for emotion, img_name in emotion_map.items():
+                if not img_name: continue
                 
-                if speech_target_name not in videos: videos.append(speech_target_name)
-                multimedia["video_talking"] = speech_target_name
-                print(f"[Compound] Video Speaking G4 generado: {speech_target_name}")
+                # Normalizar img_name si es lista
+                if isinstance(img_name, list) and img_name: img_name = img_name[0]
+                
+                img_p = os.path.join(self.output_root, "imagen", img_name)
+                if not os.path.exists(img_p): continue
+                
+                print(f"[Compound][G4] Generando VÍDEO para estado: {emotion.upper()}...")
+                
+                # 2.1 VÍDEO HABLANDO (SPEAKING)
+                emotion_suffix = ""
+                if emotion == "joy": emotion_suffix = ", talking with a big happy smile, joyful expression, looking at camera"
+                elif emotion == "anger": emotion_suffix = ", talking while angry, enraged expression, rage, intense look"
+                elif emotion == "neutral": emotion_suffix = ", talking normally, neutral expression"
+                
+                v_prompt = f"{prompt}{emotion_suffix}"
+                v_res = await adapter.generate_image(v_prompt, workflow_json=wf, input_images=[img_p, speech_audio_path], width=v_width, height=v_height)
+                if isinstance(v_res, list) and v_res: v_res = v_res[0]
 
-                # 2.2 Generar Versión SILENCIOSA (vía FFmpeg)
-                silent_target_name = f"{piece_data['id']}_g4_speaking_silent.mp4"
-                silent_target_path = os.path.join(self.output_root, "video", silent_target_name)
-                print(f"[Compound] Procesando versión silenciosa con FFmpeg...")
-                
-                try:
-                    cmd = ["ffmpeg", "-y", "-i", speech_target_path, "-an", "-vcodec", "copy", silent_target_path]
-                    proc = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
-                    await proc.communicate()
+                if isinstance(v_res, str) and os.path.exists(v_res):
+                    suffix = "" if emotion == "neutral" else f"_{emotion}"
+                    target_name = f"{piece_data['id']}_g4_talking{suffix}.mp4"
+                    target_path = os.path.join(self.output_root, "video", target_name)
+                    shutil.copy(v_res, target_path)
                     
-                    if os.path.exists(silent_target_path):
-                        if silent_target_name not in videos: videos.append(silent_target_name)
-                        multimedia["video_talking_silent"] = silent_target_name
-                        print(f"[Compound] Video Silent G4 generado: {silent_target_name}")
-                except Exception as e:
-                    print(f"[Compound][Warning] Falló el procesamiento de video silencioso: {e}")
-
-            # 3. Generar IDLE Video (Mismo workflow, audio silencioso)
-            if os.path.exists(idle_audio_path):
-                print("[Compound] Generando VIDEO IDLE...")
-                v_idle_res = await adapter.generate_image("idle loop", workflow_json=wf, input_images=[img_path, idle_audio_path], width=v_width, height=v_height)
-                
-                # Normalizar si es lista (ComfyUI)
-                if isinstance(v_idle_res, list) and v_idle_res:
-                    v_idle_res = v_idle_res[0]
-
-                if isinstance(v_idle_res, str) and os.path.exists(v_idle_res):
-                    idle_target_name = f"{piece_data['id']}_g4_idle.mp4"
-                    idle_target_path = os.path.join(self.output_root, "video", idle_target_name)
-                    shutil.copy(v_idle_res, idle_target_path)
+                    if target_name not in videos: videos.append(target_name)
+                    # Guardar en multimedia con el nombre exacto que espera AvatarVisualizer
+                    key = "video_talking" if emotion == "neutral" else f"video_talking_{emotion}"
+                    multimedia[key] = target_name
                     
-                    if idle_target_name not in videos: videos.append(idle_target_name)
-                    multimedia["video_idle"] = idle_target_name
-                    print(f"[Compound] Video Idle G4 generado: {idle_target_name}")
-            else:
-                print("[Warning] No se encontró el audio silent para IDLE en " + idle_audio_path)
-                
-            # Validar que se generó al menos un video antes de subir el grado
-            if "multimedia" in piece_data and piece_data["multimedia"].get("videos"):
+                    # Aplicar bucle (Silent para el de habla por petición previa)
+                    try:
+                        await self._apply_ping_pong_loop(target_path, include_audio=False)
+                    except Exception as e:
+                        print(f"[MediaGenerator][Warning] Error aplicando bucle a video talking: {e}")
+
+                # 2.2 VÍDEO EN REPOSO (IDLE)
+                if os.path.exists(idle_audio_path):
+                    print(f"[Compound][G4] Generando VÍDEO IDLE para estado: {emotion.upper()}...")
+                    char_desc = piece_data.get('apariencia', piece_data.get('descripcion', 'personaje'))
+                    
+                    # Enriquecer prompt de idle con la emoción actual
+                    idle_emotion_suffix = ", neutral expression"
+                    if emotion == "joy": idle_emotion_suffix = ", happy smiling expression, joyful"
+                    elif emotion == "anger": idle_emotion_suffix = ", angry annoyed expression, rage"
+                    
+                    v_idle_prompt = f"{char_desc}, idle loop, breathing, blinking, maintaining character consistency{idle_emotion_suffix}"
+                    v_idle = await adapter.generate_image(v_idle_prompt, workflow_json=wf, input_images=[img_p, idle_audio_path], width=v_width, height=v_height)
+                    if isinstance(v_idle, list) and v_idle: v_idle = v_idle[0]
+                    
+                    if isinstance(v_idle, str) and os.path.exists(v_idle):
+                        suffix = "" if emotion == "neutral" else f"_{emotion}"
+                        idle_name = f"{piece_data['id']}_g4_idle{suffix}.mp4"
+                        idle_path = os.path.join(self.output_root, "video", idle_name)
+                        shutil.copy(v_idle, idle_path)
+                        
+                        if idle_name not in videos: videos.append(idle_name)
+                        # Mapear correctamente para visualizadores
+                        key = "video_idle" if emotion == "neutral" else f"video_idle_{emotion}"
+                        multimedia[key] = idle_name
+                        try:
+                            await self._apply_ping_pong_loop(idle_path)
+                        except Exception as e:
+                            print(f"[MediaGenerator][Warning] Error aplicando bucle a video idle: {e}")
+
+            # Validar que se generó al menos el video principal antes de subir el grado
+            if "multimedia" in piece_data and piece_data["multimedia"].get("video_talking"):
                 piece_data["grado_desarrollo"] = 4
             else:
-                raise Exception("[Error] No se generaron videos en G4. El grado no puede subir.")
+                raise Exception("[Error] No se generó el video principal en G4.")
 
         # 4. Guardar Resultado Progresivo en subcarpeta central (SIEMPRE en texto/compuesto para trazabilidad)
         output_name = f"{piece_data['id']}.json"
@@ -2116,47 +2203,56 @@ class MediaGeneratorModule(StandardModule):
                 "personality": personality if personality else existing_reg_data.get("personality", ""),
                 "gender": piece_data.get("gender", existing_reg_data.get("gender", "male")),
                 "active_thread": existing_reg_data.get("active_thread", f"thread_{piece_data['id']}"),
-                "avatar": existing_reg_data.get("avatar", {}),
-                "video": existing_reg_data.get("video", {"idle": "", "talking": ""}),
+                "avatar": {},
+                "video": {"idle": "", "talking": ""},
                 "voice_id": piece_data.get("voice_id") or existing_reg_data.get("voice_id"),
                 "voice_provider": piece_data.get("voice_provider") or existing_reg_data.get("voice_provider", "Edge TTS")
             }
             
-            # Copiar Assets
+            # Copiar Assets (Detección Dinámica de Variantes)
             multimedia = piece_data.get("multimedia", {})
             output_img_dir = os.path.join(os.path.dirname(__file__), "output", "imagen")
             output_vid_dir = os.path.join(os.path.dirname(__file__), "output", "video")
             
             def ensure_str(val):
-                if isinstance(val, list) and val:
-                    return val[0]
+                if isinstance(val, list) and val: return val[0]
                 return val
 
-            # 1. Idle Image (G2)
-            img_name = ensure_str(multimedia.get("imagen_principal"))
-            if img_name and isinstance(img_name, str):
-                src = os.path.join(output_img_dir, img_name)
-                if os.path.exists(src):
-                    shutil.copy(src, os.path.join(reg_path, "idle.png"))
-                    reg_data["avatar"]["idle"] = f"Resources/Characters/{char_folder}/idle.png"
-                    reg_data["avatar"]["talking"] = f"Resources/Characters/{char_folder}/idle.png"
+            # 1. IMÁGENES (Avatares) - Mapeo de estados emocionales a assets
+            avatar_map = {
+                "idle": multimedia.get("imagen_principal"),
+                "talking": multimedia.get("imagen_principal"),
+                "idle_anger": multimedia.get("imagen_anger"),
+                "talking_anger": multimedia.get("imagen_anger"),
+                "idle_joy": multimedia.get("imagen_joy"),
+                "talking_joy": multimedia.get("imagen_joy")
+            }
+            
+            for key, img_name in avatar_map.items():
+                img_name = ensure_str(img_name)
+                if img_name:
+                    src = os.path.join(output_img_dir, img_name)
+                    if os.path.exists(src):
+                        dest_fname = f"{key}.png"
+                        shutil.copy(src, os.path.join(reg_path, dest_fname))
+                        reg_data["avatar"][key] = f"Resources/Characters/{char_folder}/{dest_fname}"
 
-            # 2. Videos (G4) - OPCIONAL
-            # Talking Video
-            vid_talking = ensure_str(multimedia.get("video_talking"))
-            if vid_talking and isinstance(vid_talking, str):
-                src = os.path.join(output_vid_dir, vid_talking)
-                if os.path.exists(src):
-                    shutil.copy(src, os.path.join(reg_path, "talking.mp4"))
-                    reg_data["video"]["talking"] = f"Resources/Characters/{char_folder}/talking.mp4"
+            # 2. VÍDEOS - Mapeo de estados emocionales a archivos de video
+            video_map = {
+                "idle": multimedia.get("video_idle"),
+                "talking": multimedia.get("video_talking"),
+                "talking_anger": multimedia.get("video_talking_anger"),
+                "talking_joy": multimedia.get("video_talking_joy")
+            }
 
-            # Idle Video
-            vid_idle = ensure_str(multimedia.get("video_idle"))
-            if vid_idle and isinstance(vid_idle, str):
-                src = os.path.join(output_vid_dir, vid_idle)
-                if os.path.exists(src):
-                    shutil.copy(src, os.path.join(reg_path, "idle.mp4"))
-                    reg_data["video"]["idle"] = f"Resources/Characters/{char_folder}/idle.mp4"
+            for key, vid_name in video_map.items():
+                vid_name = ensure_str(vid_name)
+                if vid_name:
+                    src = os.path.join(output_vid_dir, vid_name)
+                    if os.path.exists(src):
+                        dest_fname = f"{key}.mp4"
+                        shutil.copy(src, os.path.join(reg_path, dest_fname))
+                        reg_data["video"][key] = f"Resources/Characters/{char_folder}/{dest_fname}"
 
             # Guardar JSON final en el Hub
             with open(os.path.join(reg_path, "character.json"), "w", encoding="utf-8") as f:
@@ -3739,3 +3835,87 @@ class ComfyUIConfigView(tk.Frame):
         
         tk.messagebox.showinfo("Configuración", "Predefinidos de ComfyUI guardados correctamente.")
         if self.on_back: self.on_back()
+
+    async def _apply_ping_pong_loop(self, video_path, include_audio=False):
+        """Aplica un efecto 'Ping-Pong' al video para que el final coincida con el principio."""
+        if not os.path.exists(video_path): return
+        
+        temp_out = video_path.replace(".mp4", "_loop_temp.mp4")
+        # Comando FFmpeg: Revierte el video y lo concatena al original
+        # Añadimos -r 30 para forzar frame rate constante (evita parpadeos y fallos de concat)
+        cmd = [
+            "ffmpeg", "-y", "-i", video_path,
+            "-filter_complex", "[0:v]reverse[r];[0:v][r]concat=n=2:v=1[v]",
+            "-map", "[v]",
+        ]
+        
+        if include_audio:
+            cmd.extend(["-map", "0:a?", "-c:a", "copy"])
+        else:
+            cmd.append("-an")
+            
+        cmd.extend([
+            "-r", "30", # Frame-rate constante para perfecta sincronización
+            "-c:v", "libx264", "-crf", "23", "-pix_fmt", "yuv420p",
+            temp_out
+        ])
+        
+        try:
+            # Usar shell=True o asegurar que los argumentos son correctos para Windows
+            proc = await asyncio.create_subprocess_exec(
+                *cmd, 
+                stdout=asyncio.subprocess.PIPE, 
+                stderr=asyncio.subprocess.PIPE
+            )
+            stdout, stderr = await proc.communicate()
+            
+            if proc.returncode == 0 and os.path.exists(temp_out):
+                # En Windows, a veces os.replace falla si el archivo está siendo usado. Intentamos con cuidado.
+                try:
+                    os.replace(temp_out, video_path)
+                except:
+                    import shutil
+                    shutil.copy2(temp_out, video_path)
+                    os.remove(temp_out)
+            else:
+                error_msg = stderr.decode(errors='replace') if stderr else "Error desconocido en FFmpeg"
+                print(f"[MediaGenerator][FFmpeg] Error en ping-pong: {error_msg}")
+                if os.path.exists(temp_out): os.remove(temp_out)
+        except Exception as e:
+            if os.path.exists(temp_out): os.remove(temp_out)
+            print(f"[MediaGenerator] Excepción fatal en _apply_ping_pong_loop: {e}")
+            raise e
+
+    def _load_existing_piece_metadata(self, piece_id, category):
+        """Carga el JSON de metadata desde la carpeta central de output."""
+        try:
+            central_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "output", "texto", "compuesto"))
+            subfolder_name = self._get_compound_path(category).split(os.path.sep)[-1]
+            json_path = os.path.join(central_root, subfolder_name, f"{piece_id}.json")
+            
+            if os.path.exists(json_path):
+                with open(json_path, "r", encoding="utf-8") as f:
+                    return json.load(f)
+        except: pass
+        return None
+
+    def _attempt_hub_recovery(self, piece_data):
+        """Intenta rescatar una imagen de un personaje ya existente en el repositorio global."""
+        try:
+            char_name = piece_data.get("titulo", piece_data.get("id"))
+            char_folder = char_name
+            for char in '<>:"/\\|?*':
+                char_folder = char_folder.replace(char, "_")
+            
+            hub_path = os.path.join("Resources", "Characters", char_folder, "idle.png")
+            if os.path.exists(hub_path):
+                # Copiar de vuelta a output/imagen para que los adapters la encuentren
+                target_name = f"recovered_{piece_data.get('id', 'temp')}.png"
+                target_path = os.path.join(self.output_root, "imagen", target_name)
+                import shutil
+                shutil.copy(hub_path, target_path)
+                print(f"[HubRecovery] Imagen rescatada con éxito para '{char_name}': {target_name}")
+                return target_name
+        except Exception as e:
+            print(f"[HubRecovery][Error] Falló el rescate desde el HUB: {e}")
+        return None

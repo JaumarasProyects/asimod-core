@@ -1,0 +1,23 @@
+{
+    "name": "Investigación Neón",
+    "colors": {
+        "bg_main": "#050510",
+        "bg_dark": "#020205",
+        "bg_sidebar": "#020205",
+        "bg_header": "#0c0c1a",
+        "bg_input": "#1a1a2a",
+        "accent": "#00f2ff",
+        "accent_hover": "#00c4cc",
+        "text_main": "#ffffff",
+        "text_dim": "#8e9aaf",
+        "btn_bg": "#151525",
+        "btn_fg": "#ffffff"
+    },
+    "backgrounds": {
+        "sidebar": "Resources/Styles/InvestigacionNeon/sidebar_bg.png",
+        "chat": "Resources/Styles/InvestigacionNeon/chat_bg.png",
+        "center": "Resources/Styles/InvestigacionNeon/main_bg.png",
+        "module_box": "Resources/Styles/InvestigacionNeon/box_bg.png",
+        "button": "Resources/Styles/InvestigacionNeon/box_bg.png"
+    }
+}

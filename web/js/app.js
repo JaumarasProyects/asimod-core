@@ -69,6 +69,17 @@ class AsimodApp {
         this.closeChatBtn = document.getElementById('closeChat');
         this.chatMic = document.getElementById('chatMic'); // NUEVO
         
+        // --- HUD Enrichment Elements ---
+        this.hudLibraryBtn = document.getElementById('hudLibraryBtn');
+        this.hudThreadSelect = document.getElementById('hudThreadSelect');
+        this.hudNewThreadBtn = document.getElementById('hudNewThreadBtn');
+        this.moodDots = {
+            joy: document.querySelector('.mood-dot.joy'),
+            anger: document.querySelector('.mood-dot.anger'),
+            fear: document.querySelector('.mood-dot.fear'),
+            stress: document.querySelector('.mood-dot.stress')
+        };
+        
         // --- PROPIEDADES DE AUDIO WEB ---
         this.mediaRecorder = null;
         this.audioChunks = [];
@@ -100,17 +111,24 @@ class AsimodApp {
 
     async init() {
         console.log("[ASIMOD] Inicializando sistema unificado...");
+        
+        // 1. Sincronizar IDENTIDAD inmediatamente (Evita "Asimod" por defecto)
+        await this.syncFullTechnicalState();
+        
         this._injectGalleryStyles();
         
         // El registro de eventos debe ser lo primero para que la UI sea funcional
         this.setupEventListeners();
         
         await this.loadStyle();
+        // Cargar módulos (operación lenta)
         await this.loadModules();
-        await this.syncFullTechnicalState();
         await this.loadChatHistory();
         
         document.body.classList.remove('loading');
+
+        // Polling constante para mantener la paridad (2s)
+        setInterval(() => this.syncQuickStatus(), 2000);
     }
 
     async loadStyle() {
@@ -249,6 +267,9 @@ class AsimodApp {
         const data = await resp.json();
         this.populateSelect(this.charVoiceId, data.voices, currentVoice);
         this.populateSelect(this.ttsVoiceId, data.voices, currentVoice);
+
+        // Sincronizar el selector del HUD
+        this.populateSelect(this.hudThreadSelect, data.memories, currentId);
     }
 
     async syncQuickStatus() {
@@ -256,13 +277,31 @@ class AsimodApp {
             const resp = await fetch('/v1/status');
             if (!resp.ok) return;
             const data = await resp.json();
+            
+            // 1. Detección de cambio de Estilo (Hot-Reload)
+            if (data.current_style && this.style && data.current_style !== this.style.id) {
+                console.log(`[ASIMOD] El tema ha cambiado a "${data.current_style}". Recargando...`);
+                await this.loadStyle();
+            }
+
+            // 2. Detección de cambios técnicos críticos (Proveedor/Voz)
+            if (this.techProvider && data.provider !== this.techProvider.value) {
+                console.log(`[ASIMOD] El proveedor de IA ha cambiado a "${data.provider}".`);
+                await this.refreshModels(data.provider, data.model);
+            }
+            if (this.charVoiceMotor && data.voice_provider !== this.charVoiceMotor.value) {
+                console.log(`[ASIMOD] El motor de voz ha cambiado a "${data.voice_provider}".`);
+                await this.refreshVoices(data.voice_provider, data.voice_id);
+            }
+
+            // 3. Sincronizar controles rápidos (Micrófono)
             if (this.micToggle) {
                 const isActive = data.stt_mode !== 'OFF';
                 this.micToggle.classList.toggle('active', isActive);
                 this.micToggle.innerText = isActive ? '🎤' : '🎙️';
             }
             
-            // Sincronizar Avatar HUD (NUEVO: para paridad con escritorio)
+            // 4. Sincronizar Avatar HUD e Identidad (Nombre, Personalidad, Videos)
             this.updateAvatarHUD(data);
         } catch (e) {}
     }
@@ -587,18 +626,33 @@ class AsimodApp {
                     method: 'POST', headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({thread_id: e.target.value})
                 });
+                if (this.hudThreadSelect) this.hudThreadSelect.value = e.target.value;
                 await this.loadChatHistory();
             };
         }
-        if (this.btnNewThread) {
-            this.btnNewThread.onclick = async () => {
-                const name = prompt("Defina la identidad del nuevo hilo:");
-                if (!name) return;
+
+        if (this.hudThreadSelect) {
+            this.hudThreadSelect.onchange = async (e) => {
                 await fetch('/v1/memories', {
                     method: 'POST', headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({name: name})
+                    body: JSON.stringify({thread_id: e.target.value})
                 });
-                await this.refreshMemories(name);
+                if (this.techMemory) this.techMemory.value = e.target.value;
+                await this.loadChatHistory();
+            };
+        }
+
+        if (this.btnNewThread) {
+            this.btnNewThread.onclick = async () => this.createNewThread();
+        }
+
+        if (this.hudNewThreadBtn) {
+            this.hudNewThreadBtn.onclick = async () => this.createNewThread();
+        }
+
+        if (this.hudLibraryBtn) {
+            this.hudLibraryBtn.onclick = () => {
+                 this.sendChatMessage("/biblioteca");
             };
         }
         if (this.btnSaveProfile) {
@@ -1598,95 +1652,210 @@ class AsimodApp {
         const nameEl = document.getElementById('avatarName');
         if (nameEl) nameEl.innerText = status.char_name || "Sistema";
         
-        // Guardar configuración actual para cambios de estado (hablando/quieto)
+        // 1. Guardar configuración actual para cambios de estado (IMPESCINDIBLE ANTES DE NADA)
         this.currentCharAvatar = status.char_avatar || {};
         this.currentCharVideo = status.char_video || {};
+        this.currentCalibration = status.calibration || []; 
         
+        // Sincronizar entradas del panel técnico si están visibles
+        if (this.charNameInput && document.activeElement !== this.charNameInput) {
+            this.charNameInput.value = status.char_name || "";
+        }
+        if (this.charPersInput && document.activeElement !== this.charPersInput) {
+            this.charPersInput.value = status.char_personality || "";
+        }
+        
+        // 2. ACTUALIZACIÓN DE MARCADORES DE HUMOR (CALIBRACIÓN) con Failsafe
+        if (this.moodDots) {
+            const calib = Array.isArray(status.calibration) ? status.calibration : [];
+            const activeMoods = new Set();
+            
+            calib.forEach(c => {
+                if (c && c.type) activeMoods.add(c.type);
+            });
+
+            // Detectar emoción actual basada en emojis si existen
+            let currentEmotion = "normal";
+            try {
+                // Intentar detectar si hay mensaje reciente con emojis
+                const lastMsg = status.last_msg || "";
+                const emojis = lastMsg.match(/\p{Emoji_Presentation}/gu) || [];
+                if (emojis.length > 0) {
+                    currentEmotion = this._detectEmotion(emojis);
+                }
+            } catch(e) { console.warn("Error en detección de emoción ligera:", e); }
+            
+            for (const [mood, dot] of Object.entries(this.moodDots)) {
+                if (dot) {
+                    if (activeMoods.has(mood) || currentEmotion === mood) {
+                        dot.classList.add('active');
+                    } else {
+                        dot.classList.remove('active');
+                    }
+                }
+            }
+        }
+        
+        // 3. LÓGICA DE Detección de Cambios y Renderizado de Vídeos
+        const hud = document.getElementById('avatarContainer');
+        const newStateHash = JSON.stringify({
+            id: status.active_thread,
+            name: status.char_name,
+            video: status.char_video,
+            avatar: status.char_avatar,
+            emotion: hud ? hud.dataset.emotion : "normal",
+            speaking: hud ? hud.classList.contains('speaking') : false
+        });
+
+        if (this.lastAvatarStateHash === newStateHash) return;
+        this.lastAvatarStateHash = newStateHash;
+
         this.updateAvatarHUDState();
+    }
+
+    _detectEmotion(emojis) {
+        if (!emojis || emojis.length === 0 || !this.currentCalibration) return "normal";
+        
+        const scores = { joy: 0, anger: 0, fear: 0, stress: 0 };
+        emojis.forEach(emo => {
+            const cal = this.currentCalibration[emo];
+            if (cal) {
+                Object.keys(scores).forEach(key => scores[key] += (cal[key] || 0));
+            }
+        });
+
+        // Determinar ganadora por encima de un umbral (ej: 0.3)
+        if (scores.anger > scores.joy && scores.anger > 0.3) return "anger";
+        if (scores.joy > scores.anger && scores.joy > 0.3) return "joy";
+        
+        return "normal";
     }
 
     updateAvatarHUDState() {
         const hud = document.getElementById('avatarContainer');
         const fallbackEl = document.getElementById('avatarFallback');
         const imgEl = document.getElementById('avatarImage');
-        const videoIdle = document.getElementById('avatarVideoIdle');
-        const videoTalking = document.getElementById('avatarVideoTalking');
         
-        if (!hud || !imgEl || !videoIdle || !videoTalking) return;
+        // Videos Normales
+        const vIdle = document.getElementById('avatarVideoIdle');
+        const vTalking = document.getElementById('avatarVideoTalking');
+        // Videos Joy
+        const vIdleJoy = document.getElementById('avatarVideoIdle_joy');
+        const vTalkingJoy = document.getElementById('avatarVideoTalking_joy');
+        // Videos Anger
+        const vIdleAnger = document.getElementById('avatarVideoIdle_anger');
+        const vTalkingAnger = document.getElementById('avatarVideoTalking_anger');
+        
+        const allVideos = [vIdle, vTalking, vIdleJoy, vTalkingJoy, vIdleAnger, vTalkingAnger];
+        
+        if (!hud || !imgEl || !vIdle || !vTalking) return;
 
         const isSpeaking = hud.classList.contains('speaking');
+        const currentEmotion = hud.dataset.emotion || "normal";
+        
         const avatar = this.currentCharAvatar || {};
         const videoCfg = this.currentCharVideo || {};
 
-        // Prioridad Video -> Imagen -> Fallback
-        const idleVideo = videoCfg.idle_url || videoCfg.idle || videoCfg.video_idle || videoCfg.video_loop;
-        const talkingVideo = videoCfg.talking_url || videoCfg.talking || videoCfg.video_talking;
-        
-        const idleImg = avatar.idle_url || avatar.idle || avatar.imagen_principal;
-        const talkingImg = avatar.talking_url || avatar.talking || avatar.imagen_hablando;
-
-        // Reset visibility
-        if (fallbackEl) fallbackEl.style.display = 'block';
-        imgEl.style.display = 'none';
-        videoIdle.style.display = 'none';
-        videoTalking.style.display = 'none';
-
-        // Función interna para limpiar y normalizar URLs con caché bust (NUEVO)
-        const toWebUrl = (path) => {
+        // Función interna para limpiar y normalizar URLs
+        const toWebUrl = (path, bustCache = false) => {
             if (!path) return null;
             if (path.startsWith('http')) return path;
             const cleanPath = path.replace(/\\/g, '/');
             const url = cleanPath.startsWith('/') ? cleanPath : `/${cleanPath}`;
-            // Añadir timestamp para evitar caché si el archivo ha sido reemplazado con el mismo nombre
-            return `${url}?t=${Date.now()}`;
+            return bustCache ? `${url}?t=${Date.now()}` : url;
         };
 
-        // Determinar recurso de imagen (proceso redundante pero necesario para fallback)
-        const currentImg = isSpeaking ? (talkingImg || idleImg) : idleImg;
+        // Reset visibility (ocultar todo por defecto)
+        if (fallbackEl) fallbackEl.style.display = 'block';
+        imgEl.style.display = 'none';
+        allVideos.forEach(v => { if(v) v.style.display = 'none'; });
 
-        const idleVideoUrl = toWebUrl(idleVideo);
-        const talkingVideoUrl = toWebUrl(talkingVideo || idleVideo);
+        // Mapeo de recursos por estado emocional
+        const getResource = (emotion, type) => {
+            // type: "idle" or "talking"
+            if (emotion === "joy") {
+                return videoCfg[`${type}_joy_url`] || videoCfg[`${type}_joy`] || videoCfg[`video_${type}_joy`];
+            } else if (emotion === "anger") {
+                return videoCfg[`${type}_anger_url`] || videoCfg[`${type}_anger`] || videoCfg[`video_${type}_anger`];
+            }
+            return videoCfg[`${type}_url`] || videoCfg[`${type}`] || videoCfg[`video_${type}`] || (type === "idle" ? videoCfg.video_loop : null);
+        };
 
-        if (idleVideoUrl || talkingVideoUrl) {
-            if (idleVideoUrl) {
-                const currentIdlePath = videoIdle.src ? new URL(videoIdle.src).pathname : '';
-                if (currentIdlePath !== idleVideoUrl.split('?')[0]) {
-                    videoIdle.src = idleVideoUrl;
-                    videoIdle.load();
-                }
-            }
-            if (talkingVideoUrl) {
-                const currentTalkingPath = videoTalking.src ? new URL(videoTalking.src).pathname : '';
-                if (currentTalkingPath !== talkingVideoUrl.split('?')[0]) {
-                    videoTalking.src = talkingVideoUrl;
-                    videoTalking.load();
-                }
-            }
+        const idleVideoUrl = toWebUrl(getResource("normal", "idle"));
+        const talkingVideoUrl = toWebUrl(getResource("normal", "talking"));
+        const joyIdleUrl = toWebUrl(getResource("joy", "idle"));
+        const joyTalkingUrl = toWebUrl(getResource("joy", "talking"));
+        const angerIdleUrl = toWebUrl(getResource("anger", "idle"));
+        const angerTalkingUrl = toWebUrl(getResource("anger", "talking"));
 
-            // Gestión de visibilidad (Swap instantáneo)
-            if (isSpeaking) {
-                videoTalking.style.display = 'block';
-                videoTalking.muted = true; // Asegurar silencio absoluto para el vídeo
-                videoTalking.playsInline = true; 
-                videoTalking.play().catch(() => {});
-            } else {
-                videoIdle.style.display = 'block';
-                videoIdle.muted = true;
-                videoIdle.playsInline = true;
-                videoIdle.play().catch(() => {});
-                videoTalking.pause();
+        // Actualizar sources de video si han cambiado
+        const updateSrc = (el, url) => {
+            if (!el || !url) return;
+            const currentPath = el.src ? new URL(el.src).pathname : '';
+            if (currentPath !== url.split('?')[0]) {
+                el.src = url;
+                el.load();
             }
+        };
+
+        updateSrc(vIdle, idleVideoUrl);
+        updateSrc(vTalking, talkingVideoUrl);
+        updateSrc(vIdleJoy, joyIdleUrl);
+        updateSrc(vTalkingJoy, joyTalkingUrl);
+        updateSrc(vIdleAnger, angerIdleUrl);
+        updateSrc(vTalkingAnger, angerTalkingUrl);
+
+        // Seleccionar video activo basado en estado
+        let activeVideo = null;
+        if (isSpeaking) {
+            if (currentEmotion === "joy" && joyTalkingUrl) activeVideo = vTalkingJoy;
+            else if (currentEmotion === "anger" && angerTalkingUrl) activeVideo = vTalkingAnger;
+            else activeVideo = vTalking;
+        } else {
+            if (currentEmotion === "joy" && joyIdleUrl) activeVideo = vIdleJoy;
+            else if (currentEmotion === "anger" && angerIdleUrl) activeVideo = vIdleAnger;
+            else activeVideo = vIdle;
+        }
+
+        // --- OPTIMIZACIÓN: Solo ocultar/mostrar si ha cambiado el video activo ---
+        if (activeVideo && activeVideo.src) {
+            // Solo pausar y ocultar los que NO son el activo
+            allVideos.forEach(v => { 
+                if (v && v !== activeVideo) {
+                    if (v.style.display !== 'none') {
+                        v.style.display = 'none';
+                        v.pause();
+                    }
+                } 
+            });
+
+            // Solo mostrar y dar play si no estaba ya visible/reproduciendo
+            if (activeVideo.style.display !== 'block') {
+                activeVideo.style.display = 'block';
+            }
+            
+            if (activeVideo.paused) {
+                activeVideo.muted = true;
+                activeVideo.playsInline = true;
+                activeVideo.play().catch(() => {});
+            }
+            
             if (fallbackEl) fallbackEl.style.display = 'none';
-        } else if (currentImg) {
-            const imgUrl = toWebUrl(currentImg);
-            const baseUrl = imgUrl.split('?')[0];
-            const currentImgBase = imgEl.src ? new URL(imgEl.src).pathname : '';
+            if (imgEl) imgEl.style.display = 'none';
+        } else {
+            // Fallback a imagen si no hay videos para el estado actual
+            const idleImg = avatar.idle_url || avatar.idle || avatar.imagen_principal;
+            const talkingImg = avatar.talking_url || avatar.talking || avatar.imagen_hablando;
+            const currentImg = isSpeaking ? (talkingImg || idleImg) : idleImg;
 
-            if (currentImgBase !== baseUrl) {
-                imgEl.src = imgUrl;
+            if (currentImg) {
+                const imgUrl = toWebUrl(currentImg, true); // Cache bust para imágenes sí es útil si cambian
+                if (imgEl.src !== imgUrl) imgEl.src = imgUrl;
+                if (imgEl.style.display !== 'block') imgEl.style.display = 'block';
+                
+                allVideos.forEach(v => { if(v) { v.style.display = 'none'; v.pause(); } });
+                if (fallbackEl) fallbackEl.style.display = 'none';
             }
-            imgEl.style.display = 'block';
-            if (fallbackEl) fallbackEl.style.display = 'none';
         }
     }
 
@@ -1888,6 +2057,14 @@ class AsimodApp {
     showAvatarEmojis(emojis) {
         const emojiEl = document.getElementById('avatarEmoji');
         if (!emojiEl) return;
+
+        // Detectar emoción y aplicar al HUD (NUEVO)
+        const emotion = this._detectEmotion(emojis);
+        const hud = document.getElementById('avatarContainer');
+        if (hud) {
+            hud.dataset.emotion = emotion;
+            console.log(`[ASIMOD] Emoción detectada en emojis: ${emotion}`);
+        }
 
         emojiEl.innerText = emojis.join('');
         emojiEl.classList.add('visible');
