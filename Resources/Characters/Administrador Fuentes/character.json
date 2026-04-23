@@ -1,0 +1,23 @@
+{
+  "name": "Administrador Fuentes",
+  "personality": "Nervioso, metódico, temeroso de perder su posición. Habla de forma detallista y financiera.",
+  "character_history": "Administrador de la mansión. Detallista y metódico, maneja las finanzas con mano de hierro pero vive con el miedo constante a ser reemplazado.",
+  "video": {
+    "idle": "Resources/Characters/Administrador Fuentes/idle.mp4",
+    "talking": "Resources/Characters/Administrador Fuentes/talking.mp4",
+    "idle_anger": "Resources/Characters/Administrador Fuentes/idle_anger.mp4",
+    "talking_anger": "Resources/Characters/Administrador Fuentes/talking_anger.mp4",
+    "idle_joy": "Resources/Characters/Administrador Fuentes/idle_joy.mp4",
+    "talking_joy": "Resources/Characters/Administrador Fuentes/talking_joy.mp4"
+  },
+  "avatar": {
+    "idle": "Resources/Characters/Administrador Fuentes/idle.png",
+    "talking": "Resources/Characters/Administrador Fuentes/talking.png",
+    "idle_anger": "Resources/Characters/Administrador Fuentes/idle_anger.png",
+    "talking_anger": "Resources/Characters/Administrador Fuentes/talking_anger.png",
+    "idle_joy": "Resources/Characters/Administrador Fuentes/idle_joy.png",
+    "talking_joy": "Resources/Characters/Administrador Fuentes/talking_joy.png"
+  },
+  "voice": "es-ES-ArnauNeural",
+  "voice_provider": "Edge TTS"
+}

@@ -44,8 +44,17 @@ class ChatService(ChatPort):
         # Callback para notificar mensajes locales/sistema a la UI
         self.on_system_msg_cb: Optional[Callable[[str, str], None]] = None
 
-        # Callback para notificar emojis detectados ANTES del TTS (Sincronía temprana)
+        # Callback para notificar cambios de personaje/identidad
+        self.on_character_changed_cb: Optional[Callable[[], None]] = None
+
+        # Callback para notificarEmojis detectados en la respuesta (Nuevo: Sincronía visual)
         self.on_emojis_detected_cb: Optional[Callable[[List[str]], None]] = None
+
+        # Callback para inyección de mensajes desde módulos (Escena de oficina, etc)
+        self.on_chat_injected_cb: Optional[Callable[[str, str, str], None]] = None
+
+        # Flag para que el juego bloquee el avatar visualizador durante la presentación de personajes
+        self._avatar_lock_requested: bool = False
 
         # Servicios de voz
         self.voice_service = VoiceService(config_service, self.locale_service)
@@ -90,6 +99,34 @@ class ChatService(ChatPort):
         """Asocia el servicio de módulos para el contexto de herramientas."""
         self.module_service = module_service
 
+    def notify_character_changed(self):
+        """Notifica a la UI que la identidad o el perfil del personaje han cambiado."""
+        if self.on_character_changed_cb:
+            self.on_character_changed_cb()
+
+    async def inject_message(self, text: str, sender: str = "Assistant", voice_id: Optional[str] = None, voice_provider: Optional[str] = None, role: str = "assistant"):
+        """
+        Inyecta un mensaje manualmente en el flujo de chat y activa la voz.
+        Útil para módulos externos que quieren que el Core 'hable' por ellos.
+        """
+        print(f"[ChatService] Injecting message from {sender} (role={role}, provider={voice_provider}): {text[:50]}...")
+        
+        # 1. Guardar en memoria activa
+        self.memory.add_message(role, text)
+        
+        # 2. Notificar a la UI (ChatWidget) - Usamos el nuevo callback específico para chat real
+        if self.on_chat_injected_cb:
+            self.on_chat_injected_cb(text, sender, role)
+        elif self.on_system_msg_cb:
+            # Fallback a mensaje de sistema si no hay UI de chat real conectada
+            self.on_system_msg_cb(text, sender)
+            
+        # 3. Disparar Voz y Lipsync
+        if self.voice_service:
+            v_id = voice_id or self.memory.data.get("voice_id")
+            v_prov = voice_provider or self.memory.data.get("voice_provider")
+            await self.voice_service.process_text(text, voice_id=v_id, voice_provider=v_prov)
+
     def notify_system_msg(self, text: str, color: str = None, beep: bool = False):
         """Notifica un mensaje para ser mostrado en la UI de chat sin TTS. El flag beep controla si suena aviso."""
         if self.on_system_msg_cb:
@@ -118,6 +155,7 @@ class ChatService(ChatPort):
 
         if self.on_stt_result_cb:
             self.on_stt_result_cb(text)
+
 
     def switch_provider(self, provider_name: str):
         if self.current_adapter and self.current_adapter.name == provider_name:
@@ -172,7 +210,40 @@ class ChatService(ChatPort):
             print(f"[ChatService] Error en generate_chat: {e}")
             return f"Error: {str(e)}"
 
-    async def send_message(self, text: str, model: str = None, images: list = None, silent: bool = False, max_tokens: int = None, temperature: float = None, skip_tts: bool = False, system_prompt: str = None, mode: str = None, isolated: bool = False, agent_retries: int = None) -> Dict:
+    async def inject_message(self, text: str, sender: str = "Assistant", voice_id: str = None, voice_provider: str = None, role: str = "assistant") -> bool:
+        """
+        Inyecta un mensaje generado externamente (ej: un script o un juego) en el chat principal.
+        Guarda en memoria y dispara notificaciones UI / TTS sin LLM inference.
+        """
+        print(f"[ChatService] Inyectando mensaje de {sender}: {text[:50]}...")
+        
+        # 1. Guardar en memoria
+        self.memory.add_message(role, text)
+        
+        # 2. Rebotar el callback a la UI si existe
+        if hasattr(self, 'on_chat_injected_cb') and callable(self.on_chat_injected_cb):
+            self.on_chat_injected_cb(text, sender, role)
+            
+        # 3. Lanzar motor TTS si se requiere
+        char_voice = voice_id or self.memory.data.get("voice_id")
+        char_provider = voice_provider or self.memory.data.get("voice_provider")
+        
+        # Procesar locución asíncrona
+        clean_response = TextProcessor.clean_text_for_tts(text)
+        try:
+            await self.voice_service.process_text(
+                clean_response,
+                voice_id=char_voice,
+                voice_provider=char_provider
+            )
+        except Exception as e:
+            print(f"[ChatService] Error disparando TTS inyectado: {e}")
+            import traceback
+            traceback.print_exc()
+            
+        return True
+
+    async def send_message(self, text: str, model: str = None, images: list = None, silent: bool = False, max_tokens: int = None, temperature: float = None, skip_tts: bool = False, system_prompt: str = None, mode: str = None, isolated: bool = False, agent_retries: int = None, thread_id: str = None, voice_id: str = None) -> Dict:
         """
         Envía un mensaje usando el contexto de memoria activo y procesa la respuesta de forma asíncrona.
         Permite sobrescribir las instrucciones del sistema con system_prompt y el modo con mode.
@@ -187,6 +258,13 @@ class ChatService(ChatPort):
 
         self.is_processing = True
         try:
+            # --- NUEVO: Cambio de hilo bajo demanda (Contexto externo) ---
+            if thread_id and thread_id != self.memory.active_thread:
+                print(f"[ChatService] Solicitud de cambio de hilo vía API: {thread_id}")
+                self.memory.load_thread(thread_id)
+                # Notificar a la UI para que refresque el avatar y perfil
+                self.notify_character_changed()
+
             if images is None:
                 images = []
 

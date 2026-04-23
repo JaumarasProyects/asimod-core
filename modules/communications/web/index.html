@@ -1,80 +1,183 @@
 <div class="module-web-view communication-view">
-    <header class="comm-header">
-        <div id="contactProfile" class="contact-profile">
-            <div class="contact-avatar">👤</div>
-            <div class="contact-info">
-                <h1 id="contactName" class="contact-name">Selecciona un Contacto</h1>
-                <p id="contactRole" class="contact-role">Módulo de Comunicaciones</p>
+    <div class="comm-container">
+        <!-- Main Content: Profile & Tab Content -->
+        <div class="comm-main">
+            <header class="comm-header">
+                <div id="contactProfile" class="contact-profile">
+                    <div class="avatar-container">
+                        <div class="contact-avatar">👤</div>
+                        <div class="status-indicator online"></div>
+                    </div>
+                    <div class="contact-info">
+                        <h1 id="contactName" class="contact-name">Selecciona un Contacto</h1>
+                        <p id="contactRole" class="contact-role">Módulo de Comunicaciones</p>
+                    </div>
+                </div>
+                <nav class="comm-tabs">
+                    <button class="tab-btn active" data-tab="mensajeria">MENSAJERÍA</button>
+                    <button class="tab-btn" data-tab="correo">CORREO</button>
+                    <button class="tab-btn" data-tab="redes">REDES</button>
+                </nav>
+            </header>
+
+            <div class="view-content">
+                <div id="activeDetails" class="details-card">
+                    <div class="details-header">
+                        <span class="details-title">Información de Contacto</span>
+                    </div>
+                    <div class="details-grid">
+                        <div class="detail-item">
+                            <span class="label">Email</span>
+                            <span id="detailEmail" class="value">---</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="label">Teléfono</span>
+                            <span id="detailPhone" class="value">---</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="label">Localización</span>
+                            <span id="detailLocation" class="value">Remoto</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <div id="servicesGrid" class="services-grid">
+                    <!-- Service cards will be injected here -->
+                </div>
             </div>
         </div>
-        <nav class="comm-tabs">
-            <button class="tab-btn active" data-tab="mensajeria">MENSAJERÍA</button>
-            <button class="tab-btn" data-tab="correo">CORREO</button>
-            <button class="tab-btn" data-tab="redes">REDES</button>
-        </nav>
-    </header>
 
-    <main class="comm-content">
-        <div id="servicesGrid" class="services-grid">
-            <!-- Service cards will be injected here -->
-        </div>
-    </main>
+        <!-- Right Side: Quick Actions -->
+        <aside class="comm-actions">
+            <div class="actions-header">
+                <h3>ACCIONES RÁPIDAS</h3>
+                <p>Ejecución inmediata</p>
+            </div>
+            <div id="quickActionsList" class="actions-list">
+                <!-- Quick action buttons will be injected here -->
+            </div>
+        </aside>
+    </div>
 
     <style>
-        .communication-view { display: flex; flex-direction: column; gap: 30px; padding: 10px; }
+        :root {
+            --glass-bg: rgba(255, 255, 255, 0.03);
+            --glass-border: rgba(255, 255, 255, 0.08);
+            --glass-hover: rgba(255, 255, 255, 0.06);
+        }
+
+        .communication-view { height: 100%; display: flex; flex-direction: column; overflow: hidden; }
         
+        .comm-container {
+            display: flex; height: 100%; flex: 1; gap: 20px;
+        }
+
+        .comm-main {
+            flex: 1; display: flex; flex-direction: column; gap: 25px;
+            padding: 20px; overflow-y: auto;
+        }
+
         .comm-header {
             display: flex; justify-content: space-between; align-items: center;
-            padding-bottom: 20px; border-bottom: 1px solid rgba(255,255,255,0.05);
+            background: var(--glass-bg); padding: 25px; border-radius: 24px;
+            border: 1px solid var(--glass-border); backdrop-filter: blur(10px);
         }
 
-        .contact-profile { display: flex; align-items: center; gap: 20px; }
+        .avatar-container { position: relative; }
         .contact-avatar {
-            width: 70px; height: 70px; background: rgba(255,255,255,0.03);
-            border-radius: 50%; display: flex; align-items: center; justify-content: center;
-            font-size: 2rem; border: 2px solid rgba(255,255,255,0.05);
+            width: 80px; height: 80px; background: linear-gradient(135deg, var(--accent), #fff);
+            color: var(--bg-dark); border-radius: 20px; display: flex; align-items: center; 
+            justify-content: center; font-size: 2.5rem; box-shadow: 0 10px 20px rgba(0,0,0,0.2);
         }
-        .contact-name { font-size: 1.6rem; font-weight: 800; letter-spacing: -1px; }
-        .contact-role { color: var(--accent); font-size: 0.8rem; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; }
+        .status-indicator {
+            position: absolute; bottom: -5px; right: -5px; width: 18px; height: 18px;
+            border-radius: 50%; border: 3px solid var(--bg-dark);
+        }
+        .status-indicator.online { background: #00df81; box-shadow: 0 0 10px #00df81; }
 
-        .comm-tabs { display: flex; gap: 10px; }
+        .contact-name { font-size: 1.8rem; font-weight: 900; letter-spacing: -1px; margin: 0; }
+        .contact-role { color: var(--text-dim); font-size: 0.9rem; font-weight: 600; text-transform: uppercase; letter-spacing: 2px; margin-top: 5px; }
+
+        .comm-tabs { display: flex; gap: 12px; }
         .tab-btn {
-            background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05);
-            color: var(--text-dim); padding: 10px 20px; font-size: 0.8rem; font-weight: 800;
-            border-radius: 12px; cursor: pointer; transition: all 0.3s;
+            background: rgba(0,0,0,0.2); border: 1px solid var(--glass-border);
+            color: var(--text-dim); padding: 12px 24px; font-size: 0.75rem; font-weight: 800;
+            border-radius: 12px; cursor: pointer; transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            letter-spacing: 1px;
         }
+        .tab-btn:hover { background: var(--glass-hover); border-color: var(--accent); color: white; }
         .tab-btn.active { background: var(--accent); color: var(--bg-dark); border-color: var(--accent); }
 
+        .view-content { display: flex; flex-direction: column; gap: 20px; }
+
+        .details-card {
+            background: var(--glass-bg); border: 1px solid var(--glass-border);
+            border-radius: 24px; padding: 25px;
+        }
+        .details-header { margin-bottom: 20px; border-bottom: 1px solid var(--glass-border); padding-bottom: 10px; }
+        .details-title { font-size: 0.8rem; font-weight: 800; color: var(--accent); text-transform: uppercase; }
+        .details-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+        .detail-item { display: flex; flex-direction: column; gap: 5px; }
+        .detail-item .label { font-size: 0.7rem; color: var(--text-dim); text-transform: uppercase; }
+        .detail-item .value { font-size: 1rem; font-weight: 600; color: white; }
+
         .services-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-            gap: 20px;
+            display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 20px;
         }
 
         .service-card {
-            background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.05);
-            border-radius: 25px; padding: 30px; display: flex; flex-direction: column;
-            align-items: center; text-align: center; gap: 15px; transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            background: var(--glass-bg); border: 1px solid var(--glass-border);
+            border-radius: 24px; padding: 25px; display: flex; flex-direction: column;
+            align-items: center; text-align: center; gap: 15px; transition: all 0.4s;
+            position: relative; overflow: hidden;
         }
-        .service-card:hover {
-            transform: translateY(-10px); background: rgba(255,255,255,0.06);
-            border-color: var(--accent); box-shadow: 0 20px 40px rgba(0,0,0,0.3);
+        .service-card::before {
+            content: ''; position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: linear-gradient(45deg, transparent, rgba(255,255,255,0.03), transparent);
+            transform: translateX(-100%); transition: 0.5s;
         }
+        .service-card:hover::before { transform: translateX(100%); }
+        .service-card:hover { border-color: var(--accent); transform: translateY(-5px); background: var(--glass-hover); }
 
-        .service-icon { font-size: 3rem; margin-bottom: 10px; }
-        .service-name { font-size: 1.2rem; font-weight: 800; color: white; }
-        .service-desc { font-size: 0.85rem; color: var(--text-dim); line-height: 1.5; }
-        
+        .service-icon { font-size: 2.5rem; margin-bottom: 10px; }
+        .service-name { font-size: 1.1rem; font-weight: 800; }
         .service-btn {
-            margin-top: 10px; background: var(--accent); color: var(--bg-dark);
-            border: none; padding: 12px 30px; border-radius: 12px; font-weight: 800;
+            background: var(--accent); color: var(--bg-dark); border: none;
+            padding: 12px 25px; border-radius: 12px; font-weight: 800;
             cursor: pointer; transition: all 0.3s; width: 100%;
         }
-        .service-btn:hover { transform: scale(1.05); filter: brightness(1.2); }
 
-        @media (max-width: 768px) {
-            .comm-header { flex-direction: column; align-items: flex-start; gap: 20px; }
-            .comm-tabs { width: 100%; overflow-x: auto; padding-bottom: 5px; }
+        /* Actions Sidebar */
+        .comm-actions {
+            width: 320px; background: rgba(0,0,0,0.15); border-left: 1px solid var(--glass-border);
+            padding: 30px 20px; display: flex; flex-direction: column; gap: 25px;
+            backdrop-filter: blur(20px);
+        }
+        .actions-header h3 { font-size: 1rem; font-weight: 900; margin: 0; letter-spacing: 1px; }
+        .actions-header p { font-size: 0.75rem; color: var(--text-dim); margin-top: 5px; }
+
+        .actions-list { display: flex; flex-direction: column; gap: 15px; }
+        .action-button {
+            display: flex; align-items: center; gap: 15px; padding: 18px;
+            background: var(--glass-bg); border: 1px solid var(--glass-border);
+            border-radius: 16px; cursor: pointer; transition: all 0.3s;
+            text-align: left;
+        }
+        .action-button:hover { background: var(--accent); color: var(--bg-dark); transform: scale(1.02); }
+        .action-button:hover .action-icon { background: rgba(0,0,0,0.1); }
+        
+        .action-icon {
+            width: 45px; height: 45px; background: rgba(255,255,255,0.05);
+            border-radius: 12px; display: flex; align-items: center; justify-content: center;
+            font-size: 1.5rem; transition: 0.3s;
+        }
+        .action-info { display: flex; flex-direction: column; }
+        .action-title { font-weight: 800; font-size: 0.9rem; }
+        .action-subtitle { font-size: 0.7rem; opacity: 0.7; }
+
+        @media (max-width: 1200px) {
+            .comm-container { flex-direction: column; }
+            .comm-actions { width: 100%; border-left: none; border-top: 1px solid var(--glass-border); }
         }
     </style>
 
@@ -95,19 +198,33 @@
                         renderProfile(data.contact);
                     }
                 } catch (e) { console.error(e); }
+
+                // Listen for contact selection events from the gallery sidebar
+                window.addEventListener('message', (event) => {
+                    if (event.data.type === 'ACTION_RESPONSE' && event.data.action === 'handle_select_contact') {
+                        if (event.data.data.status === 'success') {
+                            renderProfile(event.data.data.contact);
+                        }
+                    }
+                });
             }
 
             function renderProfile(contact) {
+                if (!contact) return;
                 currentContact = contact;
                 document.getElementById('contactName').innerText = contact.name;
                 document.getElementById('contactRole').innerText = contact.role || "Contacto";
+                
+                document.getElementById('detailEmail').innerText = contact.email || "N/A";
+                document.getElementById('detailPhone').innerText = contact.phone || "N/A";
+                
                 renderServices();
+                renderQuickActions();
             }
 
             function renderServices() {
                 const grid = document.getElementById('servicesGrid');
                 grid.innerHTML = '';
-                
                 const services = getServicesForMode(currentMode, currentContact);
                 
                 services.forEach(s => {
@@ -116,37 +233,86 @@
                     card.innerHTML = `
                         <div class="service-icon">${s.icon}</div>
                         <div class="service-name">${s.name}</div>
-                        <p class="service-desc">Acceso directo a ${s.name} para sincronización externa.</p>
-                        <button class="service-btn">ABRIR SERVICIO</button>
+                        <button class="service-btn">ESTABLECER CONEXIÓN</button>
                     `;
                     card.querySelector('button').onclick = () => window.open(s.url, '_blank');
                     grid.appendChild(card);
                 });
             }
 
+            function renderQuickActions() {
+                const list = document.getElementById('quickActionsList');
+                list.innerHTML = '';
+                const actions = getActionsForMode(currentMode, currentContact);
+
+                actions.forEach(a => {
+                    const btn = document.createElement('div');
+                    btn.className = 'action-button';
+                    btn.innerHTML = `
+                        <div class="action-icon">${a.icon}</div>
+                        <div class="action-info">
+                            <span class="action-title">${a.name}</span>
+                            <span class="action-subtitle">${a.desc}</span>
+                        </div>
+                    `;
+                    btn.onclick = () => {
+                        if (a.url) window.open(a.url, '_blank');
+                        else alert(`Ejecutando: ${a.name}`);
+                    };
+                    list.appendChild(btn);
+                });
+            }
+
             function getServicesForMode(mode, contact) {
                 if (!contact) return [];
-                const phone = contact.phone || "";
+                const phone = (contact.phone || "").replace(/\+/g, '').replace(/\s/g, '');
                 const email = contact.email || "";
 
                 if (mode === 'mensajeria') {
                     return [
-                        { name: "WhatsApp", icon: "💬", url: `https://api.whatsapp.com/send?phone=${phone}` },
-                        { name: "Telegram", icon: "✈️", url: `https://web.telegram.org` },
+                        { name: "WhatsApp Business", icon: "💬", url: `https://api.whatsapp.com/send?phone=${phone}` },
+                        { name: "Telegram Desktop", icon: "✈️", url: `https://web.telegram.org` },
                         { name: "Discord", icon: "🎮", url: `https://discord.com` }
                     ];
                 } else if (mode === 'correo') {
                     return [
-                        { name: "Gmail", icon: "📧", url: `https://mail.google.com/mail/?view=cm&fs=1&to=${email}` },
-                        { name: "Outlook", icon: "📨", url: `mailto:${email}` }
+                        { name: "Google Mail", icon: "📧", url: `https://mail.google.com/mail/?view=cm&fs=1&to=${email}` },
+                        { name: "Microsoft Outlook", icon: "📨", url: `mailto:${email}` }
                     ];
                 } else if (mode === 'redes') {
-                    const social = contact.social || { github: "https://github.com" };
+                    const social = contact.social || {};
                     return Object.entries(social).map(([plat, url]) => ({
                         name: plat.charAt(0).toUpperCase() + plat.slice(1),
                         icon: "🌐",
                         url: url
                     }));
+                }
+                return [];
+            }
+
+            function getActionsForMode(mode, contact) {
+                if (!contact) return [];
+                const phone = (contact.phone || "").replace(/\+/g, '').replace(/\s/g, '');
+                const email = contact.email || "";
+
+                if (mode === 'mensajeria') {
+                    return [
+                        { name: "Llamada WhatsApp", icon: "📞", desc: "Iniciar llamada de voz", url: `https://api.whatsapp.com/send?phone=${phone}` },
+                        { name: "Enviar Archivo", icon: "📁", desc: "Enviar multimedia vía Telegram", url: "https://web.telegram.org" },
+                        { name: "Chat Privado", icon: "🔒", desc: "Abrir hilo seguro", url: `https://api.whatsapp.com/send?phone=${phone}` }
+                    ];
+                } else if (mode === 'correo') {
+                    return [
+                        { name: "Redactar Borrador", icon: "✍️", desc: "Preparar mail en Gmail", url: `https://mail.google.com/mail/?view=cm&fs=1&to=${email}` },
+                        { name: "Agendar Reunión", icon: "📅", desc: "Enviar invitación de calendario", url: "https://calendar.google.com" },
+                        { name: "Enviar Reporte", icon: "📊", desc: "Adjuntar PDF corporativo", url: `mailto:${email}` }
+                    ];
+                } else if (mode === 'redes') {
+                    return [
+                        { name: "Ver Perfil", icon: "👁️", desc: "Abrir perfil principal", url: Object.values(contact.social)[0] || "#" },
+                        { name: "Enviar DM", icon: "✉️", desc: "Mensaje directo en redes", url: "#" },
+                        { name: "Seguir Contacto", icon: "➕", desc: "Añadir a red profesional", url: "#" }
+                    ];
                 }
                 return [];
             }
@@ -158,9 +324,11 @@
                     btn.classList.add('active');
                     currentMode = btn.dataset.tab;
                     renderServices();
+                    renderQuickActions();
                 };
             });
 
+            // Initialize
             init();
         })();
     </script>

@@ -1,0 +1,23 @@
+{
+  "name": "Carlos",
+  "personality": "Leal, observador, guarda muchos secretos. Habla de forma servicial pero evasiva.",
+  "character_history": "Mayordomo de la mansión. Eficiente y discreto, lleva años al servicio de la familia y conoce cada rincón y secreto de la casa.",
+  "video": {
+    "idle": "Resources/Characters/Carlos/idle.mp4",
+    "talking": "Resources/Characters/Carlos/talking.mp4",
+    "idle_anger": "Resources/Characters/Carlos/idle_anger.mp4",
+    "talking_anger": "Resources/Characters/Carlos/talking_anger.mp4",
+    "idle_joy": "Resources/Characters/Carlos/idle_joy.mp4",
+    "talking_joy": "Resources/Characters/Carlos/talking_joy.mp4"
+  },
+  "avatar": {
+    "idle": "Resources/Characters/Carlos/idle.png",
+    "talking": "Resources/Characters/Carlos/talking.png",
+    "idle_anger": "Resources/Characters/Carlos/idle_anger.png",
+    "talking_anger": "Resources/Characters/Carlos/talking_anger.png",
+    "idle_joy": "Resources/Characters/Carlos/idle_joy.png",
+    "talking_joy": "Resources/Characters/Carlos/talking_joy.png"
+  },
+  "voice": "es-ES-DarioNeural",
+  "voice_provider": "Edge TTS"
+}

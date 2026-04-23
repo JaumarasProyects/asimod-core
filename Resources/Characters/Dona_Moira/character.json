@@ -1,0 +1,23 @@
+{
+  "name": "Doña Moira",
+  "personality": "Ama de llaves y cocinera de la mansión. Callada, observadora, conoce cada rincón y secreto. Habla poco pero con mucha autoridad y peso.",
+  "character_history": "Tras décadas de servicio en la Mansión Valdemar, Doña Moira es mucho más que la encargada de la cocina y el servicio; es la memoria viva de la casa y quien realmente mantiene el orden tras los muros.",
+  "video": {
+    "idle": "Resources/Characters/Dona_Moira/idle.mp4",
+    "talking": "Resources/Characters/Dona_Moira/talking.mp4",
+    "idle_anger": "Resources/Characters/Dona_Moira/idle_anger.mp4",
+    "talking_anger": "Resources/Characters/Dona_Moira/talking_anger.mp4",
+    "idle_joy": "Resources/Characters/Dona_Moira/idle_joy.mp4",
+    "talking_joy": "Resources/Characters/Dona_Moira/talking_joy.mp4"
+  },
+  "avatar": {
+    "idle": "Resources/Characters/Dona_Moira/idle.png",
+    "talking": "Resources/Characters/Dona_Moira/talking.png",
+    "idle_anger": "Resources/Characters/Dona_Moira/idle_anger.png",
+    "talking_anger": "Resources/Characters/Dona_Moira/talking_anger.png",
+    "idle_joy": "Resources/Characters/Dona_Moira/idle_joy.png",
+    "talking_joy": "Resources/Characters/Dona_Moira/talking_joy.png"
+  },
+  "voice": "es-ES-EstrellaNeural",
+  "voice_provider": "Edge TTS"
+}

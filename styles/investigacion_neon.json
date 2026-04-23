@@ -1,23 +1,23 @@
 {
     "name": "Investigación Neón",
     "colors": {
-        "bg_main": "#050510",
-        "bg_dark": "#020205",
-        "bg_sidebar": "#020205",
-        "bg_header": "#0c0c1a",
-        "bg_input": "#1a1a2a",
+        "bg_main": "#2d1f14",
+        "bg_dark": "#1a120b",
+        "bg_sidebar": "#1a120b",
+        "bg_header": "#3d2b1c",
+        "bg_input": "#1a120b",
         "accent": "#00f2ff",
         "accent_hover": "#00c4cc",
-        "text_main": "#ffffff",
-        "text_dim": "#8e9aaf",
-        "btn_bg": "#151525",
+        "text_main": "#fdf5e6",
+        "text_dim": "#a67c52",
+        "btn_bg": "#4a3528",
         "btn_fg": "#ffffff"
     },
     "backgrounds": {
-        "sidebar": "Resources/Styles/InvestigacionNeon/sidebar_bg.png",
-        "chat": "Resources/Styles/InvestigacionNeon/chat_bg.png",
-        "center": "Resources/Styles/InvestigacionNeon/main_bg.png",
-        "module_box": "Resources/Styles/InvestigacionNeon/box_bg.png",
-        "button": "Resources/Styles/InvestigacionNeon/box_bg.png"
+        "sidebar": "Resources/Styles/InvestigacionNeon/sidebar_special.png",
+        "chat": "Resources/Styles/InvestigacionNeon/shared_bg.png",
+        "center": "Resources/Styles/InvestigacionNeon/shared_bg.png",
+        "module_box": "Resources/Styles/InvestigacionNeon/shared_bg.png",
+        "button": "Resources/Styles/InvestigacionNeon/button_bg.png"
     }
 }

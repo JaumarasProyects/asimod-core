@@ -1,0 +1,23 @@
+{
+  "name": "Lubba Mujer Fatal",
+  "personality": "Misteriosa, seductora, con un aire de peligro. Una manipuladora de las sombras exquisita.",
+  "character_history": "Una invitada inesperada en la mansión. Nadie sabe exactamente quién la invitó.",
+  "video": {
+    "idle": "Resources/Characters/Lubba Mujer Fatal/idle.mp4",
+    "talking": "Resources/Characters/Lubba Mujer Fatal/talking.mp4",
+    "idle_anger": "Resources/Characters/Lubba Mujer Fatal/idle_anger.mp4",
+    "talking_anger": "Resources/Characters/Lubba Mujer Fatal/talking_anger.mp4",
+    "idle_joy": "Resources/Characters/Lubba Mujer Fatal/idle_joy.mp4",
+    "talking_joy": "Resources/Characters/Lubba Mujer Fatal/talking_joy.mp4"
+  },
+  "avatar": {
+    "idle": "Resources/Characters/Lubba Mujer Fatal/idle.png",
+    "talking": "Resources/Characters/Lubba Mujer Fatal/talking.png",
+    "idle_anger": "Resources/Characters/Lubba Mujer Fatal/idle_anger.png",
+    "talking_anger": "Resources/Characters/Lubba Mujer Fatal/talking_anger.png",
+    "idle_joy": "Resources/Characters/Lubba Mujer Fatal/idle_joy.png",
+    "talking_joy": "Resources/Characters/Lubba Mujer Fatal/talking_joy.png"
+  },
+  "voice": "es-ES-ElviraNeural",
+  "voice_provider": "Edge TTS"
+}

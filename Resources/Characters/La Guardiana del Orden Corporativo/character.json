@@ -1,0 +1,23 @@
+{
+    "id": "personaje_1776738913",
+    "name": "La Guardiana del Orden Corporativo",
+    "personality": "",
+    "gender": "male",
+    "active_thread": "thread_personaje_1776738913",
+    "avatar": {
+        "idle": "Resources/Characters/La Guardiana del Orden Corporativo/idle.png",
+        "talking": "Resources/Characters/La Guardiana del Orden Corporativo/talking.png",
+        "idle_anger": "Resources/Characters/La Guardiana del Orden Corporativo/idle_anger.png",
+        "talking_anger": "Resources/Characters/La Guardiana del Orden Corporativo/talking_anger.png",
+        "idle_joy": "Resources/Characters/La Guardiana del Orden Corporativo/idle_joy.png",
+        "talking_joy": "Resources/Characters/La Guardiana del Orden Corporativo/talking_joy.png"
+    },
+    "video": {
+        "idle": "Resources/Characters/La Guardiana del Orden Corporativo/idle.mp4",
+        "talking": "Resources/Characters/La Guardiana del Orden Corporativo/talking.mp4",
+        "talking_anger": "Resources/Characters/La Guardiana del Orden Corporativo/talking_anger.mp4",
+        "talking_joy": "Resources/Characters/La Guardiana del Orden Corporativo/talking_joy.mp4"
+    },
+    "voice_id": "en-US-AndrewNeural",
+    "voice_provider": "Edge TTS"
+}

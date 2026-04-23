@@ -57,6 +57,7 @@ class MediaGeneratorModule(StandardModule):
         }
         self.doc_map = {} # Mapeo de Título -> Path para Documento Origen
         self.ingredient_panel_visible = False
+        self.base_photo = None  # NUEVO: Almacena la ruta de la foto semilla para personajes
         
         # Estados específicos por pestaña (Persistencia real)
         self.audio_state = {"type": "Voces", "provider": "ASIMOD - Edge"}
@@ -142,7 +143,7 @@ class MediaGeneratorModule(StandardModule):
                 print(f"[MediaGenerator] {len(models)} modelos LLM cargados para letras.")
                 
                 # Si el panel de audio está cargado, actualizar dropdown
-                if self.current_mode == "Audio":
+                if self.current_mode == "Audio" and hasattr(self, "workspace") and self.workspace:
                     self.workspace.after(0, self._rebuild_audio_panel)
             except Exception as e:
                 print(f"[MediaGenerator] Error cargando modelos LLM: {e}")
@@ -424,18 +425,79 @@ class MediaGeneratorModule(StandardModule):
 
     def _add_reference_management_controls(self):
         """Añade los controles de gestión de referencias de forma uniforme."""
-        # Limpiar posibles duplicados si el panel reutiliza el contenedor
-        target = self.ctrl_panel.grid_container # Usamos el grid_container principal
+        target = self.ctrl_panel.grid_container
         
-        self.ctrl_panel.add_button("📎 Gestionar Referencias", self._open_reference_manager)
+        row_ref = tk.Frame(target, bg=target["bg"])
+        row_ref.grid(row=len(target.winfo_children()), column=0, columnspan=2, sticky="ew", pady=2)
         
+        tk.Button(row_ref, text="📎 Gestionar Referencias", bg="#333", fg="#4EC9B0", bd=0, padx=8,
+                  command=self._open_reference_manager, cursor="hand2").pack(side=tk.LEFT, padx=5)
+        
+        # --- SECCIÓN FOTO BASE (NUEVO) ---
+        if self.compound_state.get("category") == "Personaje":
+            btn_text = "🖼️ Seleccionar Foto Base"
+            if self.base_photo:
+                btn_text = f"🖼️ {os.path.basename(self.base_photo)[:15]}..."
+            
+            tk.Button(row_ref, text=btn_text, bg="#333", fg="#DCDCAA", bd=0, padx=8,
+                      command=self._select_base_photo, cursor="hand2").pack(side=tk.LEFT, padx=5)
+            
+            if self.base_photo:
+                tk.Button(row_ref, text="❌", bg="#333", fg="#F44336", bd=0, padx=5,
+                          command=self._clear_base_photo, cursor="hand2").pack(side=tk.LEFT)
+
         # NUEVO: Botón de generación completa para personajes
         if self.compound_state.get("category") == "Personaje":
-            self.ctrl_panel.add_button("🚀 Personaje Completo (Auto)", self.handle_auto_full_character_generation)
+            row_auto = tk.Frame(target, bg=target["bg"])
+            row_auto.grid(row=len(target.winfo_children()), column=0, columnspan=2, sticky="ew", pady=5)
+            
+            tk.Button(row_auto, text="🚀 Personaje Completo (Auto)", bg=self.style.get_color("accent"), fg="white", 
+                      bd=0, padx=12, pady=5, font=("Arial", 9, "bold"),
+                      command=self.handle_auto_full_character_generation, cursor="hand2").pack(side=tk.LEFT, padx=5)
+            
+            # Botón directo de Publicar JUEGO si tenemos un source_doc de grado >= 2
+            s_path = self.compound_state.get("source_doc")
+            if s_path:
+                # Comprobar grado (el path suele ser texto/compuesto/Personaje/Titulo_G2_...)
+                if "_G2" in s_path or "_G3" in s_path or "_G4" in s_path:
+                    tk.Button(row_auto, text="🎮 Publicar a JUEGO", bg="#2A4B7C", fg="white", 
+                              bd=0, padx=12, pady=5, font=("Arial", 9, "bold"),
+                              command=lambda: self._on_direct_publish_game(s_path), cursor="hand2").pack(side=tk.LEFT, padx=5)
         
         ref_count = len(self.compound_state.get("references", []))
         label_color = "#4EC9B0" if ref_count > 0 else "#888"
-        self.ctrl_panel.add_label(f"📦 {ref_count} referencias activas.", color=label_color)
+        tk.Label(row_ref, text=f"📦 {ref_count} refs.", bg=target["bg"], fg=label_color, font=("Arial", 8)).pack(side=tk.LEFT, padx=5)
+
+    def _select_base_photo(self):
+        """Abre un selector para fijar la foto base del personaje."""
+        from tkinter import filedialog
+        path = filedialog.askopenfilename(
+            title="Seleccionar Foto Base para Personaje",
+            filetypes=[("Imágenes", "*.png *.jpg *.jpeg *.webp")]
+        )
+        if path:
+            self.base_photo = path
+            self.chat_service.notify_system_msg(f"ASIMOD: Foto base fijada: {os.path.basename(path)}", "#4EC9B0")
+            self._update_controllers_logic(self.current_mode)
+
+    def _clear_base_photo(self):
+        """Limpia la foto base seleccionada."""
+        self.base_photo = None
+        self._update_controllers_logic(self.current_mode)
+
+    def _on_direct_publish_game(self, path):
+        """Manejador para el botón directo de publicación (Desktop)."""
+        import asyncio
+        msg = f"¿Deseas publicar este personaje directamente en el juego de investigación?\n\nPath: {path}"
+        if tk.messagebox.askyesno("Publicar a Juego", msg):
+            def run():
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                res = loop.run_until_complete(self.publish_to_game(path))
+                loop.close()
+                tk.messagebox.showinfo("Resultado", res["message"])
+            
+            threading.Thread(target=run, daemon=True).start()
 
     def _on_subtype_change(self, val):
         self.compound_state["subtype"] = val
@@ -530,15 +592,26 @@ class MediaGeneratorModule(StandardModule):
         checkbox_vars = {} # Map path -> BooleanVar
 
         def on_publish(path):
-            """Publica el personaje y refresca."""
-            msg_id = tk.messagebox.askyesno("Publicar", f"¿Deseas publicar este personaje en el Hub de ASIMOD?\n\nPath: {path}")
+            """Publica el personaje al Hub."""
+            msg_id = tk.messagebox.askyesno("Publicar CORE", f"¿Deseas publicar este personaje en el Hub global de ASIMOD?\n\nPath: {path}")
             if msg_id:
                 async def run_publish():
                     res = await self.publish_to_hub(path)
-                    color = "green" if res["status"] == "success" else "red"
                     tk.messagebox.showinfo("Resultado", res["message"])
                 
-                # Ejecutar en hilo para no bloquear UI
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                loop.run_until_complete(run_publish())
+                loop.close()
+
+        def on_publish_game(path):
+            """Publica el personaje al Juego de Investigación."""
+            msg_id = tk.messagebox.askyesno("Publicar JUEGO", f"¿Deseas publicar este personaje en el módulo interno del JUEGO?\n\nPath: {path}")
+            if msg_id:
+                async def run_publish():
+                    res = await self.publish_to_game(path)
+                    tk.messagebox.showinfo("Resultado", res["message"])
+                
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
                 loop.run_until_complete(run_publish())
@@ -600,7 +673,12 @@ class MediaGeneratorModule(StandardModule):
                          fg="#888", font=("Arial", 8)).pack(side=tk.LEFT, padx=5)
 
                 if p["category"] == "Personaje" and grade >= 2:
-                    btn_pub = tk.Button(row, text="🚀 PUBLICAR", bg="#2D5A27", fg="white", 
+                    btn_pub_game = tk.Button(row, text="🎮 JUEGO", bg="#2A4B7C", fg="white", 
+                                       font=("Arial", 7, "bold"), bd=0, padx=5, pady=2,
+                                       command=lambda pt=path: on_publish_game(pt))
+                    btn_pub_game.pack(side=tk.RIGHT, padx=5)
+
+                    btn_pub = tk.Button(row, text="🚀 HUB", bg="#2D5A27", fg="white", 
                                        font=("Arial", 7, "bold"), bd=0, padx=5, pady=2,
                                        command=lambda pt=path: on_publish(pt))
                     btn_pub.pack(side=tk.RIGHT, padx=5)
@@ -1004,7 +1082,8 @@ class MediaGeneratorModule(StandardModule):
                     "compound": {
                         "type": "Compuesto",
                         "subtype": "Personaje",
-                        "category": "Personaje"
+                        "category": "Personaje",
+                        "base_photo": self.base_photo  # NUEVO: Pasar foto semilla
                     }
                 }
                 res2 = loop.run_until_complete(self._perform_generation(prompt, "Imagen", web_params=g2_params))
@@ -1075,7 +1154,117 @@ class MediaGeneratorModule(StandardModule):
         import threading
         threading.Thread(target=run_sequence, daemon=True).start()
 
-    def handle_generate_manual(self, prompt):
+    async def upgrade_character_from_grade(self, source_doc: str, prompt: str = "", from_grade: int = None) -> dict:
+        """
+        API CHECKPOINT: Continúa la generación de un personaje desde un grado ya existente.
+
+        Dado un JSON de personaje en cualquier grado (G1, G2, G3), ejecuta las fases
+        restantes de forma secuencial hasta completarlo (G4 + publicación).
+
+        Parámetros:
+            source_doc (str): Ruta relativa o absoluta al JSON del personaje (ej: "texto/compuesto/Personajes/Maria_G2.json")
+            prompt (str): Prompt visual para la generación de imágenes/video. Si está vacío, se extrae del JSON.
+            from_grade (int): Fuerza el grado de partida. Si es None, se detecta del JSON.
+
+        Retorna un dict con el estado y la ruta del JSON final.
+
+        Ejemplo de llamada vía API:
+            POST /v1/modules/media_generator/action
+            {
+                "action": "upgrade_character_from_grade",
+                "params": {
+                    "source_doc": "texto/compuesto/Personajes/Maria_G2.json",
+                    "prompt": "mujer elegante con vestido negro"
+                }
+            }
+        """
+        import asyncio
+
+        # --- 1. Resolver la ruta del JSON fuente ---
+        if not os.path.isabs(source_doc):
+            abs_doc = os.path.join(self.output_root, source_doc)
+        else:
+            abs_doc = source_doc
+
+        if not os.path.exists(abs_doc):
+            return {"status": "error", "message": f"Archivo no encontrado: {abs_doc}"}
+
+        try:
+            with open(abs_doc, "r", encoding="utf-8") as f:
+                char_data = json.load(f)
+        except Exception as e:
+            return {"status": "error", "message": f"Error leyendo JSON: {e}"}
+
+        # --- 2. Detectar grado de partida ---
+        detected_grade = from_grade or char_data.get("grado_desarrollo", 1)
+        if not prompt:
+            # Intentar extraer un prompt descriptivo del propio JSON
+            prompt = char_data.get("apariencia") or char_data.get("descripcion") or char_data.get("titulo", "personaje")
+
+        self.chat_service.notify_system_msg(
+            f"🔄 [Upgrade] Personaje '{char_data.get('titulo', '?')}' detectado en G{detected_grade}. "
+            f"Continuando pipeline hasta G4...", color="#40E0D0"
+        )
+
+        current_path = abs_doc
+        final_res = None
+
+        # --- 3. Ejecutar fases pendientes ---
+        if detected_grade < 2:
+            # G2: Imagen principal
+            self.chat_service.notify_system_msg("🎨 [Upgrade] Fase G2: Generando Imagen Principal...", color="#40E0D0")
+            g2_params = {
+                "source_doc": current_path,
+                "compound": {"type": "Compuesto", "subtype": "Personaje", "category": "Personaje"}
+            }
+            res = await self._perform_generation(prompt, "Imagen", web_params=g2_params)
+            current_path = self._extract_path_from_result(res, current_path)
+
+        if detected_grade < 3:
+            # G3: Voz / Ficha Técnica
+            self.chat_service.notify_system_msg("🎙️ [Upgrade] Fase G3: Generando Voz y Ficha Técnica...", color="#40E0D0")
+            g3_params = {
+                "source_doc": current_path,
+                "compound": {"type": "Compuesto", "subtype": "Personaje", "category": "Personaje"}
+            }
+            res = await self._perform_generation(prompt, "Audio", web_params=g3_params)
+            current_path = self._extract_path_from_result(res, current_path)
+
+        if detected_grade < 4:
+            # G4: Vídeo de animación
+            self.chat_service.notify_system_msg("🎬 [Upgrade] Fase G4: Generando Vídeos de Animación...", color="#40E0D0")
+            g4_params = {
+                "source_doc": current_path,
+                "compound": {"type": "Compuesto", "subtype": "Personaje", "category": "Personaje"}
+            }
+            res = await self._perform_generation(prompt, "Video", web_params=g4_params)
+            current_path = self._extract_path_from_result(res, current_path)
+            final_res = res
+
+        self.chat_service.notify_system_msg(
+            f"✅ [Upgrade] ¡Personaje completado! JSON final: {os.path.basename(current_path)}",
+            color="#00ff00", beep=True
+        )
+
+        return {
+            "status": "success",
+            "message": f"Personaje actualizado desde G{detected_grade} hasta G4",
+            "json_path": current_path,
+            "result": final_res
+        }
+
+    def _extract_path_from_result(self, result, fallback_path: str) -> str:
+        """Extrae la ruta del JSON del resultado de _perform_generation, con fallback."""
+        if isinstance(result, dict):
+            p = result.get("json_path") or result.get("path")
+            if p and os.path.exists(p): return p
+        if isinstance(result, str) and os.path.exists(result):
+            return result
+        if isinstance(result, list) and result and os.path.exists(result[0]):
+            return result[0]
+        return fallback_path
+
+
         """Versión de compatibilidad para disparar hilos desde la UI desktop."""
         def run():
             loop = asyncio.new_event_loop()
@@ -1777,6 +1966,23 @@ class MediaGeneratorModule(StandardModule):
             # Grado 2: Imagen + Enriquecimiento Narrativo + Audio Plan
             print("[Compound] Escalando a Grado 2: Imagen y Guion...")
             
+            # --- LÓGICA ESPECIAL FOTO SEMILLA (Base Image) ---
+            base_photo = web_params.get("compound", {}).get("base_photo")
+            if not base_photo: base_photo = web_params.get("base_photo")
+            
+            used_base = False
+            if category == "Personaje" and base_photo and os.path.exists(base_photo):
+                print(f"[MediaGenerator] Usando Foto Base detectada: {base_photo}")
+                dest_base = os.path.join(out_dir, "retrato.png")
+                try:
+                    shutil.copy2(base_photo, dest_base)
+                    multimedia = piece_data.setdefault("multimedia", {})
+                    multimedia["imagen_principal"] = "retrato.png"
+                    piece_data["retrato"] = dest_base
+                    used_base = True
+                except Exception as e:
+                    print(f"[MediaGenerator] Error copiando foto base: {e}")
+            
             # A. Enriquecimiento Narrativo y Plan de Audio via LLM
             enrich_prompt = f"Desarrolla el guion técnico y planifica el audio para este {category} G1."
             refs_content = self._load_references_content(piece_data.get("referencias", []))
@@ -1807,6 +2013,12 @@ class MediaGeneratorModule(StandardModule):
                 step_results = {}
                 for step in steps:
                     s_name = step.get("name")
+                    # Si hemos usado Foto Base, saltarse la fase de "Retrato" o similar que genera la principal
+                    if used_base and s_name in ("Retrato", "Fase 1", "Imagen Principal"):
+                        print(f"[Compound][G2] Saltando paso '{s_name}' porque ya tenemos Foto Base.")
+                        step_results[s_name] = piece_data["retrato"]
+                        continue
+
                     # RESOLUCIÓN MAESTRA: Si el paso es el principal o indica default, usar el maestro
                     raw_wf = step.get("workflow")
                     s_file = self._resolve_master_workflow("Imagen", recipe_wf=raw_wf)
@@ -2265,6 +2477,99 @@ class MediaGeneratorModule(StandardModule):
             msg = f"Error publicando: {str(e)}"
             print(f"[MediaGenerator] {msg}")
             return {"status": "error", "message": msg}
+
+    async def publish_to_game(self, json_path):
+        """Publica un Personaje directamente al repositorio interno del Juego de Investigación."""
+        import shutil
+        try:
+            # Resolver ruta si es relativa
+            if not os.path.isabs(json_path):
+                full_path = os.path.join(self.output_root, json_path)
+                if os.path.exists(full_path):
+                    json_path = full_path
+
+            if not os.path.exists(json_path):
+                return {"status": "error", "message": f"Archivo no encontrado: {json_path}"}
+                
+            with open(json_path, "r", encoding="utf-8") as f:
+                piece_data = json.load(f)
+                
+            category = piece_data.get("categoria", piece_data.get("category"))
+            if category != "Personaje":
+                return {"status": "error", "message": "Solo se pueden publicar Personajes al Juego."}
+                
+            char_name = piece_data.get("titulo", piece_data.get("id"))
+            char_folder = char_name
+            for char in '<>:"/\\|?*':
+                char_folder = char_folder.replace(char, "_")
+            
+            # Ruta destino: modules/game/Resources/Characters
+            base_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+            game_reg_dir = os.path.join(base_dir, "modules", "game", "Resources", "Characters")
+            os.makedirs(game_reg_dir, exist_ok=True)
+            
+            reg_path = os.path.join(game_reg_dir, char_folder)
+            os.makedirs(reg_path, exist_ok=True)
+            
+            # 1. Copiar assets multimedia (imágenes y vídeos)
+            source_dir = os.path.dirname(json_path)
+            for f in os.listdir(source_dir):
+                if f.lower().endswith(('.png', '.jpg', '.webp', '.mp4', '.webm', '.gif')):
+                    shutil.copy2(os.path.join(source_dir, f), os.path.join(reg_path, f))
+            
+            # 2. Generar/Actualizar character.json compatible con Core
+            reg_json_path = os.path.join(reg_path, "character.json")
+            
+            # Extraer personalidad si existe
+            personality = ""
+            desc = piece_data.get("descripcion_generada", "")
+            if "```json" in desc:
+                try:
+                    inner = json.loads(desc.split("```json")[1].split("```")[0])
+                    pers_list = inner.get('personality_and_traits', {}).get('personality_traits', [])
+                    personality = f"Arquetipo: {inner.get('archetype')}. Personalidad: {', '.join(pers_list)}"
+                except: pass
+            
+            if not personality:
+                personality = piece_data.get("personality", piece_data.get("historia", ""))
+
+            # Construir rutas relativas al raíz del módulo de juego
+            rel_folder = f"Resources/Characters/{char_folder}"
+            
+            reg_data = {
+                "id": char_folder,
+                "name": char_name,
+                "description": piece_data.get("sinopsis", ""),
+                "personality": personality,
+                "avatar": {
+                    "idle": f"{rel_folder}/retrato.png",
+                    "joy": f"{rel_folder}/imagen_joy.png",
+                    "anger": f"{rel_folder}/imagen_anger.png",
+                    "talking": f"{rel_folder}/talking.png",
+                    "talking_joy": f"{rel_folder}/talking_joy.png",
+                    "talking_anger": f"{rel_folder}/talking_anger.png"
+                },
+                "video": {
+                    "idle": f"{rel_folder}/idle.mp4",
+                    "joy": f"{rel_folder}/joy.mp4",
+                    "anger": f"{rel_folder}/anger.mp4"
+                }
+            }
+            
+            # Fallback para nombres de archivo si no existe retrato.png
+            if not os.path.exists(os.path.join(reg_path, "retrato.png")):
+                if os.path.exists(os.path.join(reg_path, "idle.png")):
+                    reg_data["avatar"]["idle"] = f"{rel_folder}/idle.png"
+            
+            with open(reg_json_path, "w", encoding="utf-8") as f:
+                json.dump(reg_data, f, indent=4, ensure_ascii=False)
+                
+            self.chat_service.notify_system_msg(f"ASIMOD: [Juego] Personaje '{char_name}' publicado con éxito.", "#4EC9B0")
+            return {"status": "success", "message": f"Personaje '{char_name}' publicado en el Juego.", "path": reg_path}
+            
+        except Exception as e:
+            logger.exception(f"Error publicando al Juego: {e}")
+            return {"status": "error", "message": str(e)}
 
     def _detect_gender(self, name, personality):
         """Intento simple de detectar género por palabras clave en nombre y descripción."""

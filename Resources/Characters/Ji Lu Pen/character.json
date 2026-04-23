@@ -1,0 +1,23 @@
+{
+  "name": "Ji Lu Pen",
+  "personality": "Pragmático, misterioso, extremadamente observador del flujo del dinero. Habla con calma pero sus palabras tienen un peso calculado.",
+  "character_history": "Inversionista Oriental. Un hombre que ha hecho su fortuna en mercados emergentes y que ha venido a la mansión para cerrar un trato importante con el Sr. Lobo. Conoce el valor de la información y no la regala.",
+  "video": {
+    "idle": "Resources/Characters/Ji Lu Pen/idle.mp4",
+    "talking": "Resources/Characters/Ji Lu Pen/talking.mp4",
+    "idle_anger": "Resources/Characters/Ji Lu Pen/idle_anger.mp4",
+    "talking_anger": "Resources/Characters/Ji Lu Pen/talking_anger.mp4",
+    "idle_joy": "Resources/Characters/Ji Lu Pen/idle_joy.mp4",
+    "talking_joy": "Resources/Characters/Ji Lu Pen/talking_joy.mp4"
+  },
+  "avatar": {
+    "idle": "Resources/Characters/Ji Lu Pen/idle.png",
+    "talking": "Resources/Characters/Ji Lu Pen/talking.png",
+    "idle_anger": "Resources/Characters/Ji Lu Pen/idle_anger.png",
+    "talking_anger": "Resources/Characters/Ji Lu Pen/talking_anger.png",
+    "idle_joy": "Resources/Characters/Ji Lu Pen/idle_joy.png",
+    "talking_joy": "Resources/Characters/Ji Lu Pen/talking_joy.png"
+  },
+  "voice": "es-ES-YunfengNeural",
+  "voice_provider": "Edge TTS"
+}

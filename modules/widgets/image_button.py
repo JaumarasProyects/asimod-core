@@ -71,6 +71,32 @@ class ImageButton(tk.Label):
         self.bind("<Leave>", self._on_leave)
         self.bind("<Map>", lambda e: self.after(100, self._resize_image)) # Forzar dibujo inicial
 
+        # Suscribirse a cambios de estilo en tiempo de ejecución
+        if hasattr(self.style, "subscribe"):
+            self.style.subscribe(self.update_theme)
+
+    def update_theme(self):
+        """Actualiza la imagen y colores cuando el tema global cambia."""
+        self.bg_img_path = self.style.get_background("button")
+        self.accent_color = self.style.get_color("accent")
+        self.text_main = self.style.get_color("text_main")
+        self.text_dim = self.style.get_color("text_dim")
+        
+        # Color base por defecto
+        bg_color = self.style.get_color("btn_bg")
+        self.config(bg=bg_color, fg=self.accent_color if self.is_active else self.text_main)
+        
+        if self.bg_img_path and os.path.exists(self.bg_img_path):
+            try:
+                self.pil_img = Image.open(self.bg_img_path)
+                self.config(bd=0)
+                self._resize_image() # Forzar redibujado de la nueva imagen
+            except Exception as e:
+                print(f"[ImageButton] Error actualizando tema: {e}")
+        else:
+            self.pil_img = None
+            self.config(image=self.placeholder) # Volver al fallback de color
+
     def _on_configure(self, event):
         """Manejador de evento Configure con debouncing."""
         if self._after_id:

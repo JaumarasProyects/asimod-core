@@ -85,6 +85,13 @@ def main():
 
     api_server.run()
 
+    # --- APAGADO LIMPIO DEL SERVIDOR AL CERRAR LA VENTANA ---
+    def _on_close():
+        print("[Main] Cerrando aplicación. Deteniendo servidor API...")
+        api_server.stop()
+        root.destroy()
+    root.protocol("WM_DELETE_WINDOW", _on_close)
+
     if modular_active:
 
         # --- LAYOUT PRINCIPAL MODULAR ---

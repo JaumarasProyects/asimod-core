@@ -1,0 +1,23 @@
+{
+  "name": "Dra. Mora",
+  "personality": "Fría, analítica, distante emocionalmente. Habla con precisión técnica y tono clínico.",
+  "character_history": "Médica de la familia. Profesional respetada, especializada en toxicología, lo que la hace sospechosa en casos de envenenamiento.",
+  "video": {
+    "idle": "Resources/Characters/Dra. Mora/idle.mp4",
+    "talking": "Resources/Characters/Dra. Mora/talking.mp4",
+    "idle_anger": "Resources/Characters/Dra. Mora/idle_anger.mp4",
+    "talking_anger": "Resources/Characters/Dra. Mora/talking_anger.mp4",
+    "idle_joy": "Resources/Characters/Dra. Mora/idle_joy.mp4",
+    "talking_joy": "Resources/Characters/Dra. Mora/talking_joy.mp4"
+  },
+  "avatar": {
+    "idle": "Resources/Characters/Dra. Mora/idle.png",
+    "talking": "Resources/Characters/Dra. Mora/talking.png",
+    "idle_anger": "Resources/Characters/Dra. Mora/idle_anger.png",
+    "talking_anger": "Resources/Characters/Dra. Mora/talking_anger.png",
+    "idle_joy": "Resources/Characters/Dra. Mora/idle_joy.png",
+    "talking_joy": "Resources/Characters/Dra. Mora/talking_joy.png"
+  },
+  "voice": "es-ES-AbrilNeural",
+  "voice_provider": "Edge TTS"
+}

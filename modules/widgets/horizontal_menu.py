@@ -44,7 +44,7 @@ class HorizontalMenu(tk.Frame):
         for item in self.items:
             # Contenedor para el botón + indicador (opcional)
             btn_frame = tk.Frame(self.content_frame, bg=ghost_bg)
-            btn_frame.pack(side=tk.LEFT, padx=10)
+            btn_frame.pack(side=tk.LEFT, padx=5)
 
             # Si el estilo tiene imagen de fondo para botones, usamos ImageButton
             has_btn_img = self.style.get_background("button") if self.style else False
@@ -52,10 +52,10 @@ class HorizontalMenu(tk.Frame):
             if has_btn_img:
                 btn = ImageButton(btn_frame, text=item.upper(), style=self.style, 
                                   callback=lambda it=item: self._on_item_click(it),
-                                  font=("Arial", 9, "bold"), padx=20, pady=15)
+                                  font=("Arial", 9, "bold"), padx=12, pady=8)
             else:
                 btn = tk.Label(btn_frame, text=item.upper(), bg=self.bg_color, fg=self.text_color,
-                               font=("Arial", 9, "bold"), cursor="hand2", padx=10, pady=10)
+                               font=("Arial", 9, "bold"), cursor="hand2", padx=10, pady=5)
                 btn.bind("<Button-1>", lambda e, it=item: self._on_item_click(it))
             
             btn.pack()

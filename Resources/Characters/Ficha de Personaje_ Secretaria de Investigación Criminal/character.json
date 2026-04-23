@@ -1,0 +1,23 @@
+{
+    "id": "personaje_1776743241",
+    "name": "Ficha de Personaje: Secretaria de Investigación Criminal",
+    "personality": "",
+    "gender": "male",
+    "active_thread": "thread_personaje_1776743241",
+    "avatar": {
+        "idle": "Resources/Characters/Ficha de Personaje_ Secretaria de Investigación Criminal/idle.png",
+        "talking": "Resources/Characters/Ficha de Personaje_ Secretaria de Investigación Criminal/talking.png",
+        "idle_anger": "Resources/Characters/Ficha de Personaje_ Secretaria de Investigación Criminal/idle_anger.png",
+        "talking_anger": "Resources/Characters/Ficha de Personaje_ Secretaria de Investigación Criminal/talking_anger.png",
+        "idle_joy": "Resources/Characters/Ficha de Personaje_ Secretaria de Investigación Criminal/idle_joy.png",
+        "talking_joy": "Resources/Characters/Ficha de Personaje_ Secretaria de Investigación Criminal/talking_joy.png"
+    },
+    "video": {
+        "idle": "Resources/Characters/Ficha de Personaje_ Secretaria de Investigación Criminal/idle.mp4",
+        "talking": "Resources/Characters/Ficha de Personaje_ Secretaria de Investigación Criminal/talking.mp4",
+        "talking_anger": "Resources/Characters/Ficha de Personaje_ Secretaria de Investigación Criminal/talking_anger.mp4",
+        "talking_joy": "Resources/Characters/Ficha de Personaje_ Secretaria de Investigación Criminal/talking_joy.mp4"
+    },
+    "voice_id": "es-MX-JorgeNeural",
+    "voice_provider": "Edge TTS"
+}

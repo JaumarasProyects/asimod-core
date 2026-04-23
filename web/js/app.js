@@ -106,6 +106,9 @@ class AsimodApp {
         this.coreTrigger = document.getElementById('coreTrigger');
         this.mobileToggle = document.getElementById('mobileToggle');
 
+        // Referencia a personajes del registro para swaps rápidos
+        this.characterRegistry = [];
+
         this.init();
     }
 
@@ -129,6 +132,9 @@ class AsimodApp {
 
         // Polling constante para mantener la paridad (2s)
         setInterval(() => this.syncQuickStatus(), 2000);
+
+        // --- CORE INTEGRATION: Escuchar mensajes de módulos (iFrames) ---
+        window.addEventListener('message', (e) => this.handleModuleMessage(e));
     }
 
     async loadStyle() {
@@ -149,16 +155,30 @@ class AsimodApp {
 
             // --- NUEVO: Cargar texturas si el estilo las define (Glass Neon) ---
             if (data && data.backgrounds) {
+                const bgs = data.backgrounds;
+                
+                // Unificar si faltan algunos pero hay sidebar (consistencia para "las tres columnas")
+                const fallbackBg = bgs.sidebar || bgs.center || null;
+                
+                const finalBgs = {
+                    center: bgs.center || bgs.sidebar || null,
+                    sidebar: bgs.sidebar || null,
+                    chat: bgs.chat || bgs.sidebar || null,
+                    module_box: bgs.module_box || bgs.sidebar || null,
+                    button: bgs.button || null
+                };
+
                 const bgMapping = {
                     "center": "--bg-img-center",
                     "sidebar": "--bg-img-sidebar",
                     "chat": "--bg-img-chat",
-                    "module_box": "--bg-img-box"
+                    "module_box": "--bg-img-box",
+                    "button": "--bg-img-button"
                 };
-                Object.entries(data.backgrounds).forEach(([key, value]) => {
+
+                Object.entries(finalBgs).forEach(([key, value]) => {
                     const cssVar = bgMapping[key];
                     if (cssVar) {
-                        // Convertir ruta de recurso en URL web válida
                         const urlValue = value ? `url('/${value.replace(/\\/g, '/')}')` : 'none';
                         root.style.setProperty(cssVar, urlValue);
                     }
@@ -2137,7 +2157,8 @@ class AsimodApp {
         console.log("[CharacterHub] Aplicando personaje:", char.name);
         
         // Cerrar modal
-        document.getElementById('charLibraryModal').style.display = "none";
+        const modal = document.getElementById('charLibraryModal');
+        if (modal) modal.style.display = "none";
 
         // Crear/Actualizar memoria con los datos del personaje
         try {
@@ -2145,8 +2166,8 @@ class AsimodApp {
                 thread_id: "New", // Forzar nuevo hilo o usar nombre
                 name: char.name,
                 personality: char.personality,
-                voice_id: char.voice_id || "None",
-                voice_provider: char.voice_provider || "None",
+                voice_id: char.voice_id || char.voice?.id || "None",
+                voice_provider: char.voice_provider || char.voice?.provider || "None",
                 avatar: char.avatar || {},
                 video: char.video || {}
             };
@@ -2160,14 +2181,50 @@ class AsimodApp {
             if (resp.ok) {
                 // Forzar sincronización total para actualizar HUD y UI
                 await this.syncFullTechnicalState();
-                this._appendSystemMessage(`Personaje "${char.name}" cargado correctamente.`);
+                this._appendSystemMessage(`Identidad: ${char.name} activa.`);
             } else {
                 throw new Error("No se pudo aplicar el personaje");
             }
 
         } catch (e) {
             console.error("[CharacterHub] Error al aplicar:", e);
-            alert("Error al cargar el personaje: " + e.message);
+        }
+    }
+
+    /**
+     * Maneja mensajes entrantes de módulos en iFrames
+     */
+    async handleModuleMessage(event) {
+        const data = event.data;
+        if (!data || !data.module) return;
+
+        console.log(`[Core] Mensaje recibido del módulo ${data.module}:`, data);
+
+        if (data.type === 'SWITCH_CHARACTER') {
+            // Intentar buscar en el registro si no viene el objeto completo
+            let char = data.character;
+            if (!char && data.character_id) {
+                if (this.characterRegistry.length === 0) {
+                    const resp = await fetch('/v1/characters');
+                    const d = await resp.json();
+                    this.characterRegistry = d.characters || [];
+                }
+                char = this.characterRegistry.find(c => c.id === data.character_id || c.character_id === data.character_id);
+            }
+
+            if (char) {
+                await this.applyCharacterFromHub(char);
+            } else if (data.name) {
+                // Si no está en el registro, usar los datos básicos enviados
+                await this.applyCharacterFromHub({
+                    name: data.name,
+                    personality: data.personality || "Personaje de investigación",
+                    avatar: data.avatar || {},
+                    video: data.video || {}
+                });
+            }
+        } else if (data.type === 'SYSTEM_MESSAGE') {
+            this._appendSystemMessage(data.text);
         }
     }
 

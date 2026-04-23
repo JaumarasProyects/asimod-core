@@ -24,26 +24,27 @@ class VisualizerPort(ABC):
     
     def create(self, parent: tk.Widget) -> tk.Frame:
         """Crea el contenedor base y el canvas del visualizador"""
-        style = getattr(parent, 'style', None)
+        self.style = getattr(parent, 'style', None)
         
-        # 1. SIEMPRE crear un Frame contenedor base (Fondo negro para fundir vacios)
-        bg_color = "#1a1a1a" if style else parent.cget("bg")
+        # 1. SIEMPRE crear un Frame contenedor base
+        # Usamos el color de fondo del tema para que, aunque no haya transparencia real en Tkinter,
+        # el hueco coincida con el tono de la madera/pergamino.
+        bg_color = self.style.get_color("bg_main") if self.style else parent.cget("bg")
         self._frame = tk.Frame(parent, bg=bg_color)
         
         # El frame se expande horizontalmente
         self._frame.pack(fill=tk.X)
-        # NO usamos propagate(False) en el frame base para que crezca con la cabecera
         
         # 2. Crear el Canvas (o BackgroundFrame) como hijo del Frame
         from ui.background_frame import BackgroundFrame
         
-        bg_canvas = "#000000" if style else bg_color
-        
-        if style:
+        if self.style:
             # Usamos BackgroundFrame como hijo si hay estilo
-            self._canvas = BackgroundFrame(self._frame, style, "button", height=self.height)
-            self._canvas.pack(fill=tk.X) # SOLO HORIZONTAL, NO EXPANDIR VERTICALMENTE
+            # Cambiamos "button" por "chat" para mayor consistencia con el panel de chat
+            self._canvas = BackgroundFrame(self._frame, self.style, "chat", height=self.height)
+            self._canvas.pack(fill=tk.X)
         else:
+            bg_canvas = bg_color
             self._canvas = tk.Canvas(
                 self._frame, 
                 width=self.width, 
@@ -51,7 +52,7 @@ class VisualizerPort(ABC):
                 bg=bg_canvas, 
                 highlightthickness=0
             )
-            self._canvas.pack(fill=tk.X) # SOLO HORIZONTAL
+            self._canvas.pack(fill=tk.X)
             
         # Inicializar el contenido del canvas
         self._init_canvas()

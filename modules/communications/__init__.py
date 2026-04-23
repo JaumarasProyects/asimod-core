@@ -3,6 +3,7 @@ from tkinter import messagebox
 import webbrowser
 import os
 import json
+import sqlite3
 from core.standard_module import StandardModule
 
 class CommunicationsModule(StandardModule):
@@ -27,6 +28,22 @@ class CommunicationsModule(StandardModule):
         self.current_mode = "Mensajería"
         self.selected_contact = None
         self.contacts = []
+        
+        # Cargar datos iniciales
+        self._load_contacts()
+
+    def _load_contacts(self):
+        """Carga los contactos desde el DataService centralizado."""
+        try:
+            raw_contacts = self.data_service.get_contacts()
+            self.contacts = []
+            for c in raw_contacts:
+                contact = dict(c)
+                contact['social'] = json.loads(contact['social_json']) if contact['social_json'] else {}
+                self.contacts.append(contact)
+        except Exception as e:
+            print(f"[Communications] Error cargando contactos: {e}")
+            self.contacts = []
 
     def handle_get_gallery(self):
         """Genera la lista de contactos para la barra lateral web."""
@@ -64,18 +81,23 @@ class CommunicationsModule(StandardModule):
         return {"status": "success", "contact": self.selected_contact}
 
     def render_workspace(self, parent):
+        """Dibuja el área de comunicaciones."""
+        self._refresh_gallery()
+        
         if not self.selected_contact:
-            tk.Label(parent, text="Selecciona un contacto de la galería", 
-                     fg=self.style.get_color("text_dim"), bg=self.style.get_color("bg_main"), font=("Arial", 12)).pack(expand=True)
-            return
+            if self.contacts:
+                self.selected_contact = self.contacts[0]
+            else:
+                tk.Label(parent, text="Selecciona un contacto de la galería", 
+                         bg=self.style.get_color("bg_main"), fg="#888").pack(pady=100)
+                return
 
-        name = self.selected_contact.get("name", "Contacto")
+        # Header con info del contacto
+        contact = self.selected_contact
+        header_frame = tk.Frame(parent, bg=self.style.get_color("bg_main"))
+        header_frame.pack(fill=tk.X, pady=(0, 20))
         
-        # Header del contacto
-        header = tk.Frame(parent, bg=self.style.get_color("bg_main"))
-        header.pack(fill=tk.X, pady=(0, 20))
-        
-        tk.Label(header, text=name, bg=self.style.get_color("bg_main"), fg=self.style.get_color("text_main"), 
+        tk.Label(header_frame, text=contact.get("name", "Contacto"), bg=self.style.get_color("bg_main"), fg=self.style.get_color("text_main"), 
                  font=("Arial", 18, "bold")).pack(side=tk.LEFT)
         
         # Contenedor de servicios
@@ -128,26 +150,6 @@ class CommunicationsModule(StandardModule):
     def on_activate(self):
         self._load_contacts()
         self._refresh_gallery()
-
-    def _load_contacts(self):
-        # Intentar cargar desde el proyecto activo o archivo local
-        active = self.data_service.get_active_project()
-        root = active['root_folder'] if active and active.get('root_folder') else os.getcwd()
-        path = os.path.join(root, "contacts.json")
-        
-        if os.path.exists(path):
-            try:
-                with open(path, "r", encoding="utf-8") as f:
-                    self.contacts = json.load(f)
-            except: self.contacts = self._get_demo_contacts()
-        else:
-            self.contacts = self._get_demo_contacts()
-
-    def _get_demo_contacts(self):
-        return [
-            {"id": 1, "name": "Sistema ASIMOD", "role": "IA Core", "email": "admin@asimod.io", "phone": "123456789"},
-            {"id": 2, "name": "Usuario Demo", "role": "Tester", "email": "demo@example.com", "phone": "987654321", "social": {"github": "https://github.com"}}
-        ]
 
     def _refresh_gallery(self):
         if not self.gallery: return

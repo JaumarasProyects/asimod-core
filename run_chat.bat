@@ -1,4 +1,5 @@
 @echo off
-echo Iniciando Chat Aislado...
-python %~dp0main_standalone.py
+echo Iniciando ASIMOD (Modo Escritorio + APIs)...
+call .\venv\Scripts\activate
+python launch_asimod.py --gui
 pause

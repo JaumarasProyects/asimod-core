@@ -46,9 +46,11 @@ class ChatWidget(tk.Frame):
         if hasattr(self.chat_engine, "on_system_msg_cb"):
             self.chat_engine.on_system_msg_cb = self._on_system_msg_notified
         
-        # Suscribir a Emojis Tempranos (Sincronía visual Zero-Latency)
-        if hasattr(self.chat_engine, "on_emojis_detected_cb"):
-            self.chat_engine.on_emojis_detected_cb = self._on_early_emojis_detected
+        # Suscribir a cambios de personaje/identidad
+        if hasattr(self.chat_engine, "on_chat_injected_cb"):
+            self.chat_engine.on_chat_injected_cb = self._on_chat_injected
+        if hasattr(self.chat_engine, "on_character_changed_cb"):
+            self.chat_engine.on_character_changed_cb = self._on_character_changed
         
         # Contenedor principal para las vistas (Soporte para Imagen de Fondo)
         self.container = BackgroundFrame(self, self.style, "chat")
@@ -109,7 +111,7 @@ class ChatWidget(tk.Frame):
         if self.config.get("visualizer_enabled", False):
             v_service = VisualizerService(self.config)
             v_type = self.config.get("visualizer_type", "avatar") # Avatar por defecto
-            v_height = 230 if v_type == "avatar" else 60
+            v_height = 260 if v_type == "avatar" else 60
             # Aumentamos el ancho para que llene el hueco
             self.visualizer = v_service.get_instance(v_type, self, width=300, height=v_height)
             
@@ -560,9 +562,10 @@ class ChatWidget(tk.Frame):
         self._btn_cancel.pack(side=tk.LEFT, padx=10)
 
         # --- ÁREA DE TEXTO (Hijo de middle_container) ---
+        # Usamos bg_dark para el área de chat, que ahora es un marrón oscuro en el tema Neon
         self.chat_display = scrolledtext.ScrolledText(self.middle_container, state='disabled', 
                                                       bg=self.style.get_color("bg_dark"), fg=self.style.get_color("text_main"), 
-                                                      font=("Consolas", 10), wrap=tk.WORD)
+                                                      font=("Consolas", 10), wrap=tk.WORD, bd=0, highlightthickness=0)
         self.chat_display.pack(padx=10, fill=tk.BOTH, expand=True)
 
 
@@ -644,12 +647,16 @@ class ChatWidget(tk.Frame):
         self.combo_memory.set(active_thread)
         self._update_profile_ui()
 
-        # SUPER-PERSISTENCIA (NUEVO): Si el perfil cargado es genérico y tenemos un personaje preferido, aplicarlo.
+        # SUPER-PERSISTENCIA (NUEVO): Siempre forzar a la Secretaria al arrancar la App
+        # Esto evita que si el usuario cerró la app interrogando un sospechoso, este aparezca en la oficina.
+        print("[ChatWidget] Iniciando App: Forzando identidad de Secretaria para Oficina Principal.")
+        self._apply_character_by_id("Secretaria")
+        
+        # Guardar el último personaje preferido (por si se quiere restaurar manualmente), 
+        # pero para el inicio de la app, la Secretaria es la reina.
         last_char_id = self.config.get("last_character")
-        current_name = self.chat_engine.memory.data.get("name", "")
-        if last_char_id and current_name in ["Asimod", "SISTEMA", "None", ""]:
-            print(f"[ChatWidget] Restaurando identidad persistente: {last_char_id}")
-            self._apply_character_by_id(last_char_id)
+        if last_char_id and last_char_id != "Secretaria":
+             print(f"[ChatWidget] Identidad previa detectada ({last_char_id}), pero ignorada por inicio de App.")
 
         # AI
         last_provider = self.config.get("last_provider", "Ollama")
@@ -910,36 +917,52 @@ class ChatWidget(tk.Frame):
             # Enviamos al chat en el hilo principal
             self.after(0, lambda: self._process_stt_input(text))
 
+    def _on_chat_injected(self, text, sender, role="assistant"):
+        """Muestra un mensaje inyectado (del juego) como una burbuja de chat real."""
+        if not text: return
+        # Mapear rol a color
+        color = self.style.get_color("text_main") if role == "user" else self.style.get_color("accent")
+        try:
+            self.after(0, lambda: self._append_message(sender, text, color) if self.winfo_exists() else None)
+        except Exception as e:
+            print(f"[ChatWidget] Error routing injected message: {e}")
+
     def _on_system_msg_notified(self, text, color=None, beep=False):
         """Muestra un mensaje del sistema en el chat (sin voz)."""
         color = color or "#888"
         if beep:
             winsound.Beep(800, 80)
-        if self.winfo_exists():
+        try:
             self.after(0, lambda: self._append_message("ASIMOD", text, color) if self.winfo_exists() else None)
+        except Exception as e:
+            print(f"[ChatWidget] Error routing system message: {e}")
 
     def _on_voice_command(self, command_matched, text):
         """Callback cuando se reconoce un comando de voz."""
         if command_matched:
             winsound.Beep(800, 80)
-            if self.winfo_exists():
+            try:
                 self.after(0, lambda: self._append_message("SYSTEM", f"Voice command recognized: {text} → {command_matched}", "#FF6B6B") if self.winfo_exists() else None)
+            except: pass
         elif self.var_test_mode.get():
             text_lower = text.lower()
             if "comando" in text_lower or "prueba" in text_lower:
                 winsound.Beep(800, 80)
-                if self.winfo_exists():
+                try:
                     self.after(0, lambda: self._append_message("TEST MODE", f"Command detected: {text}", "#4ECDC4") if self.winfo_exists() else None)
+                except: pass
         
         if text:
             # Solo mostrar el texto reconocido en el input si NO está siendo capturado por un módulo
             if not getattr(self.chat_engine, "stt_captured_by_module", False):
-                if self.winfo_exists():
+                try:
                     self.after(0, lambda: self._display_recognized_text(text) if self.winfo_exists() else None)
+                except: pass
             else:
                 # Opcional: Podríamos limpiar el input si algo quedó allí
-                if self.winfo_exists():
+                try:
                     self.after(0, lambda: self.input_field.delete(0, tk.END) if self.winfo_exists() else None)
+                except: pass
 
     def _display_recognized_text(self, text):
         """Muestra el texto reconocido en el input field."""
@@ -1386,3 +1409,53 @@ class ChatWidget(tk.Frame):
                 # Refrescar visualizador con los nuevos datos
                 if self.visualizer:
                     self.visualizer.set_character(self.chat_engine.memory.data)
+
+    def _on_character_changed(self):
+        """Notificación de que la identidad en memoria ha cambiado, refrescar visualizador y UI."""
+        print("[ChatWidget] Recibida notificación de cambio de personaje. Refrescando interfaz completa...")
+            
+        def _update_ui():
+            try:
+                if not self.winfo_exists():
+                    return
+                # 1. Refrescar Visualizador
+                if self.visualizer:
+                    # Si el juego pidió un bloqueo externo, activarlo ANTES de set_character
+                    # (set_character se ejecutará porque aún no está bloqueado)
+                    lock_requested = getattr(self.chat_engine, '_avatar_lock_requested', False)
+                    if lock_requested:
+                        self.chat_engine._avatar_lock_requested = False
+                    
+                    self.visualizer.set_character(self.chat_engine.memory.data)
+                    
+                    # Ahora bloquear tras cargar el personaje externo
+                    if lock_requested and hasattr(self.visualizer, 'lock_character'):
+                        self.visualizer.lock_character(timeout_ms=15000)
+                    
+                # 2. Actualizar campos de perfil en la UI (Nombre, Personalidad, etc.)
+                self._load_current_thread_data()
+                
+                # 3. Recargar Historial de Chat
+                self.chat_display.config(state='normal')
+                self.chat_display.delete('1.0', tk.END)
+                self.chat_display.config(state='disabled')
+                
+                for msg in self.chat_engine.get_history():
+                    sender_name = msg.sender
+                    # Traducir 'Tú' si es necesario
+                    if sender_name == "Tú": sender_name = self.t("chat.you")
+                    
+                    color = "#569cd6" if msg.sender == "Tú" else "#ce9178"
+                    self._append_message(sender_name, msg.content, color)
+                
+                # 4. Asegurar que el scroll esté al final
+                self.chat_display.see(tk.END)
+            except Exception as e:
+                print(f"[ChatWidget] Error inside async _update_ui for character swap: {e}")
+                import traceback
+                traceback.print_exc()
+            
+        try:
+            self.after(0, _update_ui)
+        except Exception as e:
+            print(f"[ChatWidget] Error routing character changed: {e}")

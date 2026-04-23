@@ -14,6 +14,8 @@ class AvatarVisualizer(VisualizerPort):
     
     def __init__(self, parent: tk.Widget, width: int = 400, height: int = 230):
         super().__init__(parent, width, height)
+        # Acceder al estilo desde el puerto base o el padre
+        self.style = getattr(parent, 'style', None)
         self.character_data = {}
         self.idle_image = None
         self.talking_image = None
@@ -23,6 +25,11 @@ class AvatarVisualizer(VisualizerPort):
         self.sadness_emojis = ["😢", "😭", "😞", "💔", "😔", "😿", "💧", "☁️", "🥀", "🎼", "🏚️", "🖤", "🥀", "🌫️"]
         self.style_emojis = ["✨", "💅", "💋", "💃", "🍭", "🥂", "🎉", "🌈", "💄", "👠", "👒", "🔥", "🎀", "🎸", "🎤"] # Estilo/Diva (Neutros)
         self.current_photo = None
+        
+        # --- BLOQUEO EXTERNO: Cuando el juego toma el control del avatar ---
+        # Evita que los ciclos de respuesta normales de ASIMOD sobreescriban el personaje del juego.
+        self._external_char_locked = False
+        self._lock_timer_id = None
         
         # UI Items
         self.image_item = None
@@ -64,8 +71,37 @@ class AvatarVisualizer(VisualizerPort):
             self._init_ui_items()
             self._init_thread_ui() # NUEVO: UI de hilos (fuera del canvas)
             
+            # Suscribirse al estilo si existe
+            if self.style and hasattr(self.style, "subscribe"):
+                self.style.subscribe(self.apply_styles)
+            
         self._refresh_assets()
         self._show_state("idle")
+
+    def apply_styles(self):
+        """Actualiza los colores de los componentes basados en el tema actual."""
+        if not self.style: return
+        
+        bg_main = self.style.get_color("bg_main")
+        accent = self.style.get_color("accent")
+        text_main = self.style.get_color("text_main")
+        
+        # 1. Frames y Labels
+        if hasattr(self, 'thread_frame'):
+            self.thread_frame.config(bg=bg_main)
+        if self.header_name_label:
+            self.header_name_label.config(bg=bg_main, fg=accent)
+        if hasattr(self, 'btn_history'):
+            self.btn_history.config(bg=bg_main, fg=accent)
+        if self.stats_canvas:
+            self.stats_canvas.config(bg=bg_main)
+            self._update_stat_gauges() # Repintar gauges con nuevos colores si es necesario
+            
+        # 2. Canvas Items (Borde y fondo si existe)
+        if self._canvas and self.frame_item:
+            # Si el frame tiene relleno oscuro, vaciarlo para ver el fondo
+            self._canvas.itemconfig(self.frame_item, fill="") # Transparente para ver el BackgroundFrame
+            self._canvas.itemconfig(self.emoji_item, fill="white")
 
     def _init_ui_items(self):
         """Crea los elementos gráficos base en el canvas."""
@@ -75,9 +111,9 @@ class AvatarVisualizer(VisualizerPort):
         # 1. Nombre (ELIMINADO DEL CANVAS para moverlo a la cabecera)
         # self.text_item = ...
         
-        # 2. Marco
+        # 2. Marco (SIN RELLENO para dejar ver el fondo del BackgroundFrame)
         self.frame_item = self._canvas.create_rectangle(
-            0, 0, 0, 0, fill="#222", outline="#4EC9B0", width=1, state="hidden"
+            0, 0, 0, 0, fill="", outline="#4EC9B0", width=1, state="hidden"
         )
         
         # 3. Imagen (Anclada al norte con un pequeño margen para ver el borde cyan)
@@ -105,34 +141,39 @@ class AvatarVisualizer(VisualizerPort):
         # Se inicializan solo en stats_canvas dentro de _init_thread_ui
 
     def _init_stat_gauges(self):
-        """Pre-crea los placeholders para las barras de estado en el stats_canvas."""
+        """Pre-crea los placeholders para las barras de estado horizontales en el stats_canvas."""
         canvas = self.stats_canvas if self.stats_canvas else self._canvas
         if not canvas: return
         
         self.stat_items = {}
-        keys = [("S", "stress", "#ff4b4b"), ("A", "anger", "#ffa500"), ("J", "joy", "#ffff00"), ("M", "fear", "#a020f0")]
+        # Métrica: (Nomenclatura, Clave, Color)
+        keys = [("C", "trust", "#4EC9B0"), ("E", "stress", "#ff4b4b"), ("I", "anger", "#ffa500"), ("M", "fear", "#a020f0")]
         
         for i, (label, key, color) in enumerate(keys):
-            bg = canvas.create_oval(0, 0, 0, 0, outline="#333", width=1, state="hidden")
-            arc = canvas.create_arc(0, 0, 0, 0, outline=color, width=2, style=tk.ARC, start=90, extent=0, state="hidden")
-            txt = canvas.create_text(0, 0, text=label, fill="white", font=("Arial", 6, "bold"), state="hidden")
-            val_txt = canvas.create_text(0, 0, text="0%", fill="#888", font=("Arial", 5), state="hidden")
+            # Fondo de la barra
+            bg = canvas.create_rectangle(0, 0, 0, 0, fill="#222", outline="#333", width=1, state="hidden")
+            # Barra de progreso
+            bar = canvas.create_rectangle(0, 0, 0, 0, fill=color, outline="", width=0, state="hidden")
+            # Texto identificador (C, E, I, M)
+            txt = canvas.create_text(0, 0, text=label, fill="white", font=("Arial", 7, "bold"), state="hidden")
             
             self.stat_items[key] = {
                 "label": label,
                 "color": color,
                 "bg_id": bg,
-                "arc_id": arc,
-                "txt_id": txt,
-                "val_id": val_txt
+                "bar_id": bar,
+                "txt_id": txt
             }
 
     def _init_thread_ui(self):
         """Crea el selector de hilos si está habilitado."""
         if not self.show_threads or not self._frame: return
         
+        bg_color = self.style.get_color("bg_main") if self.style else "#1a1a1a"
+        accent_color = self.style.get_color("accent") if self.style else "#4EC9B0"
+        
         # Frame superior para hilos
-        self.thread_frame = tk.Frame(self._frame, bg="#1a1a1a", pady=2)
+        self.thread_frame = tk.Frame(self._frame, bg=bg_color, pady=2)
         
         # Con el nuevo VisualizerPort, self._canvas es SIEMPRE un hermano
         if self._canvas and self._canvas != self._frame:
@@ -141,16 +182,21 @@ class AvatarVisualizer(VisualizerPort):
             self.thread_frame.pack(fill=tk.X, side=tk.TOP)
         
         # Nombre del personaje en la cabecera (reemplaza 'Hilos:')
-        self.header_name_label = tk.Label(self.thread_frame, text="", bg="#1a1a1a", fg="#4EC9B0", font=("Arial", 9, "bold"))
-        self.header_name_label.pack(side=tk.LEFT, padx=(5, 5))
+        self.header_name_label = tk.Label(self.thread_frame, text="", bg=bg_color, fg=accent_color, font=("Arial", 9, "bold"))
+        self.header_name_label.pack(side=tk.LEFT, padx=(5, 2))
+        
+        # NUEVO: Boton de Historia (Bio)
+        self.btn_history = tk.Button(self.thread_frame, text="📜", bg=bg_color, fg=accent_color,
+                                     relief="flat", font=("Arial", 9), command=self._show_history_popup)
+        self.btn_history.pack(side=tk.LEFT, padx=(0, 5))
         
         from tkinter import ttk
-        self.combo_threads = ttk.Combobox(self.thread_frame, state="readonly", font=("Arial", 8), width=12) # Mas estrecho
+        self.combo_threads = ttk.Combobox(self.thread_frame, state="readonly", font=("Arial", 8), width=10) # Mas estrecho
         self.combo_threads.pack(side=tk.LEFT, padx=2)
         self.combo_threads.bind("<<ComboboxSelected>>", self._internal_thread_change)
         
         # FIX VISIBILIDAD (Windows): Forzar colores del listbox (desplegable)
-        self.combo_threads.option_add('*TCombobox*Listbox.background', '#1a1a1a')
+        self.combo_threads.option_add('*TCombobox*Listbox.background', bg_color)
         self.combo_threads.option_add('*TCombobox*Listbox.foreground', 'white')
         
         # Boton Nuevo (Movido a la izquierda del canvas de stats)
@@ -158,12 +204,11 @@ class AvatarVisualizer(VisualizerPort):
                                         relief="flat", font=("Arial", 8, "bold"), command=self._internal_new_thread)
         self.btn_new_thread.pack(side=tk.LEFT, padx=5)
 
-        # NUEVO: Canvas para stats (Ahora despues del boton +)
+        # NUEVO: Canvas para stats (Ahora con más espacio para las barras)
         if self.show_stats:
-            # Mas ancho para asegurar que caben los 4 (180px)
-            self.stats_canvas = tk.Canvas(self.thread_frame, width=180, height=24, bg="#1a1a1a", 
+            self.stats_canvas = tk.Canvas(self.thread_frame, width=180, height=24, bg=bg_color, 
                                           highlightthickness=0, bd=0)
-            self.stats_canvas.pack(side=tk.LEFT, padx=2, fill=tk.X, expand=True)
+            self.stats_canvas.pack(side=tk.RIGHT, padx=(2, 5)) 
             self._init_stat_gauges() 
 
     def _internal_thread_change(self, event):
@@ -177,6 +222,13 @@ class AvatarVisualizer(VisualizerPort):
             import time
             new_id = f"{char_name}_{int(time.time())}"
             self.on_new_thread(new_id)
+
+    def _show_history_popup(self):
+        """Muestra un popup con la historia/bio del personaje."""
+        import tkinter.messagebox as mb
+        name = self.character_data.get("name", "Personaje")
+        history = self.character_data.get("character_history") or self.character_data.get("personality", "No hay historia disponible.")
+        mb.showinfo(f"Historia: {name}", history)
 
     def _detect_emotion(self, emoji_text):
         """Analiza el texto de emojis para determinar el aura emocional (Ponderado)."""
@@ -210,8 +262,36 @@ class AvatarVisualizer(VisualizerPort):
         if "sad" in winning_emotions: return "sad"
         return "anger"
 
+    def lock_character(self, timeout_ms: int = 15000):
+        """
+        Bloquea el avatar para evitar que ciclos internos de ASIMOD lo sobreescriban.
+        El juego llama esto al hacer switch_character. Se libera automáticamente tras timeout_ms.
+        """
+        self._external_char_locked = True
+        # Cancelar timer anterior si existe
+        if self._lock_timer_id and hasattr(self, '_frame') and self._frame:
+            try:
+                self._frame.after_cancel(self._lock_timer_id)
+            except Exception:
+                pass
+        # Auto-liberar tras el timeout (cuando el audio del personaje debería haber terminado)
+        if hasattr(self, '_frame') and self._frame:
+            self._lock_timer_id = self._frame.after(timeout_ms, self.unlock_character)
+        print(f"[AvatarVisualizer] Avatar bloqueado para personaje externo ({timeout_ms}ms)")
+
+    def unlock_character(self):
+        """Libera el bloqueo externo y permite que ASIMOD vuelva a controlar el avatar."""
+        self._external_char_locked = False
+        self._lock_timer_id = None
+        print("[AvatarVisualizer] Avatar desbloqueado — ASIMOD recupera el control")
+
     def set_character(self, character_data):
         """Actualiza los datos del personaje y detecta su emoción por emojis."""
+        # Si el juego tiene el control, ignorar actualizaciones automáticas del Core
+        if self._external_char_locked:
+            print(f"[AvatarVisualizer] set_character bloqueado (control externo activo). Ignorando actualización del Core.")
+            return
+
         self.character_data = character_data
         
         # Guardar el nombre para posibles recargas de emergencia
@@ -241,6 +321,7 @@ class AvatarVisualizer(VisualizerPort):
         # 1. Detectar Emoción Inicial
         emoji_text = character_data.get("emoji", "")
         self.current_emotion = self._detect_emotion(emoji_text)
+
             
         if self.current_emotion != "neutral":
             print(f"[AvatarVisualizer] set_character: Emoción detected: {self.current_emotion}")
@@ -290,44 +371,47 @@ class AvatarVisualizer(VisualizerPort):
             self._show_state("idle")
 
     def _update_stat_gauges(self):
-        """Dibuja los indicadores circulares de estado en el stats_canvas (Cabecera)."""
+        """Dibuja las barras de estado horizontales en la cabecera."""
         canvas = self.stats_canvas if self.stats_canvas else self._canvas
         if not canvas: return
         
-        # DEBUG: Forzar valores de prueba si vienen vacíos
         stats = self.character_data.get("stats", {})
-        if not stats or all(v == 0 for v in stats.values()):
-            stats = {"stress": 80, "anger": 40, "joy": 90, "fear": 20}
+        # Si no hay stats, ocultar pero no fallar
+        if not stats:
+            for items in self.stat_items.values():
+                canvas.itemconfig(items["bg_id"], state="hidden")
+                canvas.itemconfig(items["bar_id"], state="hidden")
+                canvas.itemconfig(items["txt_id"], state="hidden")
+            return
         
-        # Configuración de layout EXTREMADAMENTE compacta para la cabecera
-        margin = 15 # Menos margen inicial
-        count = len(self.stat_items)
-        # Separación entre círculos ligeramente reducida para seguridad (30px)
-        spacing = 30 
-        y_pos = 12 # Centrado verticalmente en los 24px de alto del canvas
-        size = 18  # Diámetro
+        # Configuración de layout horizontal
+        margin_x = 10
+        spacing_x = 42 # Espacio para cada bloque (Label + Barra)
+        y_center = 12
+        bar_w = 28 # Ancho de la barra de progreso
+        bar_h = 6  # Alto de la barra de progreso
         
         for i, (key, items) in enumerate(self.stat_items.items()):
-            val = stats.get(key, 0)
-            x_pos = margin + (i * spacing)
+            val = stats.get(key, 50) # Fallback a 50 si no existe
+            # Inversión lógica: si es joy/trust usamos trust
+            if key == "trust" and "trust" not in stats and "joy" in stats:
+                val = stats["joy"]
+                
+            x_start = margin_x + (i * spacing_x)
             
-            # Coordenadas
-            coords = (x_pos - size/2, y_pos - size/2, x_pos + size/2, y_pos + size/2)
-            
-            # Mostrar elementos en el canvas de la cabecera
-            canvas.coords(items["bg_id"], *coords)
-            canvas.itemconfig(items["bg_id"], state="normal")
-            
-            canvas.coords(items["arc_id"], *coords)
-            extent = -(val / 100.0) * 359.9
-            canvas.itemconfig(items["arc_id"], extent=extent, width=2, state="normal" if val > 0 else "hidden")
-            
-            canvas.coords(items["txt_id"], x_pos, y_pos - 2)
+            # 1. Dibujar Label (C, E, I, M)
+            canvas.coords(items["txt_id"], x_start, y_center)
             canvas.itemconfig(items["txt_id"], state="normal")
             
-            # Valor numérico (%) - Miniatura
-            canvas.coords(items["val_id"], x_pos, y_pos + 6)
-            canvas.itemconfig(items["val_id"], text=f"{int(val)}", state="normal") # Solo numero para ahorrar espacio
+            # 2. Dibujar Fondo de la barra (a la derecha del texto)
+            bx = x_start + 8
+            canvas.coords(items["bg_id"], bx, y_center - bar_h/2, bx + bar_w, y_center + bar_h/2)
+            canvas.itemconfig(items["bg_id"], state="normal")
+            
+            # 3. Dibujar Progreso
+            fill_w = (val / 100.0) * bar_w
+            canvas.coords(items["bar_id"], bx, y_center - bar_h/2, bx + fill_w, y_center + bar_h/2)
+            canvas.itemconfig(items["bar_id"], state="normal" if val > 0 else "hidden")
 
     # Duplicate set_character removed
 
@@ -536,10 +620,26 @@ class AvatarVisualizer(VisualizerPort):
             self._update_static_ui(state)
 
     def _update_static_ui(self, state):
-        """Actualiza la imagen estática en los items existentes."""
+        """Actualiza la imagen estática en los items existentes con soporte dinámico para emociones."""
         if not self._canvas or not self.image_item: return
         
-        photo = self.talking_image if (state == "talking" and self.talking_image) else self.idle_image
+        photo = None
+        # 1. Intentar cargar variante emocional específica si es un diccionario
+        avatar_cfg = self.character_data.get("avatar", {})
+        if isinstance(avatar_cfg, dict):
+            emotion = getattr(self, "current_emotion", "neutral")
+            suffix = "" if emotion == "neutral" else f"_{emotion}"
+            key = ("talking" if state == "talking" else "idle") + suffix
+            
+            specific_path = avatar_cfg.get(key)
+            if specific_path:
+                # Cache temporal o carga directa (es rápido para PNGs redimensionados pequeños)
+                photo = self._load_and_resize(specific_path)
+
+        # 2. Fallbacks pre-cargados si no hay versión específica animíca
+        if not photo:
+            photo = self.talking_image if (state == "talking" and self.talking_image) else self.idle_image
+            
         self._update_frame_elements(photo, state)
 
     def _update_frame_elements(self, photo, state):

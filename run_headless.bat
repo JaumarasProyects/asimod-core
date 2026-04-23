@@ -1,4 +1,5 @@
 @echo off
-echo Iniciando ASIMOD Core en Modo SERVIDOR (Headless)...
-python main_headless.py
+echo Iniciando ASIMOD Core (Modo Servidor + APIs)...
+call .\venv\Scripts\activate
+python launch_asimod.py
 pause

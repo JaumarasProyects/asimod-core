@@ -2,29 +2,38 @@
     <header class="projects-header">
         <div class="header-main">
             <h1 id="projectName" class="project-title">Cargando Proyecto...</h1>
-            <p id="projectStatus" class="project-subtitle">Sincronizando tareas...</p>
+            <p id="projectStatus" class="project-subtitle">Gestión de activos cognitivos</p>
         </div>
         <nav class="project-tabs">
             <button class="tab-btn active" data-tab="tareas">TAREAS</button>
             <button class="tab-btn" data-tab="gantt">GANTT</button>
+            <button class="tab-btn" data-tab="sprints">SPRINTS</button>
         </nav>
     </header>
 
-    <!-- Project Content -->
     <main class="project-content">
-        <!-- Tasks View -->
+        <!-- Tasks View (Kanban) -->
         <div id="tabTareas" class="tab-pane active">
-            <div class="task-board" id="taskBoard">
-                <div class="task-col">
-                    <h3>PENDIENTES</h3>
+            <div class="kanban-board" id="kanbanBoard">
+                <div class="kanban-col" id="col_pending" ondrop="drop(event, 'pending')" ondragover="allowDrop(event)">
+                    <div class="col-header">
+                        <h3>BACKLOG</h3>
+                        <span class="count-badge">0</span>
+                    </div>
                     <div class="task-list" id="listPending"></div>
                 </div>
-                <div class="task-col">
-                    <h3>EN PROGRESO</h3>
+                <div class="kanban-col" id="col_in_progress" ondrop="drop(event, 'in_progress')" ondragover="allowDrop(event)">
+                    <div class="col-header">
+                        <h3>EN PROGRESO</h3>
+                        <span class="count-badge">0</span>
+                    </div>
                     <div class="task-list" id="listProgress"></div>
                 </div>
-                <div class="task-col">
-                    <h3>COMPLETADAS</h3>
+                <div class="kanban-col" id="col_completed" ondrop="drop(event, 'completed')" ondragover="allowDrop(event)">
+                    <div class="col-header">
+                        <h3>COMPLETADO</h3>
+                        <span class="count-badge">0</span>
+                    </div>
                     <div class="task-list" id="listCompleted"></div>
                 </div>
             </div>
@@ -32,89 +41,175 @@
 
         <!-- Gantt View -->
         <div id="tabGantt" class="tab-pane">
-            <div class="gantt-container asimod-card">
-                <div class="gantt-grid" id="ganttGrid">
-                    <!-- Gantt headers and rows will be here -->
+            <div class="gantt-wrapper asimod-card">
+                <div class="gantt-header-row">
+                    <div class="gantt-label">Actividad</div>
+                    <div class="gantt-timeline-header" id="ganttTimelineHeader"></div>
+                </div>
+                <div class="gantt-body" id="ganttBody">
+                    <!-- Gantt rows injected here -->
+                </div>
+            </div>
+            <div class="gantt-legend">
+                <span><i class="dot blue"></i> En curso</span>
+                <span><i class="dot green"></i> Finalizado</span>
+            </div>
+        </div>
+
+        <!-- Sprints View -->
+        <div id="tabSprints" class="tab-pane">
+            <div class="sprint-container">
+                <div class="sprint-active-panel">
+                    <div class="card-header">
+                        <h2>SPRINT ACTUAL</h2>
+                        <button class="btn-create-sprint">NUEVO SPRINT</button>
+                    </div>
+                    <div id="activeSprintCard" class="active-sprint-card">
+                        <div class="sprint-info">
+                            <h3 id="sprintName">Ningún sprint activo</h3>
+                            <p id="sprintObjective">Define los objetivos del próximo ciclo.</p>
+                            <div class="sprint-meta">
+                                <span id="sprintDates">---</span>
+                                <span id="sprintStatus" class="status-tag">Status</span>
+                            </div>
+                        </div>
+                        <div class="sprint-progress">
+                            <div class="progress-circle">
+                                <svg viewBox="0 0 36 36">
+                                    <path class="circle-bg" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                                    <path id="progressCirclePath" class="circle" stroke-dasharray="0, 100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                                </svg>
+                                <div class="percentage" id="sprintPercentage">0%</div>
+                            </div>
+                            <p>Progreso Ciclo</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="sprint-history">
+                    <h3>HISTORIAL DE CICLOS</h3>
+                    <div id="sprintHistoryList" class="history-list">
+                        <!-- History items -->
+                    </div>
                 </div>
             </div>
         </div>
     </main>
 
     <style>
-        .projects-view { display: flex; flex-direction: column; gap: 20px; height: 100%; }
-        .projects-header { 
-            display: flex; justify-content: space-between; align-items: flex-end;
-            padding-bottom: 15px; border-bottom: 1px solid rgba(255,255,255,0.05);
+        .projects-view { height: 100%; display: flex; flex-direction: column; overflow: hidden; background: transparent; }
+        
+        .projects-header {
+            display: flex; justify-content: space-between; align-items: center;
+            background: rgba(255,255,255,0.02); padding: 25px; border-radius: 20px;
+            border: 1px solid rgba(255,255,255,0.05); margin-bottom: 20px;
         }
-        .project-title { font-size: 1.8rem; font-weight: 800; }
-        .project-subtitle { color: var(--accent); font-size: 0.8rem; text-transform: uppercase; font-weight: 700; letter-spacing: 1px; }
+        .project-title { font-size: 1.8rem; font-weight: 900; letter-spacing: -1px; margin: 0; }
+        .project-subtitle { color: var(--accent); font-size: 0.8rem; font-weight: 700; text-transform: uppercase; letter-spacing: 2px; }
 
-        .project-tabs { display: flex; gap: 5px; background: rgba(0,0,0,0.2); padding: 5px; border-radius: 12px; }
+        .project-tabs { display: flex; gap: 8px; background: rgba(0,0,0,0.3); padding: 6px; border-radius: 12px; }
         .tab-btn {
-            background: none; border: none; color: var(--text-dim); padding: 8px 15px;
-            font-size: 0.75rem; font-weight: 700; cursor: pointer; border-radius: 8px; transition: all 0.3s;
+            background: none; border: none; color: var(--text-dim); padding: 10px 20px;
+            font-size: 0.75rem; font-weight: 800; cursor: pointer; border-radius: 8px; transition: 0.3s;
         }
-        .tab-btn.active { background: var(--accent); color: var(--bg-dark); }
+        .tab-btn.active { background: var(--accent); color: var(--bg-dark); box-shadow: 0 4px 15px rgba(var(--accent-rgb), 0.3); }
 
-        .project-content { flex: 1; overflow: hidden; position: relative; }
-        .tab-pane { display: none; height: 100%; overflow-y: auto; }
-        .tab-pane.active { display: block; }
+        .project-content { flex: 1; position: relative; overflow: hidden; }
+        .tab-pane { display: none; height: 100%; animation: fadeIn 0.4s ease-out; }
+        .tab-pane.active { display: flex; flex-direction: column; }
 
-        /* Tasks Board */
-        .task-board { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; height: 100%; }
-        .task-col { display: flex; flex-direction: column; gap: 15px; }
-        .task-col h3 { font-size: 0.7rem; color: var(--text-dim); letter-spacing: 1.5px; opacity: 0.6; }
-        .task-list { display: flex; flex-direction: column; gap: 12px; flex: 1; min-height: 100px; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+        /* Kanban styling */
+        .kanban-board { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; height: 100%; padding-bottom: 20px; }
+        .kanban-col { 
+            background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05);
+            border-radius: 20px; display: flex; flex-direction: column; gap: 15px; padding: 15px;
+            min-width: 300px;
+        }
+        .col-header { display: flex; justify-content: space-between; align-items: center; padding: 0 10px; }
+        .col-header h3 { font-size: 0.8rem; letter-spacing: 1.5px; color: var(--text-dim); }
+        .count-badge { background: rgba(255,255,255,0.05); padding: 2px 8px; border-radius: 10px; font-size: 0.7rem; font-weight: 700; }
+        .task-list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; }
 
         .task-card {
-            background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.05);
-            border-radius: 15px; padding: 15px; display: flex; flex-direction: column; gap: 10px;
-            transition: transform 0.2s, border-color 0.2s; cursor: grab;
+            background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 15px; padding: 18px; cursor: grab; transition: 0.2s;
         }
-        .task-card:hover { transform: translateY(-2px); border-color: var(--accent); background: rgba(255,255,255,0.05); }
-        .task-title { font-weight: 600; font-size: 0.9rem; }
-        .task-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 5px; }
-        .action-icon { font-size: 0.8rem; opacity: 0.4; cursor: pointer; transition: opacity 0.2s; }
-        .action-icon:hover { opacity: 1; }
+        .task-card:active { cursor: grabbing; transform: scale(0.98); }
+        .task-card:hover { border-color: var(--accent); background: rgba(255,255,255,0.08); }
+        .task-title { font-size: 0.95rem; font-weight: 600; line-height: 1.4; }
+        .task-meta { margin-top: 10px; font-size: 0.7rem; color: var(--text-dim); display: flex; justify-content: space-between; }
 
-        /* Gantt */
-        .gantt-container { padding: 20px; overflow-x: auto; }
-        .gantt-grid { display: grid; grid-template-columns: 200px repeat(14, 60px); gap: 1px; background: rgba(255,255,255,0.05); }
-        .gantt-cell { background: var(--bg-dark); padding: 10px; font-size: 0.7rem; color: var(--text-dim); }
-        .gantt-header { font-weight: 800; border-bottom: 2px solid var(--accent); }
-        .gantt-row-title { border-right: 1px solid rgba(255,255,255,0.05); color: white; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .gantt-bar-container { position: relative; grid-column: span 14; display: flex; align-items: center; padding: 5px 0; }
-        .gantt-bar {
-            height: 12px; background: var(--accent); border-radius: 6px; opacity: 0.8;
-            transition: all 0.3s;
-        }
+        /* Gantt styling */
+        .gantt-wrapper { flex: 1; display: flex; flex-direction: column; overflow-x: auto; background: rgba(0,0,0,0.2); border-radius: 20px; padding: 20px; }
+        .gantt-header-row { display: flex; font-size: 0.75rem; font-weight: 800; color: var(--text-dim); border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 15px; }
+        .gantt-label { width: 180px; flex-shrink: 0; }
+        .gantt-timeline-header { flex: 1; display: flex; }
+        .time-cell { flex: 1; min-width: 60px; text-align: center; }
 
-        @media (max-width: 1024px) {
-            .task-board { grid-template-columns: 1fr; overflow-y: auto; }
+        .gantt-body { display: flex; flex-direction: column; gap: 10px; padding-top: 15px; }
+        .gantt-row { display: flex; align-items: center; padding: 5px 0; }
+        .gantt-row:hover { background: rgba(255,255,255,0.02); }
+        .task-name { width: 180px; font-size: 0.85rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .timeline-area { flex: 1; height: 30px; position: relative; border-left: 1px dashed rgba(255,255,255,0.1); }
+        .gantt-bar-item {
+            position: absolute; height: 18px; border-radius: 9px; top: 6px;
+            background: var(--accent); opacity: 0.8; transition: width 0.5s ease;
+            cursor: pointer; display: flex; align-items: center; justify-content: center;
         }
+        .gantt-bar-item:hover { opacity: 1; transform: scaleY(1.1); box-shadow: 0 0 15px var(--accent); }
+
+        /* Sprints styling */
+        .sprint-container { display: grid; grid-template-columns: 1fr 350px; gap: 20px; height: 100%; }
+        .sprint-active-panel { background: rgba(255,255,255,0.02); border-radius: 24px; padding: 30px; border: 1px solid rgba(255,255,255,0.05); }
+        .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; }
+        .card-header h2 { font-size: 1.1rem; letter-spacing: 2px; }
+        .btn-create-sprint { background: var(--accent); color: var(--bg-dark); border: none; padding: 10px 20px; border-radius: 10px; font-weight: 800; cursor: pointer; }
+
+        .active-sprint-card { display: flex; gap: 40px; align-items: center; background: rgba(255,255,255,0.03); padding: 40px; border-radius: 24px; }
+        .sprint-info { flex: 1; }
+        .sprint-info h3 { font-size: 2rem; font-weight: 900; margin: 0; }
+        .sprint-info p { font-size: 1.1rem; color: var(--text-dim); margin: 15px 0 25px; line-height: 1.6; }
+        .sprint-meta { display: flex; gap: 20px; align-items: center; }
+        .status-tag { background: rgba(0, 223, 129, 0.1); color: #00df81; padding: 5px 12px; border-radius: 8px; font-size: 0.7rem; font-weight: 800; border: 1px solid #00df81; }
+
+        .sprint-progress { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 10px; }
+        .progress-circle { position: relative; width: 120px; height: 120px; }
+        .progress-circle svg { transform: rotate(-90deg); }
+        .circle-bg { fill: none; stroke: rgba(255,255,255,0.05); stroke-width: 3.8; }
+        .circle { fill: none; stroke: var(--accent); stroke-width: 3.8; stroke-linecap: round; transition: stroke-dasharray 1s ease; }
+        .percentage { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 1.5rem; font-weight: 900; }
+
+        .history-list { display: flex; flex-direction: column; gap: 15px; margin-top: 15px; }
+        .history-item { background: rgba(255,255,255,0.02); padding: 15px; border-radius: 15px; border: 1px solid rgba(255,255,255,0.05); }
+        .history-item h4 { font-size: 0.9rem; margin: 0; }
+        .history-item p { font-size: 0.75rem; color: var(--text-dim); margin: 5px 0 0; }
+
+        .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; }
+        .blue { background: var(--accent); }
+        .green { background: #4EC9B0; }
     </style>
 
     <script>
         (function() {
             let currentProject = null;
+            let projectData = null;
 
             async function loadProjectData() {
                 try {
-                    // Obtener el ID del proyecto activo desde el módulo
                     const resp = await fetch('/v1/modules/projects/action', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ action: 'handle_get_projects' })
                     });
-                    const data = await resp.json();
-                    const activeP = data.result.projects.find(p => p.is_active);
+                    const res = await resp.json();
+                    const activeP = res.result.projects.find(p => p.is_active);
                     
                     if (activeP) {
                         fetchDetails(activeP.id);
                     }
-                } catch (e) {
-                    console.error("Project Selection Error:", e);
-                }
+                } catch (e) { console.error(e); }
             }
 
             async function fetchDetails(pid) {
@@ -128,26 +223,32 @@
                 });
                 const data = await resp.json();
                 if (data.status === 'success') {
-                    renderProject(data.result);
+                    projectData = data.result;
+                    renderProject();
                 }
             }
 
-            function renderProject(res) {
-                currentProject = res;
+            function renderProject() {
+                const res = projectData;
                 document.getElementById('projectName').innerText = res.project.name;
-                document.getElementById('projectStatus').innerText = res.project.is_active ? "PROYECTO ACTIVO" : "PROYECTO ARCHIVADO";
+                document.getElementById('projectStatus').innerText = res.project.description || "Gestión de activos cognitivos";
 
-                renderTasks(res.tasks);
+                renderKanban(res.tasks);
                 renderGantt(res.tasks);
+                renderSprints(res.active_sprint, res.sprint_history);
             }
 
-            function renderTasks(tasks) {
+            // --- KANBAN LOGIC ---
+            function renderKanban(tasks) {
                 const cols = {
                     pending: document.getElementById('listPending'),
                     in_progress: document.getElementById('listProgress'),
                     completed: document.getElementById('listCompleted')
                 };
-                Object.values(cols).forEach(c => c.innerHTML = '');
+                Object.values(cols).forEach(c => {
+                    c.innerHTML = '';
+                    c.parentElement.querySelector('.count-badge').innerText = '0';
+                });
 
                 tasks.forEach(task => {
                     const status = task.status || 'pending';
@@ -155,32 +256,29 @@
                     
                     const card = document.createElement('div');
                     card.className = 'task-card';
+                    card.draggable = true;
+                    card.id = `task_${task.id}`;
+                    card.ondragstart = (e) => e.dataTransfer.setData("text/plain", task.id);
+                    
                     card.innerHTML = `
                         <div class="task-title">${task.title}</div>
-                        <div class="task-actions">
-                            ${status !== 'completed' ? `<span class="action-icon" data-action="completed">✅</span>` : ''}
-                            ${status !== 'in_progress' ? `<span class="action-icon" data-action="in_progress">⏳</span>` : ''}
-                            <span class="action-icon" data-action="delete">🗑️</span>
+                        <div class="task-meta">
+                            <span>ID: #${task.id}</span>
+                            <span>${task.end_date || 'Sin fecha'}</span>
                         </div>
                     `;
-                    
-                    // Eventos de acciones
-                    card.querySelectorAll('.action-icon').forEach(btn => {
-                        btn.onclick = (e) => {
-                            e.stopPropagation();
-                            updateStatus(task.id, btn.dataset.action);
-                        }
-                    });
-
                     col.appendChild(card);
+                    
+                    const badge = col.parentElement.querySelector('.count-badge');
+                    badge.innerText = parseInt(badge.innerText) + 1;
                 });
             }
 
-            async function updateStatus(tid, status) {
-                if (status === 'delete') {
-                    // Logic for delete if bridge supports it
-                    return;
-                }
+            window.allowDrop = (e) => e.preventDefault();
+            window.drop = async (e, status) => {
+                e.preventDefault();
+                const tid = e.dataTransfer.getData("text/plain");
+                
                 await fetch('/v1/modules/projects/action', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -189,54 +287,110 @@
                         params: { task_id: tid, status: status }
                     })
                 });
-                fetchDetails(currentProject.project.id);
-                // Refrescar galería global para sincronizar
-                if (window.app && window.app.loadGallery) window.app.loadGallery();
-            }
+                fetchDetails(projectData.project.id);
+            };
 
+            // --- GANTT LOGIC ---
             function renderGantt(tasks) {
-                const grid = document.getElementById('ganttGrid');
-                grid.innerHTML = '';
-                
-                // Header
-                const h1 = document.createElement('div');
-                h1.className = 'gantt-cell gantt-header';
-                h1.innerText = 'TAREAS';
-                grid.appendChild(h1);
-                
+                const header = document.getElementById('ganttTimelineHeader');
+                const body = document.getElementById('ganttBody');
+                header.innerHTML = '';
+                body.innerHTML = '';
+
+                // Header Dates (next 14 days)
+                const today = new Date();
                 for(let i=0; i<14; i++) {
-                    const h = document.createElement('div');
-                    h.className = 'gantt-cell gantt-header';
-                    h.innerText = `D+${i}`;
-                    grid.appendChild(h);
+                    const d = new Date(today);
+                    d.setDate(today.getDate() + i);
+                    const cell = document.createElement('div');
+                    cell.className = 'time-cell';
+                    cell.innerText = d.getDate() + '/' + (d.getMonth()+1);
+                    header.appendChild(cell);
                 }
 
-                // Rows
                 tasks.forEach(task => {
-                    const t = document.createElement('div');
-                    t.className = 'gantt-cell gantt-row-title';
-                    t.innerText = task.title;
-                    grid.appendChild(t);
+                    const row = document.createElement('div');
+                    row.className = 'gantt-row';
                     
-                    const barBox = document.createElement('div');
-                    barBox.className = 'gantt-bar-container';
+                    const name = document.createElement('div');
+                    name.className = 'task-name';
+                    name.innerText = task.title;
+                    row.appendChild(name);
+
+                    const area = document.createElement('div');
+                    area.className = 'timeline-area';
                     
-                    // Simulación visual de barra Gantt
-                    const start = (task.id % 6) * 60;
-                    const duration = 120 + (task.id % 4) * 60;
+                    // Simple offset simulation
+                    const offset = (task.id % 8) * 60;
+                    const width = 120 + (task.id % 4) * 60;
                     
                     const bar = document.createElement('div');
-                    bar.className = 'gantt-bar';
+                    bar.className = 'gantt-bar-item';
+                    bar.style.left = offset + 'px';
                     bar.style.width = '0px';
-                    bar.style.marginLeft = start + 'px';
                     if (task.status === 'completed') bar.style.background = '#4EC9B0';
                     
-                    barBox.appendChild(bar);
-                    grid.appendChild(barBox);
+                    area.appendChild(bar);
+                    row.appendChild(area);
+                    body.appendChild(row);
+
+                    setTimeout(() => bar.style.width = width + 'px', 100);
+
+                    bar.onclick = () => {
+                        const newStart = prompt("Nueva fecha inicio (YYYY-MM-DD):", task.start_date || "");
+                        const newEnd = prompt("Nueva fecha fin (YYYY-MM-DD):", task.end_date || "");
+                        if (newStart && newEnd) updateGantt(task.id, newStart, newEnd);
+                    };
+                });
+            }
+
+            async function updateGantt(tid, start, end) {
+                await fetch('/v1/modules/projects/action', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        action: 'handle_update_gantt',
+                        params: { task_id: tid, start_date: start, end_date: end }
+                    })
+                });
+                fetchDetails(projectData.project.id);
+            }
+
+            // --- SPRINTS LOGIC ---
+            function renderSprints(active, history) {
+                const name = document.getElementById('sprintName');
+                const objective = document.getElementById('sprintObjective');
+                const dates = document.getElementById('sprintDates');
+                const status = document.getElementById('sprintStatus');
+                const circ = document.getElementById('progressCirclePath');
+                const percTxt = document.getElementById('sprintPercentage');
+
+                if (active) {
+                    name.innerText = active.name;
+                    objective.innerText = active.objective;
+                    dates.innerText = `${active.start_date} → ${active.end_date}`;
+                    status.innerText = active.status.toUpperCase();
                     
-                    setTimeout(() => {
-                        bar.style.width = duration + 'px';
-                    }, 500);
+                    // Progress simulation based on tasks
+                    const tasks = projectData.tasks;
+                    const done = tasks.filter(t => t.status === 'completed').length;
+                    const total = tasks.length || 1;
+                    const perc = Math.round((done / total) * 100);
+                    
+                    circ.style.strokeDasharray = `${perc}, 100`;
+                    percTxt.innerText = `${perc}%`;
+                }
+
+                const historyList = document.getElementById('sprintHistoryList');
+                historyList.innerHTML = '';
+                (history || []).filter(s => s.status !== 'active').forEach(s => {
+                    const item = document.createElement('div');
+                    item.className = 'history-item';
+                    item.innerHTML = `
+                        <h4>${s.name}</h4>
+                        <p>${s.start_date} - ${s.end_date} | ${s.status.toUpperCase()}</p>
+                    `;
+                    historyList.appendChild(item);
                 });
             }
 
@@ -246,6 +400,12 @@
                     document.querySelectorAll('.tab-btn, .tab-pane').forEach(el => el.classList.remove('active'));
                     btn.classList.add('active');
                     document.getElementById('tab' + btn.dataset.tab.charAt(0).toUpperCase() + btn.dataset.tab.slice(1)).classList.add('active');
+                }
+            });
+
+            window.addEventListener('message', (event) => {
+                if (event.data.type === 'ACTION_RESPONSE' && event.data.action === 'handle_select_project') {
+                    fetchDetails(event.data.data.project_id);
                 }
             });
 

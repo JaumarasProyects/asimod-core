@@ -35,12 +35,12 @@ class CharacterService:
                                 if path.startswith("http"): return path
                                 return "/" + path.replace("\\", "/")
 
-                            if "avatar" in data:
+                            if "avatar" in data and isinstance(data["avatar"], dict):
                                 # Usar list() para evitar RuntimeError al modificar el dict durante la iteración
                                 for k, v in list(data["avatar"].items()):
                                     data["avatar"][f"{k}_url"] = to_url(v)
                             
-                            if "video" in data:
+                            if "video" in data and isinstance(data["video"], dict):
                                 for k, v in list(data["video"].items()):
                                     data["video"][f"{k}_url"] = to_url(v)
                             characters.append(data)

@@ -29,12 +29,19 @@
     --bg-img-sidebar: none;
     --bg-img-chat: none;
     --bg-img-box: none;
+    --bg-img-button: none;
 }
 
 * {
     margin: 0;
     padding: 0;
     box-sizing: border-box;
+}
+
+button {
+    background-image: var(--bg-img-button);
+    background-size: cover;
+    background-position: center;
 }
 
 body {
@@ -194,7 +201,9 @@ body {
 .active-module-info h1 { font-size: 1.1rem; font-weight: 600; }
 
 .core-toggle-btn {
-    background: rgba(78, 201, 176, 0.1);
+    background-image: var(--bg-img-button);
+    background-size: cover;
+    background-position: center;
     border: 1px solid rgba(78, 201, 176, 0.3);
     color: var(--accent);
     padding: 8px 20px;
@@ -217,7 +226,9 @@ body {
 /* Quick Controls */
 .quick-controls { display: flex; gap: 8px; }
 .ctrl-btn {
-    background: rgba(255,255,255,0.03);
+    background-image: var(--bg-img-button);
+    background-size: cover;
+    background-position: center;
     border: 1px solid rgba(255,255,255,0.05);
     color: var(--text-main);
     padding: 8px 12px;
@@ -351,7 +362,10 @@ body {
     object-fit: cover;
     border-radius: 8px;
     margin-bottom: 8px;
-    background: #000;
+    background-image: var(--bg-img-sidebar);
+    background-size: cover;
+    background-position: center;
+    background-color: #000;
 }
 
 .gallery-thumb-icon {
@@ -400,11 +414,11 @@ body {
 /* Chat Side (The "Core" Panel) */
 .chat-side {
     width: var(--chat-width);
-    background-image: var(--bg-img-chat);
+    background-image: var(--bg-img-chat) !important;
     background-position: center center;
     background-size: cover;
     background-repeat: no-repeat;
-    background-color: var(--bg-sidebar);
+    background-color: transparent !important; /* Reveal body/shell background if missing */
     backdrop-filter: blur(25px);
     border-left: 1px solid rgba(255, 255, 255, 0.1);
     display: flex;
@@ -413,6 +427,7 @@ body {
     overflow: hidden;
     flex-shrink: 0;
     box-shadow: -10px 0 30px rgba(0,0,0,0.3);
+    position: relative;
 }
 
 .chat-side.hidden {
@@ -425,7 +440,7 @@ body {
 
 /* Technical Top Panel (Collapsible inside Core) */
 .side-tech-panel {
-    background: rgba(255, 255, 255, 0.02);
+    background: transparent !important;
     border-bottom: 2px solid rgba(255, 255, 255, 0.05);
     display: flex;
     flex-direction: column;
@@ -563,7 +578,10 @@ body {
     outline: none;
 }
 .main-input-row button {
-    background: var(--accent);
+    background-image: var(--bg-img-button);
+    background-size: cover;
+    background-position: center;
+    background-color: var(--accent);
     color: var(--bg-dark);
     border: none;
     width: 45px; height: 45px;
@@ -692,7 +710,7 @@ body {
 
 .mg-tab-btn {
     padding: 10px 20px;
-    background: rgba(255,255,255,0.03);
+    background-color: rgba(255,255,255,0.03);
     border: 1px solid rgba(255,255,255,0.05);
     border-radius: 12px 12px 0 0;
     color: var(--text-dim);
@@ -1442,27 +1460,28 @@ body {
     flex-direction: column;
     align-items: center;
     gap: 10px;
-    padding: 10px;
-    background: var(--glass-bg);
+    padding: 20px 10px;
+    background: transparent !important;
     backdrop-filter: var(--glass-blur);
     border-radius: 20px;
     border: 1px solid var(--glass-border);
     margin: 5px 10px;
     text-align: center;
+    overflow: hidden;
 }
 
 .avatar-circle {
     width: 220px;
     height: 220px;
     border-radius: 15px;
-    background: var(--bg-dark);
+    background: transparent !important;
     display: flex;
     align-items: center;
     justify-content: center;
     overflow: hidden;
     position: relative;
     border: 2px solid var(--accent);
-    box-shadow: var(--shadow-premium);
+    box-shadow: 0 0 20px rgba(0,0,0,0.5);
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
@@ -1470,6 +1489,7 @@ body {
     width: 100%;
     height: 100%;
     object-fit: cover;
+    background-color: transparent !important;
 }
 
 .avatar-icon {

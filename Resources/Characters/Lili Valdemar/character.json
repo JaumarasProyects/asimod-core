@@ -1,0 +1,23 @@
+{
+  "name": "Lili Valdemar",
+  "personality": "Seductora, calculadora, orgullosa. Nunca muestra vulnerabilidad y habla con elegancia y autoridad.",
+  "character_history": "Hija del Sr. Lobo y anfitriona de la mansión. Elegante, carismática y siempre en control de la situación, hereda la astucia de su padre para manipular a los demás.",
+  "video": {
+    "idle": "Resources/Characters/Lili Valdemar/idle.mp4",
+    "talking": "Resources/Characters/Lili Valdemar/talking.mp4",
+    "idle_anger": "Resources/Characters/Lili Valdemar/idle_anger.mp4",
+    "talking_anger": "Resources/Characters/Lili Valdemar/talking_anger.mp4",
+    "idle_joy": "Resources/Characters/Lili Valdemar/idle_joy.mp4",
+    "talking_joy": "Resources/Characters/Lili Valdemar/talking_joy.mp4"
+  },
+  "avatar": {
+    "idle": "Resources/Characters/Lili Valdemar/idle.png",
+    "talking": "Resources/Characters/Lili Valdemar/talking.png",
+    "idle_anger": "Resources/Characters/Lili Valdemar/idle_anger.png",
+    "talking_anger": "Resources/Characters/Lili Valdemar/talking_anger.png",
+    "idle_joy": "Resources/Characters/Lili Valdemar/idle_joy.png",
+    "talking_joy": "Resources/Characters/Lili Valdemar/talking_joy.png"
+  },
+  "voice": "es-ES-ElviraNeural",
+  "voice_provider": "Edge TTS"
+}

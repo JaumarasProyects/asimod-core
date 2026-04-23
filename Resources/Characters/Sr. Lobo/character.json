@@ -1,0 +1,23 @@
+{
+  "name": "Sr. Lobo",
+  "personality": "Arrogante, manipulador, calcula cada movimiento. Habla con condescendencia y autoridad.",
+  "character_history": "Inversor y Anfitrión. Un hombre de negocios exitoso con una reputación impecable, pero con una personalidad oscura y manipuladora tras las bambalinas.",
+  "video": {
+    "idle": "Resources/Characters/Sr. Lobo/idle.mp4",
+    "talking": "Resources/Characters/Sr. Lobo/talking.mp4",
+    "idle_anger": "Resources/Characters/Sr. Lobo/idle_anger.mp4",
+    "talking_anger": "Resources/Characters/Sr. Lobo/talking_anger.mp4",
+    "idle_joy": "Resources/Characters/Sr. Lobo/idle_joy.mp4",
+    "talking_joy": "Resources/Characters/Sr. Lobo/talking_joy.mp4"
+  },
+  "avatar": {
+    "idle": "Resources/Characters/Sr. Lobo/idle.png",
+    "talking": "Resources/Characters/Sr. Lobo/talking.png",
+    "idle_anger": "Resources/Characters/Sr. Lobo/idle_anger.png",
+    "talking_anger": "Resources/Characters/Sr. Lobo/talking_anger.png",
+    "idle_joy": "Resources/Characters/Sr. Lobo/idle_joy.png",
+    "talking_joy": "Resources/Characters/Sr. Lobo/talking_joy.png"
+  },
+  "voice": "es-ES-AlvaroNeural",
+  "voice_provider": "Edge TTS"
+}

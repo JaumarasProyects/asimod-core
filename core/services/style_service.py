@@ -22,6 +22,10 @@ class StyleService:
 
     def subscribe(self, callback):
         """Registra un componente para ser notificado cuando el estilo cambie."""
+        if not callable(callback):
+             print(f"[StyleService][WARNING] Intento de suscribir objeto no ejecutable: {callback}")
+             return
+             
         if callback not in self.callbacks:
             self.callbacks.append(callback)
 
@@ -33,11 +37,26 @@ class StyleService:
     def notify(self):
         """Notifica a todos los suscriptores que el estilo ha cambiado."""
         print(f"[StyleService] Notificando cambio de estilo a {len(self.callbacks)} componentes.")
+        
+        dead_callbacks = []
         for cb in self.callbacks:
             try:
                 cb()
             except Exception as e:
-                print(f"[StyleService] Error notificando a observador: {e}")
+                # Si el error es un comando inválido de Tcl (widget destruido) 
+                # o el objeto ya no es válido, lo marcamos para limpieza.
+                error_msg = str(e).lower()
+                if "invalid command name" in error_msg or "object is not callable" in error_msg:
+                    dead_callbacks.append(cb)
+                else:
+                    print(f"[StyleService] Error notificando a observador: {e}")
+        
+        # Auto-limpieza de suscriptores huérfanos o inválidos
+        if dead_callbacks:
+            for dead in dead_callbacks:
+                if dead in self.callbacks:
+                    self.callbacks.remove(dead)
+            print(f"[StyleService] Limpieza completada: se eliminaron {len(dead_callbacks)} suscriptores inválidos.")
 
     def refresh_available_styles(self):
         """Escanea la carpeta de estilos en busca de archivos JSON."""

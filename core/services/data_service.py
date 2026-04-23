@@ -141,9 +141,26 @@ class DataService:
             )
         """)
 
+        # Contactos (Migración de Communications)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS contacts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                role TEXT,
+                email TEXT,
+                phone TEXT,
+                social_json TEXT, -- Almacenará un JSON con redes sociales
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
         conn.commit()
         conn.close()
         print(f"[DataService] Base de datos inicializada en {self.db_path}")
+        
+        # Auto-seed
+        self.seed_sample_project()
+        self.seed_sample_contacts()
 
     # --- API PARA PROYECTOS ---
     def get_all_projects(self) -> List[Dict]:
@@ -178,11 +195,68 @@ class DataService:
             commit=True
         )
 
-    def update_project_item_status(self, item_id: int, status: str):
-        return self._execute_query("UPDATE project_items SET status = ? WHERE id = ?", (status, item_id), commit=True)
-
     def delete_project_item(self, item_id: int):
         return self._execute_query("DELETE FROM project_items WHERE id = ?", (item_id,), commit=True)
+
+    def update_project_item_status(self, item_id: int, status: str):
+        return self._execute_query(
+            "UPDATE project_items SET status = ? WHERE id = ?",
+            (status, item_id),
+            commit=True
+        )
+
+    def update_project_item_dates(self, item_id: int, start_date: str, end_date: str):
+        return self._execute_query(
+            "UPDATE project_items SET start_date = ?, end_date = ? WHERE id = ?",
+            (start_date, end_date, item_id),
+            commit=True
+        )
+
+    # --- API PARA SPRINTS ---
+    def get_project_sprints(self, project_id: int) -> List[Dict]:
+        return self._execute_query("SELECT * FROM sprints WHERE project_id = ? ORDER BY start_date DESC", (project_id,), fetch_all=True)
+
+    def get_active_sprint(self, project_id: int) -> Optional[Dict]:
+        return self._execute_query("SELECT * FROM sprints WHERE project_id = ? AND status = 'active'", (project_id,), fetch_one=True)
+
+    def create_sprint(self, project_id: int, name: str, objective: str, start_date: str, end_date: str):
+        # Desactivar otros sprints activos para este proyecto
+        self._execute_query("UPDATE sprints SET status = 'completed' WHERE project_id = ? AND status = 'active'", (project_id,), commit=True)
+        return self._execute_query(
+            "INSERT INTO sprints (project_id, name, objective, start_date, end_date, status) VALUES (?, ?, ?, ?, ?, 'active')",
+            (project_id, name, objective, start_date, end_date),
+            commit=True
+        )
+
+    def seed_sample_project(self):
+        """Siembra un proyecto de ejemplo completo si no hay proyectos."""
+        if self._execute_query("SELECT COUNT(*) FROM projects", fetch_one=True)['COUNT(*)'] > 0:
+            return
+
+        pid = self.create_project("ASIMOD Core Expansion", "Desarrollo de nuevas capacidades cognitivas y módulos de UI.")
+        
+        # Tareas
+        tasks = [
+            ("Diseñar Interfaz Kanban", "in_progress", "2026-04-20", "2026-04-25"),
+            ("Implementar SQLite para Proyectos", "completed", "2026-04-15", "2026-04-18"),
+            ("Refactorizar DataService", "completed", "2026-04-10", "2026-04-14"),
+            ("Integrar Gráficos Gantt", "pending", "2026-04-26", "2026-05-02"),
+            ("Optimizar Carga de Módulos", "pending", "2026-05-01", "2026-05-05")
+        ]
+        for title, status, start, end in tasks:
+            self._execute_query(
+                "INSERT INTO project_items (project_id, title, status, start_date, end_date) VALUES (?, ?, ?, ?, ?)",
+                (pid, title, status, start, end),
+                commit=True
+            )
+
+        # Sprints
+        self.create_sprint(pid, "Sprint 1: Cimientos", "Establecer la base de datos y estructura de servicios.", "2026-04-10", "2026-04-24")
+        self._execute_query(
+            "INSERT INTO sprints (project_id, name, objective, start_date, end_date, status) VALUES (?, ?, ?, ?, ?, ?)",
+            (pid, "Sprint 0: Setup", "Configuración inicial del entorno.", "2026-04-01", "2026-04-09", "completed"),
+            commit=True
+        )
 
     # --- API PARA SALUD ---
     def add_health_log(self, category: str, value: float, unit: str = "", notes: str = "", date: str = None):
@@ -222,3 +296,36 @@ class DataService:
 
     def delete_note(self, note_id: int):
         return self._execute_query("DELETE FROM notes WHERE id = ?", (note_id,), commit=True)
+
+    # --- API PARA CONTACTOS ---
+    def get_contacts(self) -> List[Dict]:
+        return self._execute_query("SELECT * FROM contacts ORDER BY name ASC", fetch_all=True)
+
+    def add_contact(self, name: str, role: str, email: str, phone: str, social: dict):
+        import json
+        return self._execute_query(
+            "INSERT INTO contacts (name, role, email, phone, social_json) VALUES (?, ?, ?, ?, ?)",
+            (name, role, email, phone, json.dumps(social)),
+            commit=True
+        )
+
+    def seed_sample_contacts(self):
+        """Siembra contactos de ejemplo si no hay ninguno."""
+        if self._execute_query("SELECT COUNT(*) FROM contacts", fetch_one=True)['COUNT(*)'] > 0:
+            return
+        
+        import json
+        demo_contacts = [
+            ("Elena Rodríguez", "Directora Creativa", "elena.rodriguez@creativa.es", "+34612345678", 
+             {"instagram": "https://instagram.com", "linkedin": "https://linkedin.com"}),
+            ("Marco Janssen", "Senior Developer", "m.janssen@techcorp.nl", "+31622334455", 
+             {"github": "https://github.com", "discord": "https://discord.com"}),
+            ("Sofía Chen", "Analista de Datos", "schen@datacorp.cn", "+8613812345678", 
+             {"weibo": "https://weibo.com"}),
+            ("Lucas Miller", "Asesor Financiero", "lucas.miller@wealth.us", "+15550123456", 
+             {"twitter": "https://twitter.com", "facebook": "https://facebook.com"}),
+            ("Yuki Tanaka", "Artista Conceptual", "yuki.art@studio.jp", "+819012345678", 
+             {"artstation": "https://artstation.com", "discord": "https://discord.com"})
+        ]
+        for name, role, email, phone, social in demo_contacts:
+            self.add_contact(name, role, email, phone, social)

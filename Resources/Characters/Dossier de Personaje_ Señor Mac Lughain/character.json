@@ -1,0 +1,14 @@
+{
+    "id": "personaje_1776742999",
+    "name": "Dossier de Personaje: Señor Mac Lughain",
+    "personality": "",
+    "gender": "male",
+    "active_thread": "thread_personaje_1776742999",
+    "avatar": {},
+    "video": {
+        "idle": "",
+        "talking": ""
+    },
+    "voice_id": null,
+    "voice_provider": "Edge TTS"
+}

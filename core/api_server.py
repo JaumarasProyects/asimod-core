@@ -451,6 +451,61 @@ class APIServer:
                 raise HTTPException(status_code=404, detail="Personaje no encontrado")
             return char
 
+        @self.app.post("/v1/characters/switch")
+        async def switch_active_character(data: dict):
+            """Cambia el perfil del personaje activo en el core."""
+            target_id = data.get("character_id") or data.get("name")
+            if not target_id:
+                raise HTTPException(status_code=400, detail="character_id es requerido")
+            
+            # Buscar en el registro global
+            char = self.character_service.get_character(target_id)
+            if not char:
+                # Fallback: buscar por nombre si el ID no funcionó
+                all_chars = self.character_service.list_characters()
+                char = next((c for c in all_chars if target_id.lower() in c.get("name", "").lower()), None)
+            
+            if not char:
+                raise HTTPException(status_code=404, detail=f"Personaje '{target_id}' no encontrado")
+            
+            # Aplicar a la memoria activa
+            self.chat_service.memory.update_profile(
+                name=char.get("name"),
+                personality=char.get("personality"),
+                history=char.get("character_history") or char.get("personality"),
+                avatar=char.get("avatar"),
+                video=char.get("video"),
+                calibration=char.get("calibration"),
+                char_id=char.get("id")
+            )
+            
+            # Notificar UI (carga el avatar del personaje)
+            self.chat_service.notify_character_changed()
+
+            # Bloquear el avatar para evitar que ciclos de ASIMOD lo sobreescriban.
+            # El ChatWidget puede tener acceso al visualizador a través del callback.
+            # Lo marcamos en memoria para que el próximo tick de set_character lo respete.
+            if hasattr(self.chat_service, '_avatar_lock_requested'):
+                self.chat_service._avatar_lock_requested = True
+            
+            return {"status": "success", "character": char.get("name")}
+        
+
+        @self.app.post("/v1/chat/inject")
+        async def inject_message(data: dict):
+            """Inyecta un mensaje en el chat y activa la voz del core."""
+            text = data.get("text")
+            sender = data.get("sender", "Assistant")
+            voice_id = data.get("voice_id")
+            voice_provider = data.get("voice_provider")
+            role = data.get("role", "assistant")
+            
+            if not text:
+                raise HTTPException(status_code=400, detail="text es requerido")
+                
+            await self.chat_service.inject_message(text, sender, voice_id, voice_provider, role)
+            return {"status": "success"}
+
         @self.app.patch("/v1/characters/{char_id}/stats")
         async def update_character_stats(char_id: str, stats: dict):
             """Actualiza las estadísticas emocionales de un personaje."""
@@ -994,7 +1049,9 @@ class APIServer:
             play_audio: Optional[str] = Form(None),
             image: Optional[UploadFile] = File(None),
             image_b64: Optional[str] = Form(None),
-            stt_mode: Optional[str] = Form(None)
+            stt_mode: Optional[str] = Form(None),
+            thread_id: Optional[str] = Form(None),
+            voice_id: Optional[str] = Form(None)
         ):
             try:
                 import asyncio
@@ -1032,7 +1089,9 @@ class APIServer:
                             max_tokens=max_tokens,
                             temperature=temperature,
                             skip_tts=True,
-                            mode=stt_mode
+                            mode=stt_mode,
+                            thread_id=thread_id,
+                            voice_id=voice_id
                         ),
                         timeout=90.0
                     )
@@ -1290,8 +1349,12 @@ class APIServer:
     # RUN
     # =========================================================
     def run(self, blocking=False):
+        config = uvicorn.Config(self.app, host=self.host, port=self.port, log_level="info")
+        self._server = uvicorn.Server(config)
+
         def start_uvicorn():
-            uvicorn.run(self.app, host=self.host, port=self.port, log_level="info")
+            import asyncio
+            asyncio.run(self._server.serve())
 
         if blocking:
             print(f"API Server (Headless) started on http://{self.host}:{self.port}")
@@ -1300,3 +1363,12 @@ class APIServer:
             self._thread = threading.Thread(target=start_uvicorn, daemon=True)
             self._thread.start()
             print(f"API Server (Background) started on http://{self.host}:{self.port}")
+
+    def stop(self):
+        """Apaga el servidor uvicorn de forma limpia para liberar el puerto."""
+        if hasattr(self, '_server') and self._server:
+            print("[APIServer] Enviando señal de apagado a uvicorn...")
+            self._server.should_exit = True
+            if self._thread and self._thread.is_alive():
+                self._thread.join(timeout=3)
+            print("[APIServer] Servidor detenido. Puerto liberado.")

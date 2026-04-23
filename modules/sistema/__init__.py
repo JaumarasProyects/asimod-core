@@ -1,4 +1,5 @@
 import tkinter as tk
+from tkinter import messagebox
 import os
 from core.standard_module import StandardModule
 from modules.widgets import MediaDisplayWidget
@@ -13,6 +14,7 @@ class SistemaModule(StandardModule):
         self.name = "Sistema"
         self.id = "sistema"
         self.icon = "🖥️"
+        self.has_web_ui = True
         
         # Configuración de Layout
         self.show_menu = True
@@ -30,13 +32,111 @@ class SistemaModule(StandardModule):
         }
         self.media_display = None
 
+    async def handle_read_file(self, path: str):
+        """Lee el contenido de un archivo de texto."""
+        try:
+            if not os.path.exists(path):
+                return {"status": "error", "message": "Archivo no existe"}
+            with open(path, "r", encoding="utf-8", errors="ignore") as f:
+                content = f.read()
+            return {"status": "success", "content": content}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+
+    async def handle_write_file(self, path: str, content: str):
+        """Escribe contenido en un archivo de texto."""
+        try:
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(content)
+            return {"status": "success"}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+
+    async def handle_delete_file(self, path: str):
+        """Elimina un archivo o carpeta."""
+        try:
+            if os.path.isdir(path):
+                import shutil
+                shutil.rmtree(path)
+            else:
+                os.remove(path)
+            return {"status": "success"}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+
+    async def handle_create_item(self, path: str, name: str, is_folder: bool = False):
+        """Crea un nuevo archivo o carpeta."""
+        try:
+            full_path = os.path.join(path, name)
+            if is_folder:
+                os.makedirs(full_path, exist_ok=True)
+            else:
+                with open(full_path, "w") as f:
+                    pass
+            return {"status": "success"}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+
+    async def handle_search(self, query: str, root_path: str = None):
+        """Busca archivos recursivamente."""
+        if not root_path: root_path = self.current_path
+        results = []
+        query = query.lower()
+        try:
+            for root, dirs, files in os.walk(root_path):
+                if len(results) > 100: break # Límite de seguridad
+                for name in dirs + files:
+                    if query in name.lower():
+                        full_path = os.path.join(root, name).replace("\\", "/")
+                        results.append({
+                            "name": name,
+                            "path": full_path,
+                            "type": "folder" if os.path.isdir(full_path) else "file"
+                        })
+            return {"status": "success", "results": results}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+
     def render_workspace(self, parent):
-        """Dibuja el visor de medios en el área principal."""
-        self.media_display = MediaDisplayWidget(parent, style=self.style)
-        self.media_display.pack(fill=tk.BOTH, expand=True)
+        """Dibuja el área de trabajo profesional con visor y editor."""
+        # Limpiar área para evitar duplicados
+        for child in parent.winfo_children():
+            child.destroy()
+            
+        self.workspace_root = parent
         
-        # EL MENÚ YA DISPARA EL PRIMER on_menu_change AUTOMÁTICAMENTE
-        # NO HACER NADA AQUÍ PARA EVITAR RACE CONDITIONS
+        # Toolbar Superior
+        self.toolbar = tk.Frame(parent, bg=self.style.get_color("bg_dark"), pady=10, padx=20)
+        self.toolbar.pack(fill=tk.X)
+        
+        self.lbl_path = tk.Label(self.toolbar, text="Selecciona un archivo...", fg=self.style.get_color("text_dim"), 
+                                 bg=self.style.get_color("bg_dark"), font=("Arial", 9))
+        self.lbl_path.pack(side=tk.LEFT, padx=20)
+        
+        # Botones de Acción (ocultos inicialmente)
+        self.btn_save = tk.Button(self.toolbar, text="💾 Guardar", bg=self.style.get_color("accent"), fg="black", bd=0, padx=10,
+                                 command=self._save_current_text)
+        self.btn_delete = tk.Button(self.toolbar, text="🗑️ Eliminar", bg="#ff5555", fg="white", bd=0, padx=10,
+                                   command=self._delete_current_file)
+        
+        # Contenedor para visores
+        self.viewer_container = tk.Frame(parent, bg=self.style.get_color("bg_main"))
+        self.viewer_container.pack(fill=tk.BOTH, expand=True)
+
+        # 1. Visor Multimedia (Widgets existentes)
+        self.media_display = MediaDisplayWidget(self.viewer_container, style=self.style)
+        
+        # 2. Editor de Texto
+        self.text_editor = tk.Text(self.viewer_container, bg=self.style.get_color("bg_input"), fg="white", 
+                                   insertbackground="white", undo=True, font=("Consolas", 11), bd=0, padx=20, pady=20)
+        
+        self.current_editing_path = None
+
+    def on_activate(self):
+        """Asegura que la galería se refresque al entrar."""
+        if not self.current_path:
+            self.current_path = self.base_roots["Principal"]
+        self._refresh_gallery()
 
     def on_menu_change(self, mode):
         """Cambia la raíz de exploración según el botón del menú."""
@@ -101,23 +201,65 @@ class SistemaModule(StandardModule):
             self.gallery.add_item("Error de acceso", subtitle=str(e), icon="🚫")
 
     def _on_item_click(self, path, is_dir):
-        """Maneja el clic en un elemento de la galería."""
+        """Maneja el clic en un elemento de la galería Desktop."""
         if is_dir:
             self.current_path = path
             self._refresh_gallery()
+            return
+
+        self.current_editing_path = path
+        self.lbl_path.config(text=os.path.basename(path))
+        self.btn_delete.pack(side=tk.RIGHT, padx=5)
+        
+        # Comprobar si es texto
+        ext = os.path.splitext(path)[1].lower()
+        if ext in {'.txt', '.py', '.json', '.md', '.css', '.js', '.html'}:
+            self.media_display.pack_forget()
+            self.text_editor.pack(fill=tk.BOTH, expand=True)
+            self.btn_save.pack(side=tk.RIGHT, padx=5)
+            
+            try:
+                with open(path, "r", encoding="utf-8", errors="ignore") as f:
+                    content = f.read()
+                self.text_editor.delete("1.0", tk.END)
+                self.text_editor.insert("1.0", content)
+            except Exception as e:
+                messagebox.showerror("Error", f"No se pudo leer el archivo: {e}")
         else:
-            if self.media_display:
-                self.media_display.load_media(path)
+            self.text_editor.pack_forget()
+            self.btn_save.pack_forget()
+            self.media_display.pack(fill=tk.BOTH, expand=True)
+            self.media_display.load_media(path)
+
+    def _save_current_text(self):
+        if not self.current_editing_path: return
+        content = self.text_editor.get("1.0", tk.END)
+        try:
+            with open(self.current_editing_path, "w", encoding="utf-8") as f:
+                f.write(content)
+            messagebox.showinfo("Sistema", "Archivo guardado correctamente.")
+        except Exception as e:
+            messagebox.showerror("Error", f"Error al guardar: {e}")
+
+    def _delete_current_file(self):
+        if not self.current_editing_path: return
+        if messagebox.askyesno("Confirmar", f"¿Eliminar permanentemente {os.path.basename(self.current_editing_path)}?"):
+            try:
+                os.remove(self.current_editing_path)
+                self.media_display.load_media(None)
+                self.text_editor.delete("1.0", tk.END)
+                self._refresh_gallery()
+                self.btn_save.pack_forget()
+                self.btn_delete.pack_forget()
+                self.lbl_path.config(text="Selecciona un archivo...")
+            except Exception as e:
+                messagebox.showerror("Error", f"No se pudo eliminar: {e}")
 
     def _on_gallery_back(self):
         """Sube un nivel en el árbol de directorios."""
         parent = os.path.dirname(self.current_path)
-        
-        # En Windows, dirname de "C:/" es "C:/" o vacío según la versión.
-        # Nos aseguramos de no entrar en bucle y respetar las raíces.
         current_abs = os.path.abspath(self.current_path).lower()
         is_at_base = any(current_abs == os.path.abspath(r).lower() for r in self.base_roots.values())
-        
         if not is_at_base and parent and os.path.abspath(parent).lower() != current_abs:
             self.current_path = parent
             self._refresh_gallery()
@@ -154,8 +296,8 @@ class SistemaModule(StandardModule):
                     if ext in {'.png', '.jpg', '.jpeg', '.webp', '.gif'}: f_type = "image"
                     elif ext in {'.wav', '.mp3'}: f_type = "audio"
                     elif ext in {'.mp4', '.avi', '.mov'}: f_type = "video"
+                    elif ext in {'.txt', '.py', '.json', '.md', '.css', '.js', '.html'}: f_type = "text"
                     elif ext == '.pdf': f_type = "pdf"
-                    elif ext in {'.glb', '.obj'}: f_type = "3d"
                 
                 items.append({
                     "name": item,
