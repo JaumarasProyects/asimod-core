@@ -16,6 +16,8 @@ desktop.ini
 
 # Base de datos y Configuración Local
 app_data.db
+*.db
+**/communications.db
 settings.json
 scratch/
 
